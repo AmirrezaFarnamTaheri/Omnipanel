@@ -1,6 +1,7 @@
 package router
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -9,10 +10,12 @@ import (
 
 	"omnipanel/control-plane/config"
 	"omnipanel/control-plane/internal/handlers"
+	"omnipanel/control-plane/internal/store"
 )
 
 // New builds the chi router with middleware and all registered routes.
-func New(cfg *config.Config) http.Handler {
+// The store and config are injected into each request's context.
+func New(cfg *config.Config, s *store.Store) http.Handler {
 	r := chi.NewRouter()
 
 	// Global middleware
@@ -22,6 +25,16 @@ func New(cfg *config.Config) http.Handler {
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(60 * time.Second))
 
+	// Inject store and config into request context
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := r.Context()
+			ctx = context.WithValue(ctx, storeKey{}, s)
+			ctx = context.WithValue(ctx, cfgKey{}, cfg)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	})
+
 	// Health
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -29,7 +42,10 @@ func New(cfg *config.Config) http.Handler {
 	})
 
 	// Mount API routes
-	r.Mount("/v1", handlers.Routes(cfg))
+	r.Mount("/v1", handlers.Routes(cfg, s))
 
 	return r
 }
+
+type storeKey struct{}
+type cfgKey struct{}
