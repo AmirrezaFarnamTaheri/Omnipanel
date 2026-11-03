@@ -25,3 +25,15 @@ tsconfig.tsbuildinfo
 # npm/yarn
 yarn-error.log
 npm-debug.log*
+
+# Go
+*.exe
+*.test
+/Go.work
+/vendor/
+/go/control-plane/go.sum
+/go/agent/go.sum
+/**.data/agent-state.sqlite
+
+# OmniPanel agent local state
+.data/agent-state.sqlite
