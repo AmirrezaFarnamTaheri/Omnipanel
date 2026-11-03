@@ -1,7 +1,7 @@
 import "./setup-database";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { CLIENT_REGISTRY } from "../../src/lib/capabilities";
+import { CLIENT_REGISTRY, clientAdmissionReason } from "../../src/lib/capabilities";
 import { validateInboundCompatibility, type InboundCompatibilityInput } from "../../src/lib/protocol-compatibility";
 
 const reality = (changes: Partial<InboundCompatibilityInput> = {}): InboundCompatibilityInput => ({
@@ -83,4 +83,17 @@ test("client format declarations use canonical protocol IDs", () => {
     CLIENT_REGISTRY.find((client) => client.format === "uri")?.protocols,
     ["vless-reality-vision", "hysteria2"],
   );
+});
+
+test("client formats remain excluded until exact-release compatibility evidence is verified", () => {
+  for (const client of CLIENT_REGISTRY) {
+    const protocol = client.protocols[0];
+    assert.match(clientAdmissionReason(client, protocol) ?? "", /no verified exact-release compatibility evidence/);
+  }
+});
+
+test("client protocol exclusions explain unsupported formats before evidence status", () => {
+  const xray = CLIENT_REGISTRY.find((client) => client.format === "xray");
+  assert.match(clientAdmissionReason(xray ?? null, "hysteria2") ?? "", /does not support hysteria2/);
+  assert.equal(clientAdmissionReason(null, "hysteria2"), null);
 });
