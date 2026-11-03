@@ -68,7 +68,7 @@ export async function buildIR(userId: number, client: ClientFormat | null = null
     .select()
     .from(endpointPrincipals)
     .where(and(eq(endpointPrincipals.userId, userId), eq(endpointPrincipals.state, "active")));
-  const clientDef = client ? CLIENT_REGISTRY.find((c) => c.format === client) : null;
+  const clientDef = client ? CLIENT_REGISTRY.find((c) => c.format === client) ?? null : null;
 
   const paths: AccessPath[] = [];
   const excluded: Exclusion[] = [];
