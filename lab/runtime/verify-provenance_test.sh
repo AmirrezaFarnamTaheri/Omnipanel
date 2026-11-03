@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-script_dir="$(cd -- "$(dirname -- "\${BASH_SOURCE[0]}")" && pwd)"
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 verifier="$script_dir/verify-provenance.sh"
-temp_dir="$(mktemp -d "\${TMPDIR:-/tmp}/omni-provenance-test.XXXXXX")"
+temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/omni-provenance-test.XXXXXX")"
 trap 'rm -rf "$temp_dir"' EXIT
 
 mkdir -p "$temp_dir/bin"
@@ -28,7 +28,7 @@ done
 [[ -s "$bundle" ]] || exit 32
 [[ "$identity" == "$MOCK_EXPECTED_IDENTITY" ]] || exit 33
 [[ "$issuer" == "https://token.actions.githubusercontent.com" ]] || exit 34
-[[ "\${MOCK_COSIGN_FAIL:-}" != "$artifact" ]] || exit 35
+[[ "${MOCK_COSIGN_FAIL:-}" != "$artifact" ]] || exit 35
 printf '%s\n' "$artifact" >> "$MOCK_COSIGN_LOG"
 MOCK_COSIGN
 chmod +x "$temp_dir/bin/cosign"
@@ -36,7 +36,7 @@ chmod +x "$temp_dir/bin/cosign"
 export PATH="$temp_dir/bin:$PATH"
 export GITHUB_REPOSITORY="AmirrezaFarnamTaheri/Omnipanel"
 export GITHUB_REF="refs/heads/main"
-export MOCK_EXPECTED_IDENTITY="https://github.com/\${GITHUB_REPOSITORY}/.github/workflows/runtime-smoke.yml@\${GITHUB_REF}"
+export MOCK_EXPECTED_IDENTITY="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/runtime-smoke.yml@${GITHUB_REF}"
 export MOCK_COSIGN_LOG="$temp_dir/cosign.log"
 
 artifact="$temp_dir/sing-box"

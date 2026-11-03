@@ -22,8 +22,8 @@ for file in "$artifact" "$metadata" "$artifact_bundle" "$metadata_bundle"; do
   fi
 done
 
-: "\${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
-: "\${GITHUB_REF:?GITHUB_REF is required}"
+: "${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
+: "${GITHUB_REF:?GITHUB_REF is required}"
 
 if [[ ! "$GITHUB_REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ || "$GITHUB_REF" == *$'\n'* ]]; then
   echo "Invalid GitHub workflow identity context." >&2
@@ -34,7 +34,7 @@ command -v cosign >/dev/null
 command -v jq >/dev/null
 command -v sha256sum >/dev/null
 
-readonly expected_identity="https://github.com/\${GITHUB_REPOSITORY}/.github/workflows/runtime-smoke.yml@\${GITHUB_REF}"
+readonly expected_identity="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/runtime-smoke.yml@${GITHUB_REF}"
 readonly expected_issuer="https://token.actions.githubusercontent.com"
 
 cosign verify-blob "$artifact" \
