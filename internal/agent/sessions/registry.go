@@ -15,6 +15,7 @@ var (
 	ErrInvalidEntitlement     = errors.New("entitlements require non-empty principal IDs and positive credential generations")
 	ErrPrincipalNotAuthorized = errors.New("endpoint principal is not authorized for this credential generation")
 	ErrSessionExists          = errors.New("session ID is already registered")
+	ErrInvalidIdleTimeout     = errors.New("idle timeout must be positive")
 	ErrInvalidPrincipal       = errors.New("principal ID is required")
 )
 
@@ -29,6 +30,14 @@ type CloseFailure struct {
 // blocked from opening additional routed flows.
 type RevocationReport struct {
 	Blocked       int
+	Closed        int
+	Unclosable    int
+	CloseFailures []CloseFailure
+}
+
+// CleanupReport describes sessions removed after they exceeded the configured idle window.
+type CleanupReport struct {
+	Expired       int
 	Closed        int
 	Unclosable    int
 	CloseFailures []CloseFailure
@@ -67,12 +76,22 @@ type Registry struct {
 	mu           sync.Mutex
 	sessions     map[string]*trackedSession
 	entitlements map[string]uint64
+	now          func() time.Time
 }
 
 func NewRegistry() *Registry {
+	return NewRegistryWithClock(time.Now)
+}
+
+// NewRegistryWithClock allows the agent and tests to use a consistent clock.
+func NewRegistryWithClock(now func() time.Time) *Registry {
+	if now == nil {
+		now = time.Now
+	}
 	return &Registry{
 		sessions:     make(map[string]*trackedSession),
 		entitlements: make(map[string]uint64),
+		now:          now,
 	}
 }
 
@@ -118,7 +137,7 @@ func (r *Registry) Register(sessionID, principalID string, credentialGeneration 
 		return ErrSessionExists
 	}
 
-	now := time.Now()
+	now := r.now()
 	r.sessions[sessionID] = &trackedSession{
 		id:                   sessionID,
 		principalID:          principalID,
@@ -162,7 +181,7 @@ func (r *Registry) Touch(sessionID string) bool {
 		session.blocked = true
 		return false
 	}
-	session.lastSeenAt = time.Now()
+	session.lastSeenAt = r.now()
 	return true
 }
 
@@ -180,6 +199,53 @@ func (r *Registry) DisconnectPrincipal(principalID string) (RevocationReport, er
 	r.mu.Unlock()
 
 	r.closeTargets(&report, targets)
+	return report, nil
+}
+
+// PruneIdle blocks and forgets sessions that have not refreshed liveness
+// within maxIdle. Runtime closers are retried outside the registry lock; a
+// session without a closer is forgotten but remains unroutable because its ID
+// is no longer registered.
+func (r *Registry) PruneIdle(maxIdle time.Duration) (CleanupReport, error) {
+	if maxIdle <= 0 {
+		return CleanupReport{}, ErrInvalidIdleTimeout
+	}
+
+	now := r.now()
+	r.mu.Lock()
+	var report CleanupReport
+	var targets []closeTarget
+	for sessionID, session := range r.sessions {
+		if now.Sub(session.lastSeenAt) <= maxIdle {
+			continue
+		}
+		report.Expired++
+		session.blocked = true
+		if session.closer == nil {
+			report.Unclosable++
+			delete(r.sessions, sessionID)
+			continue
+		}
+		targets = append(targets, closeTarget{session: session})
+	}
+	r.mu.Unlock()
+
+	for _, target := range targets {
+		session := target.session
+		if err := session.closer.Close(); err != nil {
+			report.CloseFailures = append(report.CloseFailures, CloseFailure{
+				SessionID: session.id,
+				Err:       err,
+			})
+			continue
+		}
+		report.Closed++
+		r.mu.Lock()
+		if r.sessions[session.id] == session {
+			delete(r.sessions, session.id)
+		}
+		r.mu.Unlock()
+	}
 	return report, nil
 }
 
