@@ -193,7 +193,9 @@ Two clean-room foundations now exist:
 
 - `src/lib/protocol-compatibility.ts` rejects unsupported Reality/Vision and
   Hysteria2 runtime/transport combinations and malformed Reality identity fields
-  before subscription emission. It is structural preflight only; exact runtime,
+  before subscription emission. The compiler also rejects paths unsupported by
+  the requested output format and uses one canonical VLESS/Reality/Vision ID
+  across runtime drivers. This is structural preflight only; exact runtime,
   client and connectivity qualification remain separate.
 - `internal/agent/sessions` tracks opaque runtime session IDs against endpoint
   principals and credential generations. It closes runtime sessions outside its
