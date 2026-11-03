@@ -32,13 +32,14 @@ npm ci
 make check-contracts
 make test-contracts
 make test-go
+make test-provenance
 npm run typecheck
 npm run lint
 make gate-lab
 ```
 
-Contract/unit checks and the Go desired-state verifier tests are executable without
-a database or a network runtime.
+Contract/unit checks, the Go desired-state verifier tests and the fail-closed
+provenance-verifier tests are executable without a database or network runtime.
 `gate-lab` deliberately exits nonzero until exact runtime builds, verified
 clients, metering contracts and real lab transcripts are supplied. The other
 production gate names explicitly report BLOCKED; they are not passing stubs.

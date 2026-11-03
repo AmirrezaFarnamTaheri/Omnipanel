@@ -14,7 +14,7 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
-      - run: make check-contracts test-contracts
+      - run: make check-contracts test-contracts test-provenance
       - run: npm run typecheck
       - run: npm run lint
       # Real gate-lab requires protected external networking evidence.

@@ -1,4 +1,4 @@
-.PHONY: check-contracts test-contracts test-go test-runtime gate-lab gate-control gate-agent gate-subscription gate-resilience gate-security gate-dr
+.PHONY: check-contracts test-contracts test-go test-provenance test-runtime gate-lab gate-control gate-agent gate-subscription gate-resilience gate-security gate-dr
 
 check-contracts:
 	npm run check:contracts
@@ -18,6 +18,10 @@ gate-control gate-agent gate-subscription gate-resilience gate-security gate-dr:
 test-go:
 	go test -race -count=1 ./...
 	go vet ./...
+
+# Verifies the fail-closed Sigstore provenance verifier with a mocked Cosign CLI.
+test-provenance:
+	bash lab/runtime/verify-provenance_test.sh
 
 # Executes a real Sing-box server/client path in isolated Linux network namespaces.
 # Run as root after building the pinned runtime and installing grpcurl.

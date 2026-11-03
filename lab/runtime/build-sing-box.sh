@@ -73,6 +73,7 @@ jq -n \
   --arg version "$runtime_version" \
   --arg upstreamTag "$upstream_tag" \
   --arg upstreamCommit "$upstream_commit" \
+  --arg sourceRepository "SagerNet/sing-box" \
   --arg sourceSignatureStatus "github-api-verified" \
   --arg goVersion "$(go version)" \
   --arg buildTags "$build_tags" \
@@ -82,6 +83,7 @@ jq -n \
     version: $version,
     upstreamTag: $upstreamTag,
     upstreamCommit: $upstreamCommit,
+    sourceRepository: $sourceRepository,
     sourceSignatureStatus: $sourceSignatureStatus,
     goVersion: $goVersion,
     buildTags: $buildTags,

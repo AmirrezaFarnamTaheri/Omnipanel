@@ -24,11 +24,14 @@ Implemented and locally exercised:
 - Candidate v2 OpenAPI and documented target architecture/threat model.
 
 - Local runtime smoke harness added under `lab/runtime/`: a source-pinned
-  Sing-box v1.14.4 build with `with_v2ray_api`, GitHub build-provenance
-  attestation, isolated server/client network namespaces, real Reality/Vision
-  TCP proxy traffic and per-user counter comparison. The first CI execution is
-  pending. Even when green, this is local runtime evidence only, not M0
-  acceptance or external client qualification.
+  Sing-box v1.14.4 build with `with_v2ray_api`, isolated server/client network
+  namespaces, real Reality/Vision TCP proxy traffic and per-user counter
+  comparison. The original GitHub attestation step failed because GitHub does
+  not support storing attestations for user-owned private repositories. The
+  replacement keyless Cosign/Sigstore workflow signs the binary and metadata,
+  verifies exact workflow/ref identity and artifact digest, and retains both
+  bundles. Its first CI execution is pending. Even when green, this is local
+  runtime evidence only, not M0 acceptance or external client qualification.
 - Go `internal/manifest` verification core: strict typed envelope and canonical
   digest checking, Ed25519 trust, node/epoch authorization, time and replay
   checks, exact-build capability gating, dependency/port preflight and focused
@@ -45,6 +48,7 @@ all future membership, enrollment, quota, protocol or upgrade operations.
 | `make check-contracts` | Local schema compilation + registry/unsigned fixture validity |
 | `make test-contracts` | Local deterministic unit tests; includes synthetic evidence in isolated temporary directories |
 | `make test-go` | Go manifest-verifier tests (including race detector) and vet; synthetic signer/manifest, no host actions |
+| `make test-provenance` | Fail-closed verifier tests with mocked Cosign CLI; actual Sigstore signature verification is performed in the runtime workflow |
 | `make test-runtime` | Pending CI execution; local namespace-only Reality/Vision, raw TCP and per-user counter smoke; not M0 acceptance |
 | `make gate-lab` | BLOCKED: no external VPS, reference application, agent pull/report, Hysteria2 comparison or reviewed production evidence |
 | `make gate-control` | BLOCKED: Go secure service/DB/auth migration and integration harness missing |
@@ -60,7 +64,9 @@ been removed. A standalone Go manifest-verification library and local Sing-box
 runtime smoke are now present, but no deployable Go agent or control-plane
 implementation exists. No public VPSs, representative mobile/desktop clients,
 provider diversity or production topology are available for external connectivity
-or production verification. The first local runtime smoke result is pending CI.
+or production verification. The local runtime smoke result is pending CI. The previous build-attestation
+failure is documented above; the replacement Cosign workflow must complete
+real keyless signing and verification before the namespace smoke can run.
 
 The old pg-mem E2E script was retired because it bypassed real transaction/
 concurrency primitives and its admission assumptions conflict with fail-closed

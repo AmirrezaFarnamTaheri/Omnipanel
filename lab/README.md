@@ -9,14 +9,26 @@ or M0 walking skeleton. The checked-in contract fixture is deliberately fake.
 `.github/workflows/runtime-smoke.yml` builds Sing-box v1.14.4 from the fixed
 upstream commit `c005f35300ce76427dc285481ec5695f5b179cd2`. It checks GitHub's
 cryptographic commit-verification result, builds the optional `with_v2ray_api`
-tag needed for per-user counters, creates a GitHub Actions build-provenance
-attestation for the resulting binary, and verifies that attestation. The local
-harness starts a real Reality/Vision server and sing-box CLI client in separate
-Linux network namespaces joined by a veth pair. A raw TCP echo target provides
-known payload bytes in both directions. The harness checks native config
-validation, actual client-to-server proxy connectivity, per-user counters with a
-5% local error bound, invalid-config rejection, and credential rotation across a
-full core restart.
+tag needed for per-user counters, signs both the runtime binary and its build
+metadata using keyless Sigstore/Cosign, verifies each bundle against the exact
+GitHub workflow/ref identity and OIDC issuer, and retains the binary, metadata
+and bundles as a workflow artifact. This avoids GitHub's unsupported
+attestation-storage API for user-owned private repositories without disabling
+cryptographic verification. The local harness starts a real Reality/Vision
+server and sing-box CLI client in separate Linux network namespaces joined by a
+veth pair. A raw TCP echo target provides known payload bytes in both directions.
+The harness checks native config validation, actual client-to-server proxy
+connectivity, per-user counters with a 5% local error bound, invalid-config
+rejection, and credential rotation across a full core restart.
+
+The verifier is `lab/runtime/verify-provenance.sh`; its fail-closed unit tests
+run with `make test-provenance`. The two Sigstore bundles contain the signature,
+short-lived identity certificate and transparency-log proof. Verification binds
+the bundle to `https://github.com/<repository>/.github/workflows/runtime-smoke.yml@<ref>`
+and `https://token.actions.githubusercontent.com`, then checks that the signed
+metadata exactly describes the binary digest, upstream commit, toolchain and
+build tags. Fork pull requests skip this signing job because they cannot mint
+the trusted repository workflow identity; ordinary contract tests still run.
 
 The local smoke does **not** qualify public VPS reachability, Android/iOS/desktop
 application import, mTLS enrollment, an agent-initiated control-plane exchange,
