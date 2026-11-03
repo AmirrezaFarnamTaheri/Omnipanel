@@ -195,8 +195,17 @@ export const CLIENT_REGISTRY = [
     format: "uri",
     label: "URI bundle (base64)",
     uaHints: [],
-    protocols: ["vless-reality-vision", "hysteria2"],
+    protocols: ["vless-reality-vision", "hysteria2", "xray-vless-reality-vision"],
     failover: "client dependent",
+    evidence: "documented",
+  },
+  {
+    id: "xray",
+    format: "xray",
+    label: "Xray JSON inbound config",
+    uaHints: ["xray", "v2ray", "v2rayn"],
+    protocols: ["xray-vless-reality-vision"],
+    failover: "uri fallback",
     evidence: "documented",
   },
 ] as const;

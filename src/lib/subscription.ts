@@ -11,8 +11,9 @@ export type AccessPath = {
   nodeName: string;
   server: string;
   port: number;
-  protocol: "vless-reality-vision" | "hysteria2";
+  protocol: "vless-reality-vision" | "hysteria2" | "xray-vless-reality-vision";
   transport: "tcp" | "udp";
+  runtime: "singbox" | "xray" | "hysteria2";
   credential: string;
   sni: string;
   tlsModel: "reality" | "tls-self-managed";
@@ -93,11 +94,12 @@ export async function buildIR(userId: number, client: ClientFormat | null = null
           port: ib.port,
           protocol: ib.protocol as AccessPath["protocol"],
           transport: ib.transport as AccessPath["transport"],
+          runtime: ib.runtime as AccessPath["runtime"],
           credential: decryptSecret(p.credentialEnc),
           sni: ib.sni,
-          tlsModel: ib.protocol === "vless-reality-vision" ? "reality" : "tls-self-managed",
+          tlsModel: ib.protocol === "vless-reality-vision" || ib.protocol === "xray-vless-reality-vision" ? "reality" : "tls-self-managed",
           reality:
-            ib.protocol === "vless-reality-vision"
+            ib.protocol === "vless-reality-vision" || ib.protocol === "xray-vless-reality-vision"
               ? {
                   publicKey: ib.params.realityPublicKey,
                   shortId: ib.params.shortId,
@@ -115,7 +117,7 @@ export async function buildIR(userId: number, client: ClientFormat | null = null
   }
   const diagnostics: string[] = [];
   for (const p of paths) {
-    if (p.protocol === "vless-reality-vision" && (!p.reality?.publicKey || !p.reality.shortId)) {
+    if ((p.protocol === "vless-reality-vision" || p.protocol === "xray-vless-reality-vision") && (!p.reality?.publicKey || !p.reality.shortId)) {
       diagnostics.push(`${p.tag}: Reality public key / short id missing; refusing to emit a weakened endpoint`);
     }
   }
@@ -148,14 +150,29 @@ export function emitSingbox(ir: IR): string {
             reality: { enabled: true, public_key: p.reality!.publicKey, short_id: p.reality!.shortId },
           },
         }
-      : {
-          type: "hysteria2",
-          tag: p.tag,
-          server: p.server,
-          server_port: p.port,
-          password: p.credential,
-          tls: { enabled: true, server_name: p.sni },
-        },
+      : p.protocol === "xray-vless-reality-vision"
+        ? {
+            type: "vless",
+            tag: p.tag,
+            server: p.server,
+            server_port: p.port,
+            uuid: p.credential,
+            flow: p.reality!.flow,
+            tls: {
+              enabled: true,
+              server_name: p.sni,
+              utls: { enabled: true, fingerprint: p.reality!.fingerprint },
+              reality: { enabled: true, public_key: p.reality!.publicKey, short_id: p.reality!.shortId },
+            },
+          }
+        : {
+            type: "hysteria2",
+            tag: p.tag,
+            server: p.server,
+            server_port: p.port,
+            password: p.credential,
+            tls: { enabled: true, server_name: p.sni },
+          },
   );
   const tags = ir.paths.map((p) => p.tag);
   return JSON.stringify(
@@ -174,12 +191,66 @@ export function emitSingbox(ir: IR): string {
   );
 }
 
+/** Xray JSON inbound config for M2 Xray runtime nodes. */
+export function emitXray(ir: IR): string {
+  const inbounds: unknown[] = ir.paths.map((p) => {
+    const base: Record<string, unknown> = {
+      tag: p.tag,
+      listen: "0.0.0.0",
+      port: p.port,
+      protocol: "vless",
+      settings: {
+        clients: [{ id: p.credential, flow: p.reality!.flow }],
+        decryption: "none",
+      },
+      streamSettings: {
+        network: p.transport,
+        security: "reality",
+        realitySettings: {
+          show: false,
+          dest: `${p.sni}:443`,
+          xver: 0,
+          serverNames: [p.sni],
+          privateKey: "", // filled by control plane from node secrets
+          shortIds: [p.reality!.shortId],
+        },
+      },
+    };
+    if (p.transport === "tcp") {
+      base.streamSettings = { ...(base.streamSettings as Record<string, unknown>), tcpSettings: { header: { type: "none" } } };
+    }
+    return base;
+  });
+
+  const outbounds: unknown[] = [
+    { tag: "direct", protocol: "freedom", settings: {} },
+    { tag: "block", protocol: "blackhole", settings: {} },
+  ];
+
+  return JSON.stringify(
+    {
+      log: { loglevel: "warning" },
+      inbounds,
+      outbounds,
+      routing: {
+        rules: [
+          { type: "field", inboundTag: [...ir.paths.map((p) => p.tag)], outboundTag: "proxy" },
+          { ip: ["geoip:private"], outboundTag: "block" },
+        ],
+      },
+      dns: { servers: ["https://dns.google/dns-query"] },
+    },
+    null,
+    2,
+  );
+}
+
 const q = (s: string | number) => JSON.stringify(s); // JSON strings are valid YAML scalars
 
 export function emitMihomo(ir: IR): string {
   const lines = ["proxies:"];
   for (const p of ir.paths) {
-    if (p.protocol === "vless-reality-vision") {
+    if (p.protocol === "vless-reality-vision" || p.protocol === "xray-vless-reality-vision") {
       lines.push(
         `  - {name: ${q(p.tag)}, type: vless, server: ${q(p.server)}, port: ${p.port}, uuid: ${q(p.credential)}, network: tcp, udp: true, tls: true, flow: ${q(p.reality!.flow)}, servername: ${q(p.sni)}, client-fingerprint: ${q(p.reality!.fingerprint)}, reality-opts: {public-key: ${q(p.reality!.publicKey)}, short-id: ${q(p.reality!.shortId)}}}`,
       );
@@ -205,7 +276,7 @@ const host = (s: string) => (s.includes(":") ? `[${s}]` : s);
 
 export function emitUris(ir: IR): string {
   const uris = ir.paths.map((p) =>
-    p.protocol === "vless-reality-vision"
+    p.protocol === "vless-reality-vision" || p.protocol === "xray-vless-reality-vision"
       ? `vless://${p.credential}@${host(p.server)}:${p.port}?encryption=none&flow=${p.reality!.flow}&security=reality&sni=${encodeURIComponent(p.sni)}&fp=${p.reality!.fingerprint}&pbk=${p.reality!.publicKey}&sid=${p.reality!.shortId}&type=tcp#${encodeURIComponent(p.tag)}`
       : `hysteria2://${encodeURIComponent(p.credential)}@${host(p.server)}:${p.port}?sni=${encodeURIComponent(p.sni)}#${encodeURIComponent(p.tag)}`,
   );
@@ -217,6 +288,8 @@ export function compile(ir: IR, format: ClientFormat): { body: string; contentTy
   switch (format) {
     case "singbox":
       return { body: emitSingbox(ir), contentType: "application/json; charset=utf-8" };
+    case "xray":
+      return { body: emitXray(ir), contentType: "application/json; charset=utf-8" };
     case "mihomo":
       return { body: emitMihomo(ir), contentType: "text/yaml; charset=utf-8" };
     default:

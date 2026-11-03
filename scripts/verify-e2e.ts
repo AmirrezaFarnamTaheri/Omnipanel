@@ -126,7 +126,7 @@ async function main() {
   } = await import(path.join(repo, "src/lib/revisions.ts"));
   const { ingestMetering } = await import(path.join(repo, "src/lib/metering.ts"));
   const {
-    findUserByToken, buildIR, compile, emitSingbox, emitMihomo, emitUris,
+    findUserByToken, buildIR, compile, emitSingbox, emitMihomo, emitUris, emitXray,
     CompileError,
   } = await import(path.join(repo, "src/lib/subscription.ts"));
   const { verifyAuditChain } = await import(path.join(repo, "src/lib/audit.ts"));
@@ -287,6 +287,17 @@ async function main() {
   } catch (e) {
     check("incomplete Reality endpoint refused", e instanceof CompileError);
   }
+
+  /* ---------- 13b. Xray config emission (M2) ---------- */
+  const xrayConfig = emitXray(ir);
+  let xrayOk = false;
+  try { JSON.parse(xrayConfig); xrayOk = true; } catch { xrayOk = false; }
+  check("Xray config is valid JSON", xrayOk);
+  check("Xray config has inbounds", xrayConfig.includes('"inbounds"'));
+  check("Xray config has outbounds", xrayConfig.includes('"outbounds"'));
+  check("Xray config has routing", xrayConfig.includes('"routing"'));
+  const xrayCompile = compile(ir, "xray");
+  check("compile xray returns JSON content type", xrayCompile.contentType === "application/json; charset=utf-8");
 
   /* ---------- 14. Audit chain ---------- */
   const chain = await verifyAuditChain();
