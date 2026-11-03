@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { endpointPrincipals, inboundHealth, inbounds, nodes, plans, subscriptionTokens, users } from "@/db/schema";
 import { CLIENT_REGISTRY, findCapability, isAdmissible, isHardQuotaCapable, loadEvidence, type ClientFormat } from "@/lib/capabilities";
 import { decryptSecret, sha256 } from "@/lib/crypto";
+import { validateInboundCompatibility } from "@/lib/protocol-compatibility";
 
 /** Canonical intermediate representation of one access path. */
 export type AccessPath = {
@@ -74,8 +75,16 @@ export async function buildIR(userId: number, client: ClientFormat | null = null
   for (const { ib, node, h } of rows) {
     const exclude = (reason: string) => excluded.push({ inboundId: ib.id, name: `${node.name} / ${ib.name}`, reason });
     const cap = findCapability(ib.runtime, ib.protocol);
+    const compatibility = validateInboundCompatibility({
+      runtime: ib.runtime,
+      protocol: ib.protocol,
+      transport: ib.transport,
+      serverName: ib.sni,
+      params: ib.params,
+    });
     if (!ib.enabled) exclude("Endpoint administratively disabled");
     else if (!cap) exclude("Unsupported runtime/protocol (not in capability registry)");
+    else if (!compatibility.supported) exclude(`Incompatible runtime configuration: ${compatibility.reason}`);
     else if (!isAdmissible(cap, ev)) exclude("Runtime build has no production qualification; lab evidence required");
     else if (node.status === "quarantined") exclude("Node quarantined for security");
     else if (node.status === "draining") exclude("Node draining");
@@ -117,11 +126,6 @@ export async function buildIR(userId: number, client: ClientFormat | null = null
     }
   }
   const diagnostics: string[] = [];
-  for (const p of paths) {
-    if ((p.protocol === "vless-reality-vision" || p.protocol === "xray-vless-reality-vision") && (!p.reality?.publicKey || !p.reality.shortId)) {
-      diagnostics.push(`${p.tag}: Reality public key / short id missing; refusing to emit a weakened endpoint`);
-    }
-  }
   return {
     user: { id: u.id, name: u.name, status: u.status },
     paths,
