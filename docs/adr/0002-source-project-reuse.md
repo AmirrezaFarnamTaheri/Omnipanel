@@ -22,7 +22,7 @@ Adopt selected behaviors as independent, typed OmniPanel components. Do not
 vendor either panel, transplant their database schemas, or treat their feature
 lists as production evidence.
 
-The first clean-room increment adds:
+The first independent implementation increment adds:
 
 1. `src/lib/protocol-compatibility.ts`: an explicit narrow matrix for the
    currently designed Reality/Vision and Hysteria2 runtime/transport pairs.
