@@ -22,6 +22,13 @@ Implemented and locally exercised:
   qualification set; historical notes cannot activate any driver or strict quota.
   Corrected BPB unmanaged-source labeling and removed its hard-quota candidacy.
 - Candidate v2 OpenAPI and documented target architecture/threat model.
+
+- Local runtime smoke harness added under `lab/runtime/`: a source-pinned
+  Sing-box v1.14.4 build with `with_v2ray_api`, GitHub build-provenance
+  attestation, isolated server/client network namespaces, real Reality/Vision
+  TCP proxy traffic and per-user counter comparison. The first CI execution is
+  pending. Even when green, this is local runtime evidence only, not M0
+  acceptance or external client qualification.
 - Go `internal/manifest` verification core: strict typed envelope and canonical
   digest checking, Ed25519 trust, node/epoch authorization, time and replay
   checks, exact-build capability gating, dependency/port preflight and focused
@@ -38,7 +45,8 @@ all future membership, enrollment, quota, protocol or upgrade operations.
 | `make check-contracts` | Local schema compilation + registry/unsigned fixture validity |
 | `make test-contracts` | Local deterministic unit tests; includes synthetic evidence in isolated temporary directories |
 | `make test-go` | Go manifest-verifier tests (including race detector) and vet; synthetic signer/manifest, no host actions |
-| `make gate-lab` | BLOCKED: no pinned builds, verified client/metering entries or real runtime evidence |
+| `make test-runtime` | Pending CI execution; local namespace-only Reality/Vision, raw TCP and per-user counter smoke; not M0 acceptance |
+| `make gate-lab` | BLOCKED: no external VPS, reference application, agent pull/report, Hysteria2 comparison or reviewed production evidence |
 | `make gate-control` | BLOCKED: Go secure service/DB/auth migration and integration harness missing |
 | `make gate-agent` | BLOCKED: deployable agent/helper/drivers/recovery/lease harness missing |
 | `make gate-subscription` | BLOCKED: native validators and real client conformance missing |
@@ -47,11 +55,12 @@ all future membership, enrollment, quota, protocol or upgrade operations.
 | `make gate-dr` | BLOCKED: funded backup/PITR+key restore and epoch drill missing |
 
 TypeScript typecheck passes. ESLint passes with two existing image-optimization
-warnings. The obsolete Go scaffold (which had stale imports and constructors) has been
-removed. A standalone Go manifest-verification library is now under test, but
-no deployable Go agent or control-plane implementation exists. No runtime binaries, private
-VPSs, paying users, provider diversity or representative clients were available
-for connectivity or production verification.
+warnings. The obsolete Go scaffold (which had stale imports and constructors) has
+been removed. A standalone Go manifest-verification library and local Sing-box
+runtime smoke are now present, but no deployable Go agent or control-plane
+implementation exists. No public VPSs, representative mobile/desktop clients,
+provider diversity or production topology are available for external connectivity
+or production verification. The first local runtime smoke result is pending CI.
 
 The old pg-mem E2E script was retired because it bypassed real transaction/
 concurrency primitives and its admission assumptions conflict with fail-closed
@@ -105,3 +114,11 @@ keys and affected credentials in any environment that consumed it; Git history
 still contains the prior blob until separately remediated. No production safety
 claim follows from the cleanup. End-to-end validation requires CI and a real
 networking laboratory.
+
+
+The local runtime smoke is intentionally separate from the evidence gate. It
+uses a source-pinned custom Sing-box build and a synthetic local echo target. Its
+report is written under ignored `.data/lab-runtime/evidence/`; it is not copied
+into `capabilities/runtime.json`, `capabilities/clients.json` or the reviewed
+lab evidence registry. A green smoke workflow does not make the runtime
+production-qualified.

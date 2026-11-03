@@ -19,8 +19,9 @@ services + PostgreSQL and a static React/Vite admin UI; that migration has
 
 ## Local verification
 
-Node.js 22, npm and a supported Go toolchain are required for the full foundation checks.
-CI pins Go 1.27.3. Install the locked JavaScript dependencies:
+Node.js 22, npm and Go are required for the foundation checks. CI pins Go 1.27.3
+for the manifest verifier and Go 1.26.10 for the pinned Sing-box lab build.
+Install the locked JavaScript dependencies:
 
 ```sh
 npm ci
@@ -90,3 +91,29 @@ The package is not wired to a production agent. Qualification, trusted signers,
 approved epochs and replay cursors must come from durable, protected node-local
 state; there are deliberately no qualified builds or signer credentials included
 with the repo. No network/service functionality or release gate is claimed.
+
+## Local runtime smoke (not M0 acceptance)
+
+The `.github/workflows/runtime-smoke.yml` workflow builds Sing-box v1.14.4
+from its fixed upstream commit, verifies GitHub's upstream commit-signature
+result, compiles the optional `with_v2ray_api` statistics service, attests the
+resulting binary with GitHub Actions provenance, and verifies that attestation.
+It then runs a real VLESS/Reality/Vision server and sing-box CLI client in two
+isolated Linux network namespaces joined by a veth pair. A raw TCP echo target
+provides known bidirectional payloads; the test checks per-user counters, invalid
+configuration rejection, and credential rotation across a full core restart.
+
+To reproduce locally on Ubuntu 24.04 with Go 1.26.10, `grpcurl`, `iproute2`,
+OpenSSL, jq and Python 3:
+
+```sh
+go install github.com/fullstorydev/grpcurl/cmd/grpcurl@v1.9.3
+bash lab/runtime/build-sing-box.sh
+sudo env SING_BOX_BIN=.data/lab-runtime/sing-box make test-runtime
+```
+
+This is an actual local core-to-core runtime test, **not** a public VPS, mobile
+client, agent, subscription compiler, safe-apply/rollback, or M0 acceptance test.
+The credential-removal observation uses a core restart; it does not prove hot
+per-user revocation. The full `make gate-lab` remains blocked pending external
+node/client evidence and the remaining Task 1 requirements.

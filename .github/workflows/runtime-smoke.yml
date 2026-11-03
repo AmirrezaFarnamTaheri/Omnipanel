@@ -1,0 +1,107 @@
+name: Local Sing-box runtime smoke (not M0 acceptance)
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "lab/runtime/**"
+      - "Makefile"
+      - "README.md"
+      - "lab/README.md"
+      - "docs/implementation/status.md"
+      - ".github/workflows/runtime-smoke.yml"
+  pull_request:
+    paths:
+      - "lab/runtime/**"
+      - "Makefile"
+      - "README.md"
+      - "lab/README.md"
+      - "docs/implementation/status.md"
+      - ".github/workflows/runtime-smoke.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  reality-runtime:
+    # A same-repository PR already gets a push-triggered run on its branch.
+    # Keep the PR run for forks, where the base repository's push event cannot run.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    name: Build, attest and exercise Reality/Vision locally
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      attestations: write
+      id-token: write
+    env:
+      SING_BOX_BIN: \${{ github.workspace }}/.data/lab-runtime/sing-box
+      SING_BOX_METADATA: \${{ github.workspace }}/.data/lab-runtime/build-metadata.json
+      EVIDENCE_DIR: \${{ github.workspace }}/.data/lab-runtime/evidence
+    steps:
+      - name: Check out OmniPanel
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up pinned Go toolchain
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26.10"
+          cache: false
+
+      - name: Install Linux lab tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y iproute2 openssl jq python3
+
+      - name: Check lab script syntax
+        run: |
+          bash -n lab/runtime/build-sing-box.sh
+          bash -n lab/runtime/run-local-reality.sh
+          python3 - <<'PY'
+          from pathlib import Path
+
+          for source in ("lab/runtime/echo_server.py", "lab/runtime/socks5_probe.py"):
+              compile(Path(source).read_text(encoding="utf-8"), source, "exec")
+          PY
+
+      - name: Build Sing-box with the required statistics API
+        run: bash lab/runtime/build-sing-box.sh
+
+      # Attest only trusted repository pushes or manual runs. Fork PRs still run
+      # the smoke test but cannot mint attestations for this repository.
+      - name: Attest the built runtime artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: .data/lab-runtime/sing-box
+
+      - name: Verify the runtime build attestation
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: \${{ github.token }}
+        run: |
+          gh attestation verify "$SING_BOX_BIN" \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/runtime-smoke.yml"
+
+      - name: Install pinned gRPC statistics client
+        run: |
+          go install github.com/fullstorydev/grpcurl/cmd/grpcurl@v1.9.3
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Run the isolated Reality/Vision and accounting test
+        run: |
+          sudo env \
+            "PATH=$PATH" \
+            "SING_BOX_BIN=$SING_BOX_BIN" \
+            "SING_BOX_METADATA=$SING_BOX_METADATA" \
+            "EVIDENCE_DIR=$EVIDENCE_DIR" \
+            make test-runtime
+
+      - name: Publish sanitized smoke report
+        if: always()
+        run: |
+          if [ -s "$EVIDENCE_DIR/local-reality-smoke.json" ]; then
+            cat "$EVIDENCE_DIR/local-reality-smoke.json" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No runtime report was produced; inspect the failed step logs." >> "$GITHUB_STEP_SUMMARY"
+          fi

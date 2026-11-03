@@ -1,9 +1,31 @@
 # Decision-grade lab and evidence gate
 
-This directory contains the initial evidence gate, **not yet node provisioning,
-an impairment runner, runtime drivers or a working network skeleton**. No native
-runtime/reference client has been executed here. No verified golden runtime
-configuration is supplied. The checked-in contract fixture is deliberately fake.
+This directory contains the evidence gate and a **local runtime smoke harness**;
+it is not yet a public-node provisioner, production agent, full impairment runner,
+or M0 walking skeleton. The checked-in contract fixture is deliberately fake.
+
+## Automated local runtime smoke
+
+`.github/workflows/runtime-smoke.yml` builds Sing-box v1.14.4 from the fixed
+upstream commit `c005f35300ce76427dc285481ec5695f5b179cd2`. It checks GitHub's
+cryptographic commit-verification result, builds the optional `with_v2ray_api`
+tag needed for per-user counters, creates a GitHub Actions build-provenance
+attestation for the resulting binary, and verifies that attestation. The local
+harness starts a real Reality/Vision server and sing-box CLI client in separate
+Linux network namespaces joined by a veth pair. A raw TCP echo target provides
+known payload bytes in both directions. The harness checks native config
+validation, actual client-to-server proxy connectivity, per-user counters with a
+5% local error bound, invalid-config rejection, and credential rotation across a
+full core restart.
+
+The local smoke does **not** qualify public VPS reachability, Android/iOS/desktop
+application import, mTLS enrollment, an agent-initiated control-plane exchange,
+production safe-apply or last-good recovery, dynamic per-user session eviction,
+Hysteria2, carrier impairment, or multi-provider resilience. In particular,
+existing-session termination here is observed after a whole core restart; it is
+not evidence of hot credential revocation. This smoke does not populate the
+production runtime/client qualification registries or unblock `make gate-lab`.
+
 
 ## Reproducible procedure to implement/run on isolated lab hosts
 

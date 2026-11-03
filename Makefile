@@ -1,4 +1,4 @@
-.PHONY: check-contracts test-contracts test-go gate-lab gate-control gate-agent gate-subscription gate-resilience gate-security gate-dr
+.PHONY: check-contracts test-contracts test-go test-runtime gate-lab gate-control gate-agent gate-subscription gate-resilience gate-security gate-dr
 
 check-contracts:
 	npm run check:contracts
@@ -18,3 +18,8 @@ gate-control gate-agent gate-subscription gate-resilience gate-security gate-dr:
 test-go:
 	go test -race -count=1 ./...
 	go vet ./...
+
+# Executes a real Sing-box server/client path in isolated Linux network namespaces.
+# Run as root after building the pinned runtime and installing grpcurl.
+test-runtime:
+	bash lab/runtime/run-local-reality.sh
