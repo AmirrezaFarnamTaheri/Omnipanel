@@ -140,7 +140,7 @@ Implemented:
 - `internal/agent/sessions` tracks opaque runtime session IDs, endpoint-principal
   identity and credential generation. It distinguishes successful closure from
   sessions that can only be blocked from opening new routed flows. Close callbacks
-  run outside the registry lock.
+  run outside the registry lock; idle sessions are pruned and failed closers are retried.
 
 The new Go registry and TypeScript compatibility tests are synthetic unit tests.
 The session registry is not yet connected to Sing-box, Xray or Hysteria2 drivers;
