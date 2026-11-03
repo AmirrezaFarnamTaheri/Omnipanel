@@ -1,17 +1,41 @@
-import { db } from "@/db";
-import { cdnMappings } from "@/db/schema";
-import { desc } from "drizzle-orm";
 import { requirePage } from "@/lib/auth";
-import { listCdnProviders } from "@/lib/m2";
-import { createCdnMappingAction } from "@/app/actions/m2";
-import { ActionForm } from "@/components/ActionForm";
 import { Badge, Card, Field, inputCls, PageHeader, Table, Td } from "@/components/ui";
+import { ActionForm } from "@/components/ActionForm";
+import type { ActionState } from "@/lib/action-helpers";
+
+export type CdnProvider = { id: string; name: string; supported: boolean };
+export type CdnMapping = {
+  id: number;
+  domain: string;
+  origin: string;
+  provider: string;
+  status: string;
+  createdAt: string;
+};
+
+async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(path, {
+    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    ...init,
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`API ${path} failed: ${res.status}`);
+  return res.json();
+}
 
 export default async function CdnPage() {
   const me = await requirePage("viewer");
-  const providers = await listCdnProviders();
-  const mappings = await db.select().from(cdnMappings).orderBy(desc(cdnMappings.createdAt));
-  const idem = typeof crypto !== "undefined" ? crypto.randomUUID() : "idem";
+  const [providers, mappings, error] = await (async () => {
+    try {
+      const [p, m] = await Promise.all([
+        fetchJson<{ providers: CdnProvider[] }>("/api/m2/cdn/providers"),
+        fetchJson<{ mappings: CdnMapping[] }>("/api/m2/cdn/mapping"),
+      ]);
+      return [p.providers, m.mappings, null] as [CdnProvider[], CdnMapping[], string | null];
+    } catch (e) {
+      return [[], [], e instanceof Error ? e.message : "Failed to load CDN data"];
+    }
+  })();
 
   return (
     <>
@@ -19,6 +43,12 @@ export default async function CdnPage() {
         title="CDN (Content Delivery Network)"
         subtitle="Map customer-facing domains to origin nodes. CDN runtimes are gated until admission evidence is recorded."
       />
+
+      {error && (
+        <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
+          {error}
+        </div>
+      )}
 
       <Card title="Available providers" className="mb-6">
         <Table head={["Provider", "Status"]}>
@@ -37,7 +67,7 @@ export default async function CdnPage() {
 
       {me.role !== "viewer" && (
         <Card title="Create CDN mapping">
-          <ActionForm action={createCdnMappingAction} submit="Create mapping">
+          <ActionForm action={createCdnMapping} submit="Create mapping">
             <div className="grid gap-4 md:grid-cols-3">
               <Field label="Domain">
                 <input name="domain" required placeholder="cdn.example.com" className={inputCls} />
@@ -81,4 +111,25 @@ export default async function CdnPage() {
       </Card>
     </>
   );
+}
+
+async function createCdnMapping(_p: ActionState, fd: FormData): Promise<ActionState> {
+  try {
+    const res = await fetch("/api/m2/cdn/mapping", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        domain: fd.get("domain"),
+        origin: fd.get("origin"),
+        provider: fd.get("provider"),
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      return { ok: false, error: err.detail || `Failed with status ${res.status}` };
+    }
+    return { ok: true, message: "CDN mapping created" };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Failed to create CDN mapping" };
+  }
 }

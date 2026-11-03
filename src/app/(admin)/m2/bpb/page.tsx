@@ -1,19 +1,46 @@
 import { requirePage } from "@/lib/auth";
-import { updateBpbPolicyAction } from "@/app/actions/m2";
-import { getBpbPolicy } from "@/lib/m2";
 import { db } from "@/db";
 import { nodes } from "@/db/schema";
-import { ActionForm } from "@/components/ActionForm";
 import { Badge, Card, Field, inputCls, PageHeader, Table, Td } from "@/components/ui";
+import { ActionForm } from "@/components/ActionForm";
+import type { ActionState } from "@/lib/action-helpers";
+
+export type BpbPolicy = {
+  id: number;
+  nodeId: number;
+  bandwidthLimit: number;
+  priority: number;
+  updatedAt: string;
+};
+
+async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(path, {
+    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    ...init,
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`API ${path} failed: ${res.status}`);
+  return res.json();
+}
 
 export default async function BpbPage() {
   const me = await requirePage("viewer");
-  const nodeRows = await db.select({ id: nodes.id, name: nodes.name }).from(nodes).orderBy(nodes.id);
-  // Try to get BPB policy for the first node (or none)
-  let policy: any = null;
+  const nodeRows = await db
+    .select({ id: nodes.id, name: nodes.name })
+    .from(nodes)
+    .orderBy(nodes.id);
+
+  let policy: BpbPolicy | null = null;
+  let policyError: string | null = null;
   if (nodeRows.length > 0) {
-    const result = await getBpbPolicy(nodeRows[0].id);
-    if (result) policy = result;
+    try {
+      const result = await fetchJson<{ policy: BpbPolicy | null }>(
+        `/api/m2/bpb/policy?nodeId=${nodeRows[0].id}`
+      );
+      policy = result.policy;
+    } catch (e) {
+      policyError = e instanceof Error ? e.message : "Failed to load BPB policy";
+    }
   }
 
   return (
@@ -22,6 +49,12 @@ export default async function BpbPage() {
         title="BPB (Bandwidth Policy Bridge)"
         subtitle="BPB enforces per-user rate limits on shaped egress. BPB is a hard-quota candidate once evidence is verified."
       />
+
+      {policyError && (
+        <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
+          {policyError}
+        </div>
+      )}
 
       <Card title="Current policy" className="mb-6">
         {policy ? (
@@ -50,7 +83,7 @@ export default async function BpbPage() {
 
       {me.role !== "viewer" && (
         <Card title="Update BPB policy">
-          <ActionForm action={updateBpbPolicyAction} submit="Update policy">
+          <ActionForm action={updateBpbPolicy} submit="Update policy">
             <input type="hidden" name="nodeId" value={String(nodeRows[0]?.id ?? "")} />
             <div className="grid gap-4 md:grid-cols-3">
               <Field label="Node">
@@ -74,4 +107,25 @@ export default async function BpbPage() {
       )}
     </>
   );
+}
+
+async function updateBpbPolicy(_p: ActionState, fd: FormData): Promise<ActionState> {
+  try {
+    const res = await fetch("/api/m2/bpb/policy", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        nodeId: Number(fd.get("nodeId")),
+        bandwidthLimit: Number(fd.get("bandwidthLimit")),
+        priority: Number(fd.get("priority")),
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      return { ok: false, error: err.detail || `Failed with status ${res.status}` };
+    }
+    return { ok: true, message: "BPB policy updated" };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Failed to update BPB policy" };
+  }
 }
