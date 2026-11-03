@@ -13,23 +13,26 @@ export async function drainOutbox(limit = 100) {
             where status = 'pending' and run_after <= now()
             order by id limit 1 for update skip locked`,
       );
-      const job = rows.rows[0];
+      // drizzle runs raw `sql` templates in rowMode "array", so rows come back as
+      // positional arrays [id, kind, payload, attempts], not keyed objects.
+      const job = rows.rows[0] as unknown as [number, string, Record<string, unknown>, number];
       if (!job) return false;
+      const [jobId, jobKind, jobPayload, jobAttempts] = job;
       try {
-        if (job.kind === "quota.evaluate") {
-          await evaluateUserPolicy(tx, Number(job.payload.userId));
+        if (jobKind === "quota.evaluate") {
+          await evaluateUserPolicy(tx, Number(jobPayload.userId));
         }
-        await tx.update(outboxJobs).set({ status: "done", doneAt: new Date(), attempts: job.attempts + 1 }).where(eq(outboxJobs.id, job.id));
+        await tx.update(outboxJobs).set({ status: "done", doneAt: new Date(), attempts: jobAttempts + 1 }).where(eq(outboxJobs.id, jobId));
       } catch (e) {
         await tx
           .update(outboxJobs)
           .set({
-            attempts: job.attempts + 1,
-            status: job.attempts + 1 >= 5 ? "failed" : "pending",
-            runAfter: new Date(Date.now() + 30_000 * (job.attempts + 1)),
+            attempts: jobAttempts + 1,
+            status: jobAttempts + 1 >= 5 ? "failed" : "pending",
+            runAfter: new Date(Date.now() + 30_000 * (jobAttempts + 1)),
             lastError: e instanceof Error ? e.message.slice(0, 300) : "error",
           })
-          .where(eq(outboxJobs.id, job.id));
+          .where(eq(outboxJobs.id, jobId));
       }
       return true;
     });
