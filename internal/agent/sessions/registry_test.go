@@ -3,6 +3,7 @@ package sessions
 import (
 	"errors"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -258,5 +259,55 @@ func TestPruneIdleRequiresPositiveTimeout(t *testing.T) {
 		if _, err := registry.PruneIdle(timeout); !errors.Is(err, ErrInvalidIdleTimeout) {
 			t.Fatalf("timeout %s: expected invalid idle timeout, got %v", timeout, err)
 		}
+	}
+}
+
+
+func TestConcurrentRevocationAndIdlePruneCloseSessionOnlyOnce(t *testing.T) {
+	now := time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC)
+	registry := NewRegistryWithClock(func() time.Time { return now })
+	if _, err := registry.ReconcileEntitlements(map[string]uint64{"principal-a": 1}); err != nil {
+		t.Fatal(err)
+	}
+	var closeCalls atomic.Int32
+	closeStarted := make(chan struct{})
+	releaseClose := make(chan struct{})
+	if err := registry.Register("session-a", "principal-a", 1, closerFunc(func() error {
+		if closeCalls.Add(1) == 1 {
+			close(closeStarted)
+		}
+		<-releaseClose
+		return nil
+	})); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(11 * time.Minute)
+
+	reconcileDone := make(chan struct{})
+	go func() {
+		_, _ = registry.ReconcileEntitlements(nil)
+		close(reconcileDone)
+	}()
+	select {
+	case <-closeStarted:
+	case <-time.After(time.Second):
+		t.Fatal("revocation did not begin closing the runtime session")
+	}
+
+	report, err := registry.PruneIdle(10 * time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Closed != 0 || report.CloseFailures != nil {
+		t.Fatalf("idle prune raced an in-flight close: %+v", report)
+	}
+	close(releaseClose)
+	select {
+	case <-reconcileDone:
+	case <-time.After(time.Second):
+		t.Fatal("revocation did not finish")
+	}
+	if got := closeCalls.Load(); got != 1 {
+		t.Fatalf("runtime session was closed %d times, want exactly once", got)
 	}
 }
