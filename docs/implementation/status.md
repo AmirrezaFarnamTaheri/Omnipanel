@@ -122,3 +122,31 @@ report is written under ignored `.data/lab-runtime/evidence/`; it is not copied
 into `capabilities/runtime.json`, `capabilities/clients.json` or the reviewed
 lab evidence registry. A green smoke workflow does not make the runtime
 production-qualified.
+
+## Selective S-UI / 3X-UI integration increment
+
+The source audit and adoption decisions are documented in
+`docs/research/source-project-review.md` and ADR 0002. Both reference projects
+declare GPL-3.0 and their READMEs warn against production use. No source code was
+copied or vendored.
+
+Implemented:
+- `src/lib/protocol-compatibility.ts` provides a narrow explicit matrix for
+  sing-box/Xray VLESS Reality/Vision over TCP and sing-box/standalone Hysteria2
+  over UDP. It validates server name, Reality public key, short ID, flow and
+  fingerprint before subscription IR admission.
+- `src/lib/subscription.ts` now excludes incompatible endpoint configurations
+  with an explicit reason before any emitter can see them.
+- `internal/agent/sessions` tracks opaque runtime session IDs, endpoint-principal
+  identity and credential generation. It distinguishes successful closure from
+  sessions that can only be blocked from opening new routed flows. Close callbacks
+  run outside the registry lock.
+
+The new Go registry and TypeScript compatibility tests are synthetic unit tests.
+The session registry is not yet connected to Sing-box, Xray or Hysteria2 drivers;
+the protocol matrix is not exact-build qualification. No new runtime, client,
+metering or production capability is activated by this increment.
+
+Deferred from the source review: deterministic host ordering and per-format
+exclusions, client-side balancer documents/observatory, event streaming, bulk
+lifecycle/renewal and dry-run-first S-UI/3X-UI migration.
