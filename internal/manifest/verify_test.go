@@ -102,7 +102,8 @@ func TestTamperingAndTrustFailures(t *testing.T) {
 		changed := bytes.Replace(wire, []byte(`"structuralSequence":2`), []byte(`"structuralSequence":4`), 1)
 		if _, err := verifier.Verify(changed); err == nil {
 			t.Fatal("tampered manifest accepted")
-		})
+		}
+	})
 	for _, tc := range []struct {
 		name   string
 		mutate func(*Verifier, *Manifest)

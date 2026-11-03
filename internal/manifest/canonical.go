@@ -357,5 +357,6 @@ func checkStringArray(value any, minimum, maximum int) error {
 		if _, ok := element.(string); !ok {
 			return errors.New("non-string array element")
 		}
+	}
 	return nil
 }
