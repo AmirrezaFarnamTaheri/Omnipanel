@@ -214,6 +214,20 @@ export const CLIENT_REGISTRY = [
 
 export type ClientFormat = (typeof CLIENT_REGISTRY)[number]["format"];
 
+export type ClientDefinition = (typeof CLIENT_REGISTRY)[number];
+
+/** A client format is admitted only after protocol support and release evidence are verified. */
+export function clientAdmissionReason(client: ClientDefinition | null, protocol: string): string | null {
+  if (!client) return null;
+  if (!(client.protocols as readonly string[]).includes(protocol)) {
+    return `Client format ${client.label} does not support ${protocol}`;
+  }
+  if (client.evidence !== "verified") {
+    return `Client format ${client.label} has no verified exact-release compatibility evidence`;
+  }
+  return null;
+}
+
 export const findCapability = (runtime: string, protocol: string) =>
   RUNTIME_CAPABILITIES.find((c) => c.runtime === runtime && c.protocol === protocol);
 
