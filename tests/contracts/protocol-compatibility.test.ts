@@ -1,9 +1,8 @@
 import "./setup-database";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { validateInboundCompatibility, type InboundCompatibilityInput } from "../../src/lib/protocol-compatibility";
-
 import { CLIENT_REGISTRY } from "../../src/lib/capabilities";
+import { validateInboundCompatibility, type InboundCompatibilityInput } from "../../src/lib/protocol-compatibility";
 
 const reality = (changes: Partial<InboundCompatibilityInput> = {}): InboundCompatibilityInput => ({
   runtime: "singbox",
