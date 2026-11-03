@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-script_dir="$(cd -- "$(dirname -- "\${BASH_SOURCE[0]}")" && pwd)"
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "$script_dir/../.." && pwd)"
-sing_box_bin="\${SING_BOX_BIN:-$repo_root/.data/lab-runtime/sing-box}"
-metadata_file="\${SING_BOX_METADATA:-\${sing_box_bin%/*}/build-metadata.json}"
-evidence_dir="\${EVIDENCE_DIR:-$repo_root/.data/lab-runtime/evidence}"
+sing_box_bin="${SING_BOX_BIN:-$repo_root/.data/lab-runtime/sing-box}"
+metadata_file="${SING_BOX_METADATA:-${sing_box_bin%/*}/build-metadata.json}"
+evidence_dir="${EVIDENCE_DIR:-$repo_root/.data/lab-runtime/evidence}"
 
 if [[ "$(id -u)" -ne 0 ]]; then
   echo "This isolated network-namespace test must run as root (for example: sudo make test-runtime)." >&2
@@ -33,7 +33,7 @@ if ! grep -Fq "$runtime_version" <<<"$runtime_output"; then
 fi
 
 mkdir -p "$evidence_dir"
-temp_dir="$(mktemp -d "\${TMPDIR:-/tmp}/omni-reality-lab.XXXXXX")"
+temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/omni-reality-lab.XXXXXX")"
 server_ns="omni-srv-$$"
 client_ns="omni-cli-$$"
 server_veth="omnis$$"

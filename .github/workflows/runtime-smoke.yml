@@ -34,9 +34,9 @@ jobs:
       attestations: write
       id-token: write
     env:
-      SING_BOX_BIN: \${{ github.workspace }}/.data/lab-runtime/sing-box
-      SING_BOX_METADATA: \${{ github.workspace }}/.data/lab-runtime/build-metadata.json
-      EVIDENCE_DIR: \${{ github.workspace }}/.data/lab-runtime/evidence
+      SING_BOX_BIN: ${{ github.workspace }}/.data/lab-runtime/sing-box
+      SING_BOX_METADATA: ${{ github.workspace }}/.data/lab-runtime/build-metadata.json
+      EVIDENCE_DIR: ${{ github.workspace }}/.data/lab-runtime/evidence
     steps:
       - name: Check out OmniPanel
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -77,7 +77,7 @@ jobs:
       - name: Verify the runtime build attestation
         if: github.event_name != 'pull_request'
         env:
-          GH_TOKEN: \${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           gh attestation verify "$SING_BOX_BIN" \
             --repo "$GITHUB_REPOSITORY" \

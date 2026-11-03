@@ -5,11 +5,11 @@ readonly upstream_tag="v1.14.4"
 readonly upstream_commit="c005f35300ce76427dc285481ec5695f5b179cd2"
 readonly runtime_version="1.14.4+omni.1"
 
-script_dir="$(cd -- "$(dirname -- "\${BASH_SOURCE[0]}")" && pwd)"
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "$script_dir/../.." && pwd)"
-output="\${SING_BOX_BIN:-$repo_root/.data/lab-runtime/sing-box}"
-metadata="\${SING_BOX_METADATA:-\${output%/*}/build-metadata.json}"
-source_dir="$(mktemp -d "\${TMPDIR:-/tmp}/omni-sing-box.XXXXXX")"
+output="${SING_BOX_BIN:-$repo_root/.data/lab-runtime/sing-box}"
+metadata="${SING_BOX_METADATA:-${output%/*}/build-metadata.json}"
+source_dir="$(mktemp -d "${TMPDIR:-/tmp}/omni-sing-box.XXXXXX")"
 
 cleanup() {
   rm -rf "$source_dir"
