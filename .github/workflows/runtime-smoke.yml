@@ -24,9 +24,6 @@ permissions:
 
 jobs:
   reality-runtime:
-    # A same-repository PR already gets a push-triggered run on its branch.
-    # Keep the PR run for forks, where the base repository's push event cannot run.
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     name: Build, attest and exercise Reality/Vision locally
     runs-on: ubuntu-24.04
     permissions:
@@ -69,13 +66,13 @@ jobs:
       # Attest only trusted repository pushes or manual runs. Fork PRs still run
       # the smoke test but cannot mint attestations for this repository.
       - name: Attest the built runtime artifact
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: .data/lab-runtime/sing-box
 
       - name: Verify the runtime build attestation
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
