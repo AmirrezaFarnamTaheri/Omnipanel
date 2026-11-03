@@ -131,7 +131,7 @@ async function main() {
   } = await import(path.join(repo, "src/lib/subscription.ts"));
   const { verifyAuditChain } = await import(path.join(repo, "src/lib/audit.ts"));
   const { drainOutbox } = await import(path.join(repo, "src/lib/outbox.ts"));
-  const { findCapability } = await import(path.join(repo, "src/lib/capabilities.ts"));
+  const { findCapability, findCapabilityByKey, isAdmissible, isHardQuotaCapable } = await import(path.join(repo, "src/lib/capabilities.ts"));
 
   const failures: string[] = [];
   const check = (name: string, cond: boolean, detail = "") => {
@@ -170,6 +170,29 @@ async function main() {
   } catch (e: any) {
     check("loopback node address rejected", e.status === 422);
   }
+
+  /* ---------- 5b. M2 capabilities (CDN, relay, WARP, BPB) ---------- */
+  const capXray = findCapability("xray", "vless-reality-vision");
+  check("M2 capability registry has Xray Reality/Vision", !!capXray);
+  check("M2 Xray capability is gated", capXray?.gated === true);
+  const capCdn = findCapabilityByKey("cdn:http");
+  check("M2 capability registry has CDN HTTP", !!capCdn);
+  check("M2 CDN capability runtime is cdn", capCdn?.runtime === "cdn");
+  const capRelay = findCapabilityByKey("relay:grpc");
+  check("M2 capability registry has Relay gRPC", !!capRelay);
+  check("M2 Relay capability transport is tcp", capRelay?.transport === "tcp");
+  const capWarp = findCapabilityByKey("warp:wireguard");
+  check("M2 capability registry has WARP WireGuard", !!capWarp);
+  check("M2 WARP capability default port 1701", capWarp?.defaultPort === 1701);
+  const capBpb = findCapabilityByKey("bpb:http");
+  check("M2 capability registry has BPB HTTP", !!capBpb);
+  check("M2 BPB capability is hardQuota candidate", capBpb?.hardQuotaCandidate === true);
+
+  // Gating: gated capabilities are inadmissible without admission evidence
+  const emptyEv = new Map<string, "verified" | "failed">();
+  check("M2 gated capability inadmissible without evidence", !isAdmissible(capXray!, emptyEv));
+  check("M2 ungated capability admissible without evidence", isAdmissible(findCapability("singbox", "vless-reality-vision")!, emptyEv));
+  check("M2 hardQuota capable requires hardQuota evidence", !isHardQuotaCapable(capBpb!, emptyEv));
 
   /* ---------- 6. Users, plans, provisioning ---------- */
   const plan = await createPlan(actor, { name: "Lite 20 GB", quotaGb: 20, enforcement: "metered", idemKey: "p-1" });

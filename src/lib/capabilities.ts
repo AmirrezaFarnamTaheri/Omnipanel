@@ -12,8 +12,8 @@ export type Claim = "admission" | "metering" | "revocation" | "hardQuota";
 
 export type RuntimeCapability = {
   key: string;
-  runtime: "singbox" | "xray" | "hysteria2";
-  protocol: "vless-reality-vision" | "hysteria2";
+  runtime: "singbox" | "xray" | "hysteria2" | "cdn" | "relay" | "warp" | "bpb";
+  protocol: "vless-reality-vision" | "hysteria2" | "http" | "grpc" | "wireguard";
   transport: "tcp" | "udp";
   defaultPort: number;
   gated: boolean; // requires verified "admission" evidence before use
@@ -97,6 +97,78 @@ export const RUNTIME_CAPABILITIES: RuntimeCapability[] = [
     credential: "uuid",
     notes: "Optional, gated until admission evidence is recorded.",
   },
+  {
+    key: "cdn:http",
+    runtime: "cdn",
+    protocol: "http",
+    transport: "tcp",
+    defaultPort: 443,
+    gated: true,
+    metering: {
+      source: "CDN provider edge analytics",
+      counter: "delta",
+      direction: "edge-to-client bytes",
+      note: "CDN billing is provider-reported; reconcile against origin metering.",
+    },
+    revocation: { newSessions: "DNS failover immediate", existingSessions: "TTL-bound" },
+    hardQuotaCandidate: false,
+    credential: "uuid",
+    notes: "M2 CDN integration; gated until admission evidence recorded.",
+  },
+  {
+    key: "relay:grpc",
+    runtime: "relay",
+    protocol: "grpc",
+    transport: "tcp",
+    defaultPort: 443,
+    gated: true,
+    metering: {
+      source: "relay tunnel flow counters",
+      counter: "cumulative",
+      direction: "tunnel ingress/egress",
+      note: "Relay nodes add a hop; per-flow attribution required.",
+    },
+    revocation: { newSessions: "Tunnel teardown", existingSessions: "Drain on tunnel close" },
+    hardQuotaCandidate: false,
+    credential: "uuid",
+    notes: "M2 relay node integration; gated until admission evidence recorded.",
+  },
+  {
+    key: "warp:wireguard",
+    runtime: "warp",
+    protocol: "wireguard",
+    transport: "udp",
+    defaultPort: 1701,
+    gated: true,
+    metering: {
+      source: "WARP interface counters",
+      counter: "cumulative",
+      direction: "WARP tunnel bytes",
+      note: "WARP provides client-to-edge connectivity.",
+    },
+    revocation: { newSessions: "Peer config revoke", existingSessions: "Keepalive timeout" },
+    hardQuotaCandidate: false,
+    credential: "uuid",
+    notes: "M2 WARP integration; gated until admission evidence recorded.",
+  },
+  {
+    key: "bpb:http",
+    runtime: "bpb",
+    protocol: "http",
+    transport: "tcp",
+    defaultPort: 443,
+    gated: true,
+    metering: {
+      source: "BPB bandwidth policy engine",
+      counter: "cumulative",
+      direction: "shaped egress",
+      note: "Bandwidth Policy Bridge enforces per-user rate limits.",
+    },
+    revocation: { newSessions: "Policy update immediate", existingSessions: "Token-bucket exhaustion" },
+    hardQuotaCandidate: true,
+    credential: "uuid",
+    notes: "M2 BPB integration; hard quota candidate once evidence verified.",
+  },
 ];
 
 export const CLIENT_REGISTRY = [
@@ -133,6 +205,9 @@ export type ClientFormat = (typeof CLIENT_REGISTRY)[number]["format"];
 
 export const findCapability = (runtime: string, protocol: string) =>
   RUNTIME_CAPABILITIES.find((c) => c.runtime === runtime && c.protocol === protocol);
+
+export const findCapabilityByKey = (key: string) =>
+  RUNTIME_CAPABILITIES.find((c) => c.key === key);
 
 export type EvidenceMap = Map<string, "verified" | "failed">; // `${key}|${claim}` -> latest status
 
