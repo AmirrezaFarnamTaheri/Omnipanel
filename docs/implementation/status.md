@@ -189,3 +189,20 @@ No binary has been accepted, rendered or applied, and no native validation,
 quota guarantee, ingress policy, real session revocation or lab gate is passed.
 The separately approved and authenticated runtime-driver implementations must
 supply these behaviors, with explicit release evidence.
+
+## Sing-box Reality/Vision inbound fragment renderer (foundation only)
+
+`internal/drivers/singbox` supplies a deterministic, strictly typed
+VLESS/Reality/Vision **inbound fragment** renderer. It checks the referenced
+verified manifest decision, pinned runtime build identity, matching listener,
+allowlisted protocol capability, protected-egress policy marker, member IDs,
+UUIDs, short IDs, and Reality key encoding. Stable member sorting and
+input-rejection tests are included. The emitted artifact contains secrets; it
+must never be logged or returned to untrusted callers.
+
+This renderer **does not emit a deployable complete configuration**: it has no
+route/outbounds, no on-host firewall protection, no native Sing-box validation,
+no privileged helper, and no reconciliation/rollback. `Validate`,
+`Preflight`, `ApplyStructure`, metering and revocation still return
+`ErrUnsupportedCapability` on this adapter. Real binary and client evidence
+are still blocked by the attestation limitation documented above.

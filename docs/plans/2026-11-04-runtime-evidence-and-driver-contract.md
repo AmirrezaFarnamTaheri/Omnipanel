@@ -121,3 +121,10 @@ synthetic negative tests. The separate Sing-box renderer/native validation
 and signed artifact provenance remain pending. This task is **not completed**;
 the private GitHub attestation endpoint is not available in this user-owned
 repository, and no production gate is unblocked.
+
+
+**Progress note (4 November 2026):** The first Sing-box Reality/Vision inbound
+fragment renderer now exists with deterministic output and fail-closed
+structural input checks. It does not claim full native syntax validation,
+protected egress composition or agent deployment. Task 2 remains pending until
+a real native validator and signed-artifact qualification are integrated.

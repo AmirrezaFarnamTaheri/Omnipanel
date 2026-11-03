@@ -137,3 +137,15 @@ License version 3 only](LICENSE) (`GPL-3.0-only`). Third-party components,
 assets and dependencies retain their own copyrights, notices and license terms.
 GPL-3.0 compatibility does not authorize copying the separately CC BY-NC-SA
 licensed Hiddify Panel submodule without permission.
+
+## Runtime-driver boundary (Go foundation only)
+
+`internal/drivers` defines typed capabilities, component plans and runtime
+operations. Unimplemented methods fail closed with
+`ErrUnsupportedCapability`, never fabricated success. The
+`internal/drivers/singbox` adapter can render a deterministic
+VLESS/Reality/Vision **inbound fragment**, with strict build/manifest matching,
+credential shape checks and stable ordering. The fragment contains secret
+material and is not a complete deployable configuration: protected egress,
+native validator execution, application, journaling and rollback are not
+implemented. Its Go unit tests are included in `make test-go`.
