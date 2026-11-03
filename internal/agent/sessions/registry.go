@@ -50,6 +50,7 @@ type trackedSession struct {
 	createdAt            time.Time
 	lastSeenAt           time.Time
 	blocked              bool
+	closing              bool
 	closer               io.Closer
 }
 
@@ -216,7 +217,7 @@ func (r *Registry) PruneIdle(maxIdle time.Duration) (CleanupReport, error) {
 	var report CleanupReport
 	var targets []closeTarget
 	for sessionID, session := range r.sessions {
-		if now.Sub(session.lastSeenAt) <= maxIdle {
+		if now.Sub(session.lastSeenAt) <= maxIdle || session.closing {
 			continue
 		}
 		report.Expired++
@@ -226,6 +227,7 @@ func (r *Registry) PruneIdle(maxIdle time.Duration) (CleanupReport, error) {
 			delete(r.sessions, sessionID)
 			continue
 		}
+		session.closing = true
 		targets = append(targets, closeTarget{session: session})
 	}
 	r.mu.Unlock()
@@ -237,6 +239,11 @@ func (r *Registry) PruneIdle(maxIdle time.Duration) (CleanupReport, error) {
 				SessionID: session.id,
 				Err:       err,
 			})
+			r.mu.Lock()
+			if r.sessions[session.id] == session {
+				session.closing = false
+			}
+			r.mu.Unlock()
 			continue
 		}
 		report.Closed++
@@ -296,6 +303,7 @@ func (r *Registry) blockLocked(matches func(*trackedSession) bool) (RevocationRe
 			report.Unclosable++
 			continue
 		}
+		session.closing = true
 		targets = append(targets, closeTarget{session: session})
 	}
 	return report, targets
@@ -312,6 +320,11 @@ func (r *Registry) closeTargets(report *RevocationReport, targets []closeTarget)
 				SessionID: session.id,
 				Err:       err,
 			})
+			r.mu.Lock()
+			if r.sessions[session.id] == session {
+				session.closing = false
+			}
+			r.mu.Unlock()
 			continue
 		}
 
