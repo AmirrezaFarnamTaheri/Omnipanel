@@ -64,7 +64,7 @@ The subscription compiler also rejects a path when the requested client format d
 
 ### 2. Runtime-neutral session revocation primitive
 
-Added `internal/agent/sessions`, a clean-room Go registry that associates an opaque runtime session ID with an endpoint-principal ID and credential generation.
+Added `internal/agent/sessions`, an independently implemented Go registry that associates an opaque runtime session ID with an endpoint-principal ID and credential generation.
 
 It supports:
 - Registration only against the current authorized principal/generation snapshot.
