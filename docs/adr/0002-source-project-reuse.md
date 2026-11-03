@@ -31,7 +31,7 @@ The first clean-room increment adds:
 2. `internal/agent/sessions`: a runtime-neutral registry keyed by opaque
    runtime session ID, endpoint-principal ID and credential generation. It
    closes sessions outside its lock where a closer exists; otherwise it blocks
-   future routed flows and reports that the existing session may remain.
+   future routed flows and reports that the existing session may remain. It also prunes idle sessions and retries failed runtime closers.
 
 These components are not yet connected to real runtime drivers. A structural
 preflight does not qualify a binary or client, and a session registry does not
