@@ -130,3 +130,11 @@ fragment renderer now exists with deterministic output and fail-closed
 structural input checks. It does not claim full native syntax validation,
 protected egress composition or agent deployment. Task 2 remains pending until
 a real native validator and signed-artifact qualification are integrated.
+
+
+**Lab regression evidence (4 November 2026):** Sigstore bundle verification
+passed on runtime run 41738645706, then the real Sing-box server rejected the
+custom binary for missing `with_utls`. The source-pinned build was revised to
+`1.14.4+omni.2`; the signed build-metadata verifier now requires both
+`with_utls` and `with_v2ray_api` and tests reject each missing tag. The
+result of a subsequent native runtime run remains the separate acceptance check.

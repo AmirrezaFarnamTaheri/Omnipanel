@@ -8,7 +8,7 @@ or M0 walking skeleton. The checked-in contract fixture is deliberately fake.
 
 `.github/workflows/runtime-smoke.yml` builds Sing-box v1.14.4 from the fixed
 upstream commit `c005f35300ce76427dc285481ec5695f5b179cd2`. It checks GitHub's
-cryptographic commit-verification result, builds the optional `with_v2ray_api`
+cryptographic commit-verification result, builds the required `with_utls` (Reality) and optional `with_v2ray_api` (metering)
 tag needed for per-user counters, signs both the runtime binary and its build
 metadata using keyless Sigstore/Cosign, verifies each bundle against the exact
 GitHub workflow/ref identity and OIDC issuer, and retains the binary, metadata

@@ -62,13 +62,13 @@ jq --exit-status --arg digest "$artifact_digest" '
     "version"
   ])
   and .runtime == "sing-box"
-  and .version == "1.14.4+omni.1"
+  and .version == "1.14.4+omni.2"
   and .sourceRepository == "SagerNet/sing-box"
   and .upstreamTag == "v1.14.4"
   and .upstreamCommit == "c005f35300ce76427dc285481ec5695f5b179cd2"
   and .sourceSignatureStatus == "github-api-verified"
   and .goVersion == "go version go1.26.10 linux/amd64"
-  and .buildTags == "with_v2ray_api,badlinkname,tfogo_checklinkname0"
+  and .buildTags == "with_v2ray_api,with_utls,badlinkname,tfogo_checklinkname0"
   and .artifactSha256 == $digest
 ' "$metadata" >/dev/null
 

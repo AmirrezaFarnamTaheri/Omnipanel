@@ -51,13 +51,13 @@ jq -n \
   --arg digest "$artifact_digest" \
   '{
     runtime: "sing-box",
-    version: "1.14.4+omni.1",
+    version: "1.14.4+omni.2",
     sourceRepository: "SagerNet/sing-box",
     upstreamTag: "v1.14.4",
     upstreamCommit: "c005f35300ce76427dc285481ec5695f5b179cd2",
     sourceSignatureStatus: "github-api-verified",
     goVersion: "go version go1.26.10 linux/amd64",
-    buildTags: "with_v2ray_api,badlinkname,tfogo_checklinkname0",
+    buildTags: "with_v2ray_api,with_utls,badlinkname,tfogo_checklinkname0",
     artifactSha256: $digest
   }' > "$metadata"
 
@@ -82,6 +82,14 @@ printf 'runtime binary fixture\n' > "$artifact"
 
 jq '.version = "latest"' "$metadata" > "$temp_dir/invalid-metadata.json"
 assert_failure "unapproved runtime version" "$verifier" "$artifact" "$temp_dir/invalid-metadata.json" "$artifact_bundle" "$metadata_bundle"
+
+# Regression: runtime startup previously failed because a signed custom build
+# declared only the V2Ray statistics API and lacked required Reality/uTLS.
+jq '.buildTags = "with_v2ray_api,badlinkname,tfogo_checklinkname0"' "$metadata" > "$temp_dir/missing-utls.json"
+assert_failure "missing required Reality uTLS build tag" "$verifier" "$artifact" "$temp_dir/missing-utls.json" "$artifact_bundle" "$metadata_bundle"
+
+jq '.buildTags = "with_utls,badlinkname,tfogo_checklinkname0"' "$metadata" > "$temp_dir/missing-stats.json"
+assert_failure "missing required per-user stats build tag" "$verifier" "$artifact" "$temp_dir/missing-stats.json" "$artifact_bundle" "$metadata_bundle"
 
 assert_failure "missing artifact bundle" "$verifier" "$artifact" "$metadata" "$temp_dir/missing.bundle" "$metadata_bundle"
 

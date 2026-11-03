@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 readonly upstream_tag="v1.14.4"
 readonly upstream_commit="c005f35300ce76427dc285481ec5695f5b179cd2"
-readonly runtime_version="1.14.4+omni.1"
+readonly runtime_version="1.14.4+omni.2"
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "$script_dir/../.." && pwd)"
@@ -47,9 +47,10 @@ if [[ "$actual_commit" != "$upstream_commit" ]]; then
   exit 1
 fi
 
-# The official default release build omits V2Ray API. Build only the API tag
-# required for this metering experiment; do not inherit unrelated integrations.
-build_tags="with_v2ray_api,badlinkname,tfogo_checklinkname0"
+# Sing-box Reality requires uTLS and the local metering test requires the
+# optional V2Ray statistics API. Declare BOTH features in the pinned build and
+# signed metadata; omitting with_utls causes the Reality inbound to fail closed.
+build_tags="with_v2ray_api,with_utls,badlinkname,tfogo_checklinkname0"
 shared_ldflags="$(cat "$source_dir/release/LDFLAGS")"
 
 (

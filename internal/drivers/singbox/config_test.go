@@ -14,7 +14,7 @@ import (
 
 func approvedTestPlan() (drivers.BuildIdentity, drivers.ComponentPlan) {
 	digest := strings.Repeat("a", 64)
-	build := drivers.BuildIdentity{Runtime: "singbox", Version: "1.14.4+omni.1", ArtifactDigest: digest}
+	build := drivers.BuildIdentity{Runtime: "singbox", Version: "1.14.4+omni.2", ArtifactDigest: digest}
 	component := manifest.Component{ID: "reality", Driver: "singbox", RuntimeVersion: build.Version, ArtifactDigest: build.ArtifactDigest,
 		ConfigurationDigest: strings.Repeat("b", 64), ConfigurationRef: "reality-config",
 		Listeners: []manifest.Listener{{Address: "0.0.0.0", Port: 24443, Transport: "tcp"}}, Disruption: "listener_restart"}

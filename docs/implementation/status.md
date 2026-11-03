@@ -208,3 +208,17 @@ no privileged helper, and no reconciliation/rollback. `Validate`,
 `ErrUnsupportedCapability` on this adapter. Native binary validation and representative external-client evidence remain
 unqualified. Keyless Sigstore provenance is available for local lab experiments,
 but neither it nor this renderer proves deployable network-service behavior.
+
+## Local Reality runtime smoke failure and build-tag correction (4 November 2026)
+
+The first Sigstore-signed runtime attempt
+([run 41738645706](https://github.com/AmirrezaFarnamTaheri/Omnipanel/actions/runs/41738645706))
+passed compilation, signing, bundle verification and upload but failed on
+Sing-box startup: `uTLS, which is required by reality is not included in this
+build, rebuild with -tags with_utls`. No actual L3 connectivity or counter
+measurement completed in that run. The source-pinned lab build has therefore
+been revised to `1.14.4+omni.2` with both `with_utls` and `with_v2ray_api`.
+The Sigstore-verified signed metadata and negative tests require exactly both
+tags; a build missing either is rejected. The next runtime run must establish
+independent success before lab evidence can be reviewed. M0/M1 gates remain
+blocked regardless of a successful local namespace run.
