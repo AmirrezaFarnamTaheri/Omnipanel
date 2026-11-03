@@ -12,7 +12,7 @@ export type AccessPath = {
   nodeName: string;
   server: string;
   port: number;
-  protocol: "vless-reality-vision" | "hysteria2" | "xray-vless-reality-vision";
+  protocol: "vless-reality-vision" | "hysteria2";
   transport: "tcp" | "udp";
   runtime: "singbox" | "xray" | "hysteria2";
   credential: string;
@@ -107,9 +107,9 @@ export async function buildIR(userId: number, client: ClientFormat | null = null
           runtime: ib.runtime as AccessPath["runtime"],
           credential: decryptSecret(p.credentialEnc),
           sni: ib.sni,
-          tlsModel: ib.protocol === "vless-reality-vision" || ib.protocol === "xray-vless-reality-vision" ? "reality" : "tls-self-managed",
+          tlsModel: ib.protocol === "vless-reality-vision" ? "reality" : "tls-self-managed",
           reality:
-            ib.protocol === "vless-reality-vision" || ib.protocol === "xray-vless-reality-vision"
+            ib.protocol === "vless-reality-vision"
               ? {
                   publicKey: ib.params.realityPublicKey,
                   shortId: ib.params.shortId,
@@ -170,7 +170,7 @@ export function emitSingbox(ir: IR): string {
               reality: { enabled: true, public_key: p.reality!.publicKey, short_id: p.reality!.shortId },
             },
           }
-        : {
+      : {
             type: "hysteria2",
             tag: p.tag,
             server: p.server,
@@ -255,7 +255,7 @@ const q = (s: string | number) => JSON.stringify(s); // JSON strings are valid Y
 export function emitMihomo(ir: IR): string {
   const lines = ["proxies:"];
   for (const p of ir.paths) {
-    if (p.protocol === "vless-reality-vision" || p.protocol === "xray-vless-reality-vision") {
+    if (p.protocol === "vless-reality-vision") {
       lines.push(
         `  - {name: ${q(p.tag)}, type: vless, server: ${q(p.server)}, port: ${p.port}, uuid: ${q(p.credential)}, network: tcp, udp: true, tls: true, flow: ${q(p.reality!.flow)}, servername: ${q(p.sni)}, client-fingerprint: ${q(p.reality!.fingerprint)}, reality-opts: {public-key: ${q(p.reality!.publicKey)}, short-id: ${q(p.reality!.shortId)}}}`,
       );
@@ -281,7 +281,7 @@ const host = (s: string) => (s.includes(":") ? `[${s}]` : s);
 
 export function emitUris(ir: IR): string {
   const uris = ir.paths.map((p) =>
-    p.protocol === "vless-reality-vision" || p.protocol === "xray-vless-reality-vision"
+    p.protocol === "vless-reality-vision"
       ? `vless://${p.credential}@${host(p.server)}:${p.port}?encryption=none&flow=${p.reality!.flow}&security=reality&sni=${encodeURIComponent(p.sni)}&fp=${p.reality!.fingerprint}&pbk=${p.reality!.publicKey}&sid=${p.reality!.shortId}&type=tcp#${encodeURIComponent(p.tag)}`
       : `hysteria2://${encodeURIComponent(p.credential)}@${host(p.server)}:${p.port}?sni=${encodeURIComponent(p.sni)}#${encodeURIComponent(p.tag)}`,
   );
