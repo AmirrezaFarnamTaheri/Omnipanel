@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { CompileError, compile, type IR } from "../../src/lib/subscription";
+import type { IR } from "../../src/lib/subscription";
+
+process.env.DATABASE_URL ??= "postgres://test:test@127.0.0.1:5432/omnipanel_test";
+const { CompileError, compile } = await import("../../src/lib/subscription");
 
 const hysteriaIR: IR = {
   user: { id: 1, name: "test-user", status: "active" },
