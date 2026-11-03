@@ -136,8 +136,9 @@ Implemented:
   over UDP. It validates server name, Reality public key, short ID, flow and
   fingerprint before subscription IR admission.
 - `src/lib/subscription.ts` now excludes incompatible endpoint configurations
-  with an explicit reason before any emitter can see them, and rejects paths
-  unsupported by the requested output format. VLESS/Reality/Vision keeps one
+  with an explicit reason before any emitter can see them, rejects paths
+  unsupported by the requested output format, and requires verified exact-release
+  client compatibility evidence before client-specific admission. VLESS/Reality/Vision keeps one
   canonical protocol ID across Sing-box and Xray rather than a stale
   runtime-specific alias.
 - `internal/agent/sessions` tracks opaque runtime session IDs, endpoint-principal
