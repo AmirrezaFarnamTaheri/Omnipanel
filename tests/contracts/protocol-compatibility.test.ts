@@ -1,9 +1,9 @@
+import "./setup-database";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { validateInboundCompatibility, type InboundCompatibilityInput } from "../../src/lib/protocol-compatibility";
 
-process.env.DATABASE_URL ??= "postgres://test:test@127.0.0.1:5432/omnipanel_test";
-const { CLIENT_REGISTRY } = await import("../../src/lib/capabilities");
+import { CLIENT_REGISTRY } from "../../src/lib/capabilities";
 
 const reality = (changes: Partial<InboundCompatibilityInput> = {}): InboundCompatibilityInput => ({
   runtime: "singbox",
