@@ -189,7 +189,7 @@ open multiple streams. 3X-UI contributes explicit protocol/transport capability
 predicates, deterministic subscription ordering, format-specific exclusions,
 client lifecycle and client-side subscription-balancer patterns.
 
-Two clean-room foundations now exist:
+Two independently implemented foundations now exist:
 
 - `src/lib/protocol-compatibility.ts` rejects unsupported Reality/Vision and
   Hysteria2 runtime/transport combinations and malformed Reality identity fields
