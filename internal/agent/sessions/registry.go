@@ -230,6 +230,9 @@ func (r *Registry) PruneIdle(maxIdle time.Duration) (CleanupReport, error) {
 		session.closing = true
 		targets = append(targets, closeTarget{session: session})
 	}
+	sort.Slice(targets, func(i, j int) bool {
+		return targets[i].session.id < targets[j].session.id
+	})
 	r.mu.Unlock()
 
 	for _, target := range targets {
@@ -306,6 +309,9 @@ func (r *Registry) blockLocked(matches func(*trackedSession) bool) (RevocationRe
 		session.closing = true
 		targets = append(targets, closeTarget{session: session})
 	}
+	sort.Slice(targets, func(i, j int) bool {
+		return targets[i].session.id < targets[j].session.id
+	})
 	return report, targets
 }
 
