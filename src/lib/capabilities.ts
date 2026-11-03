@@ -173,7 +173,18 @@ export const RUNTIME_CAPABILITIES: RuntimeCapability[] = [
   },
 ];
 
-export const CLIENT_REGISTRY = [
+export type ClientFormat = "singbox" | "mihomo" | "uri" | "xray";
+export type ClientDefinition = {
+  id: string;
+  format: ClientFormat;
+  label: string;
+  uaHints: readonly string[];
+  protocols: readonly string[];
+  failover: string;
+  evidence: "verified" | "unverified";
+};
+
+export const CLIENT_REGISTRY: readonly ClientDefinition[] = [
   {
     id: "singbox",
     format: "singbox",
@@ -211,10 +222,6 @@ export const CLIENT_REGISTRY = [
     evidence: "unverified",
   },
 ] as const;
-
-export type ClientFormat = (typeof CLIENT_REGISTRY)[number]["format"];
-
-export type ClientDefinition = (typeof CLIENT_REGISTRY)[number];
 
 /** A client format is admitted only after protocol support and release evidence are verified. */
 export function clientAdmissionReason(client: ClientDefinition | null, protocol: string): string | null {
