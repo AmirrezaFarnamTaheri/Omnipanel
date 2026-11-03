@@ -142,3 +142,121 @@ func TestConcurrentSessionChecksAndMembershipReconciliation(t *testing.T) {
 	}
 	wait.Wait()
 }
+
+
+func TestPruneIdleClosesExpiredTrackedSessions(t *testing.T) {
+	now := time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC)
+	registry := NewRegistryWithClock(func() time.Time { return now })
+	if _, err := registry.ReconcileEntitlements(map[string]uint64{"principal-a": 1}); err != nil {
+		t.Fatal(err)
+	}
+	closed := 0
+	if err := registry.Register("session-a", "principal-a", 1, closerFunc(func() error {
+		closed++
+		return nil
+	})); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(11 * time.Minute)
+	report, err := registry.PruneIdle(10 * time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Expired != 1 || report.Closed != 1 || report.Unclosable != 0 || closed != 1 {
+		t.Fatalf("unexpected idle cleanup report: %+v, close calls %d", report, closed)
+	}
+	if got := registry.Snapshot(); len(got) != 0 {
+		t.Fatalf("expired session remains registered: %+v", got)
+	}
+}
+
+func TestPruneIdleForgetsUnclosableSessionAndRejectsLateFlows(t *testing.T) {
+	now := time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC)
+	registry := NewRegistryWithClock(func() time.Time { return now })
+	if _, err := registry.ReconcileEntitlements(map[string]uint64{"principal-a": 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.Register("session-a", "principal-a", 1, nil); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(11 * time.Minute)
+	report, err := registry.PruneIdle(10 * time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Expired != 1 || report.Unclosable != 1 || report.Closed != 0 {
+		t.Fatalf("unexpected unclosable cleanup report: %+v", report)
+	}
+	if registry.CanRoute("session-a") {
+		t.Fatal("expired session was allowed to open a new routed flow")
+	}
+	if got := registry.Snapshot(); len(got) != 0 {
+		t.Fatalf("expired unclosable session was not forgotten: %+v", got)
+	}
+}
+
+func TestTouchExtendsIdleWindow(t *testing.T) {
+	now := time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC)
+	registry := NewRegistryWithClock(func() time.Time { return now })
+	if _, err := registry.ReconcileEntitlements(map[string]uint64{"principal-a": 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.Register("session-a", "principal-a", 1, nil); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(9 * time.Minute)
+	if !registry.Touch("session-a") {
+		t.Fatal("authorized session could not refresh liveness")
+	}
+	now = now.Add(9 * time.Minute)
+	report, err := registry.PruneIdle(10 * time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Expired != 0 || !registry.CanRoute("session-a") {
+		t.Fatalf("freshly touched session was pruned: %+v", report)
+	}
+}
+
+func TestPruneIdleRetriesACloserThatPreviouslyFailed(t *testing.T) {
+	now := time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC)
+	registry := NewRegistryWithClock(func() time.Time { return now })
+	if _, err := registry.ReconcileEntitlements(map[string]uint64{"principal-a": 1}); err != nil {
+		t.Fatal(err)
+	}
+	closeCalls := 0
+	if err := registry.Register("session-a", "principal-a", 1, closerFunc(func() error {
+		closeCalls++
+		if closeCalls == 1 {
+			return errors.New("temporary runtime close failure")
+		}
+		return nil
+	})); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(11 * time.Minute)
+	first, err := registry.PruneIdle(10 * time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Expired != 1 || len(first.CloseFailures) != 1 || registry.CanRoute("session-a") {
+		t.Fatalf("failed close was not retained as blocked: %+v", first)
+	}
+	now = now.Add(time.Minute)
+	second, err := registry.PruneIdle(10 * time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Expired != 1 || second.Closed != 1 || closeCalls != 2 {
+		t.Fatalf("failed close was not retried: %+v, calls %d", second, closeCalls)
+	}
+}
+
+func TestPruneIdleRequiresPositiveTimeout(t *testing.T) {
+	registry := NewRegistry()
+	for _, timeout := range []time.Duration{0, -time.Second} {
+		if _, err := registry.PruneIdle(timeout); !errors.Is(err, ErrInvalidIdleTimeout) {
+			t.Fatalf("timeout %s: expected invalid idle timeout, got %v", timeout, err)
+		}
+	}
+}
