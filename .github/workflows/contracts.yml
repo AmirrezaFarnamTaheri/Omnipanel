@@ -1,4 +1,4 @@
-name: Contract foundation (not production qualification)
+name: Foundation verification (not production qualification)
 on:
   push:
   pull_request:
@@ -19,3 +19,15 @@ jobs:
       - run: npm run lint
       # Real gate-lab requires protected external networking evidence.
       # Passing this workflow is deliberately not an M0/M1/M2 release gate.
+
+  signed-manifest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.3'
+          cache: false
+      - run: make test-go
+      - run: test -z "$(gofmt -l internal/manifest/*.go)"
+      # A valid signature is not evidence of an applied node configuration.

@@ -22,6 +22,10 @@ Implemented and locally exercised:
   qualification set; historical notes cannot activate any driver or strict quota.
   Corrected BPB unmanaged-source labeling and removed its hard-quota candidacy.
 - Candidate v2 OpenAPI and documented target architecture/threat model.
+- Go `internal/manifest` verification core: strict typed envelope and canonical
+  digest checking, Ed25519 trust, node/epoch authorization, time and replay
+  checks, exact-build capability gating, dependency/port preflight and focused
+  adversarial tests. This does not apply configuration or run an agent.
 
 These are contracts and test infrastructure, **not a real network service**.
 The schemas intentionally cover a narrow initial vocabulary; they do not define
@@ -33,6 +37,7 @@ all future membership, enrollment, quota, protocol or upgrade operations.
 | --- | --- |
 | `make check-contracts` | Local schema compilation + registry/unsigned fixture validity |
 | `make test-contracts` | Local deterministic unit tests; includes synthetic evidence in isolated temporary directories |
+| `make test-go` | Go manifest-verifier tests (including race detector) and vet; synthetic signer/manifest, no host actions |
 | `make gate-lab` | BLOCKED: no pinned builds, verified client/metering entries or real runtime evidence |
 | `make gate-control` | BLOCKED: Go secure service/DB/auth migration and integration harness missing |
 | `make gate-agent` | BLOCKED: deployable agent/helper/drivers/recovery/lease harness missing |
@@ -43,8 +48,8 @@ all future membership, enrollment, quota, protocol or upgrade operations.
 
 TypeScript typecheck passes. ESLint passes with two existing image-optimization
 warnings. The obsolete Go scaffold (which had stale imports and constructors) has been
-removed rather than shipped as a plausible agent. A verified Go implementation
-remains outstanding. No runtime binaries, private
+removed. A standalone Go manifest-verification library is now under test, but
+no deployable Go agent or control-plane implementation exists. No runtime binaries, private
 VPSs, paying users, provider diversity or representative clients were available
 for connectivity or production verification.
 

@@ -1,4 +1,4 @@
-.PHONY: check-contracts test-contracts gate-lab gate-control gate-agent gate-subscription gate-resilience gate-security gate-dr
+.PHONY: check-contracts test-contracts test-go gate-lab gate-control gate-agent gate-subscription gate-resilience gate-security gate-dr
 
 check-contracts:
 	npm run check:contracts
@@ -13,3 +13,8 @@ gate-lab: check-contracts test-contracts
 gate-control gate-agent gate-subscription gate-resilience gate-security gate-dr:
 	@echo "BLOCKED: $@ has no production qualification harness yet. See docs/implementation/status.md."
 	@exit 2
+
+# Signature and structural preflight tests use synthetic keys and no networking.
+test-go:
+	go test -race -count=1 ./...
+	go vet ./...

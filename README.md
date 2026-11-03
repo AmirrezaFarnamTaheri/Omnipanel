@@ -19,18 +19,21 @@ services + PostgreSQL and a static React/Vite admin UI; that migration has
 
 ## Local verification
 
-Node.js 22 and npm are required. Install the locked dependencies:
+Node.js 22, npm and a supported Go toolchain are required for the full foundation checks.
+CI pins Go 1.27.3. Install the locked JavaScript dependencies:
 
 ```sh
 npm ci
 make check-contracts
 make test-contracts
+make test-go
 npm run typecheck
 npm run lint
 make gate-lab
 ```
 
-Contract/unit checks are executable without a database or a network runtime.
+Contract/unit checks and the Go desired-state verifier tests are executable without
+a database or a network runtime.
 `gate-lab` deliberately exits nonzero until exact runtime builds, verified
 clients, metering contracts and real lab transcripts are supplied. The other
 production gate names explicitly report BLOCKED; they are not passing stubs.
@@ -71,3 +74,19 @@ for security and migration blockers.
 - Settings are deliberately read-only until mutations can be persisted and audited.
 - The obsolete pg-mem verification script was removed; use the maintained
   contract tests, and do not misinterpret them as real networking evidence.
+
+## Signed desired-state verification (Go foundation)
+
+`internal/manifest/` contains a standalone, fail-closed Go parser and verifier
+for the candidate `ed25519-jcs-v1` desired-state envelope. It checks the exact
+signed manifest digest and locally approved Ed25519 signer; node and epoch
+identity; validity times; structural and membership monotonicity; exact reviewed
+runtime builds and their declared capabilities; typed component dependencies;
+and effective ingress conflicts. Unknown, null, duplicate or unsafe JSON fields
+are rejected. No arbitrary host paths or commands are accepted.
+
+Verification produces an **intent decision, not a deployed or observed state**.
+The package is not wired to a production agent. Qualification, trusted signers,
+approved epochs and replay cursors must come from durable, protected node-local
+state; there are deliberately no qualified builds or signer credentials included
+with the repo. No network/service functionality or release gate is claimed.
