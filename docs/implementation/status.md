@@ -222,3 +222,13 @@ The Sigstore-verified signed metadata and negative tests require exactly both
 tags; a build missing either is rejected. The next runtime run must establish
 independent success before lab evidence can be reviewed. M0/M1 gates remain
 blocked regardless of a successful local namespace run.
+
+## Runtime version handshake regression (4 November 2026)
+
+The next signed runtime run (41739272066) passed binary build, signing, and
+signature verification, but its smoke runner still required the prior custom
+version `1.14.4+omni.1`; it stopped at its version check before any L3 test.
+The runner is updated to `1.14.4+omni.2` and provenance tests now assert exact
+version agreement across the builder, signed metadata fixture and smoke runner.
+The new run must still pass connectivity and metering before local lab evidence
+can be recorded.

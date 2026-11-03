@@ -61,6 +61,17 @@ jq -n \
     artifactSha256: $digest
   }' > "$metadata"
 
+# Builder, signed test metadata and runtime runner must agree on the exact
+# custom build ID. This detects drift before any privileged namespace work.
+build_version="$(sed -n 's/^readonly runtime_version="\\([^"]*\\)"/\\1/p' "$script_dir/build-sing-box.sh")"
+runner_version="$(sed -n 's/^runtime_version="\\([^"]*\\)"/\\1/p' "$script_dir/run-local-reality.sh")"
+fixture_version="$(jq --exit-status --raw-output '.version' "$metadata")"
+if [[ -z "$build_version" || "$build_version" != "$runner_version" || "$runner_version" != "$fixture_version" ]]; then
+  echo "FAIL: version mismatch between pinned builder, metadata, and runtime runner" >&2
+  exit 1
+fi
+echo "PASS: signed build and runtime runner version contract"
+
 assert_failure() {
   local description="$1"
   shift

@@ -24,7 +24,7 @@ if [[ ! -x "$sing_box_bin" || ! -s "$metadata_file" ]]; then
   exit 2
 fi
 
-runtime_version="1.14.4+omni.1"
+runtime_version="1.14.4+omni.2"
 runtime_output="$("$sing_box_bin" version)"
 if ! grep -Fq "$runtime_version" <<<"$runtime_output"; then
   echo "Unexpected Sing-box version:" >&2

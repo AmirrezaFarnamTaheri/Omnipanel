@@ -138,3 +138,10 @@ custom binary for missing `with_utls`. The source-pinned build was revised to
 `1.14.4+omni.2`; the signed build-metadata verifier now requires both
 `with_utls` and `with_v2ray_api` and tests reject each missing tag. The
 result of a subsequent native runtime run remains the separate acceptance check.
+
+
+**Runtime version consistency regression:** CI run 41739272066 built and
+cryptographically verified `1.14.4+omni.2` but the smoke runner expected
+`1.14.4+omni.1`. The runner and provenance fixture now share the exact
+custom build ID, enforced by a regression test before namespace execution.
+This did not produce connectivity or metering evidence; the M0 gate remains blocked.
