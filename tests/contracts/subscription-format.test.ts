@@ -1,9 +1,7 @@
 import "./setup-database";
 import test from "node:test";
 import assert from "node:assert/strict";
-import type { IR } from "../../src/lib/subscription";
-
-import { CompileError, compile } from "../../src/lib/subscription";
+import { CompileError, compile, type IR } from "../../src/lib/subscription";
 
 const hysteriaIR: IR = {
   user: { id: 1, name: "test-user", status: "active" },
