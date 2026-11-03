@@ -155,21 +155,6 @@ export function emitSingbox(ir: IR): string {
             reality: { enabled: true, public_key: p.reality!.publicKey, short_id: p.reality!.shortId },
           },
         }
-      : p.protocol === "xray-vless-reality-vision"
-        ? {
-            type: "vless",
-            tag: p.tag,
-            server: p.server,
-            server_port: p.port,
-            uuid: p.credential,
-            flow: p.reality!.flow,
-            tls: {
-              enabled: true,
-              server_name: p.sni,
-              utls: { enabled: true, fingerprint: p.reality!.fingerprint },
-              reality: { enabled: true, public_key: p.reality!.publicKey, short_id: p.reality!.shortId },
-            },
-          }
       : {
             type: "hysteria2",
             tag: p.tag,
