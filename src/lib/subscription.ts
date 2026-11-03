@@ -156,13 +156,13 @@ export function emitSingbox(ir: IR): string {
           },
         }
       : {
-            type: "hysteria2",
-            tag: p.tag,
-            server: p.server,
-            server_port: p.port,
-            password: p.credential,
-            tls: { enabled: true, server_name: p.sni },
-          },
+          type: "hysteria2",
+          tag: p.tag,
+          server: p.server,
+          server_port: p.port,
+          password: p.credential,
+          tls: { enabled: true, server_name: p.sni },
+        },
   );
   const tags = ir.paths.map((p) => p.tag);
   return JSON.stringify(
