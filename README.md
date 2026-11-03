@@ -129,3 +129,11 @@ and [3X-UI](https://github.com/AmirrezaFarnamTaheri/3X-UI) repositories, includi
 what was adopted, deferred and excluded, is documented in
 [docs/research/source-project-review.md](docs/research/source-project-review.md).
 No GPL-3.0 source files were copied or vendored.
+
+## License
+
+Original OmniPanel source code is distributed under the [GNU General Public
+License version 3 only](LICENSE) (`GPL-3.0-only`). Third-party components,
+assets and dependencies retain their own copyrights, notices and license terms.
+GPL-3.0 compatibility does not authorize copying the separately CC BY-NC-SA
+licensed Hiddify Panel submodule without permission.

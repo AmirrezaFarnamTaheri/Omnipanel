@@ -7,7 +7,7 @@
 - [Hiddify-Manager](https://github.com/AmirrezaFarnamTaheri/Hiddify-Manager/tree/dev) is a GPL-3.0 deployment/service repository. Its panel source is a separate Git submodule, pinned to [hiddify/hiddifypanel at 6f3e4457](https://github.com/hiddify/hiddifypanel/tree/6f3e4457aef38e033c731a12a9d8a3e8da6d8f4c).
 - That pinned Hiddify Panel [license file](https://github.com/hiddify/hiddifypanel/blob/6f3e4457aef38e033c731a12a9d8a3e8da6d8f4c/LICENSE.md) specifies **CC BY-NC-SA 4.0**. OmniPanel's intended GPL version 3 does **not** authorize wholesale copying of this differently licensed panel code. Study behavior and write independently, or obtain separate rights.
 - [1Panel dev-v2](https://github.com/AmirrezaFarnamTaheri/1Panel/tree/dev-v2) declares GPL-3.0; reusable snippets still require original notices, attribution and dependency review. No code was copied in this review.
-- The project owner approved GPL version 3 for OmniPanel. The exact `-only` vs `-or-later` distribution grant remains an explicit packaging choice.
+- The project owner approved GPL version 3 for OmniPanel. The conservative `GPL-3.0-only` expression is selected for OmniPanel's original code; original third-party notices remain mandatory.
 
 ## Hiddify Manager / Hiddify Panel
 

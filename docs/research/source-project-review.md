@@ -8,9 +8,9 @@ This review inspected the supplied forks' default-branch documentation and selec
 
 ## Important source constraints
 
-Both supplied repositories identify GPL-3.0 licensing. S-UI's README says it is for personal learning/communication and explicitly says not to use it in production. 3X-UI's README likewise describes the project as intended for personal use and says not to use it in a production environment. OmniPanel currently has no declared license in its GitHub repository metadata.
+Both supplied repositories identify GPL-3.0 licensing. S-UI's README says it is for personal learning/communication and explicitly says not to use it in production. 3X-UI's README likewise describes the project as intended for personal use and says not to use it in a production environment. OmniPanel's original code is licensed as GPL-3.0-only by its root LICENSE; existing third-party ownership and notices are unaffected.
 
-Accordingly, this increment does **not** copy source files, vendor either panel, or add their dependencies. It independently implements selected behaviors and links to the source references. Any future direct code reuse requires an explicit licensing decision and GPL-3.0 compliance review.
+Accordingly, this increment does **not** copy source files, vendor either panel, or add their dependencies. It independently implements selected behaviors and links to the source references. Any future direct code reuse requires file-level license, authorship and dependency review.
 
 ## What each project contributes
 

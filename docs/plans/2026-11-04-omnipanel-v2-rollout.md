@@ -20,7 +20,7 @@
 - Require two providers/ASNs and independently verified L2/L3 paths for M1; a local namespace smoke run is not a client/VPS production gate.
 - Do not rewrite already-published `db/migrations/0001_initial.sql` or `0002_m2.sql`. Create forward-only migrations, dual-read during conversion only when necessary, and test production-shape restore before cutover.
 - Do not add Redis, Kafka, NATS, Kubernetes, or a universal HAProxy to M1 without separate evidence.
-- **Licensing:** OmniPanel's intended license is GPL version 3, as approved by the project owner. Record the exact `GPL-3.0-only` versus `GPL-3.0-or-later` SPDX choice before adding root notices. S-UI, 3X-UI and 1Panel source reuse requires preserving authorship, notices and provenance. The pinned Hiddify Panel submodule is separately CC BY-NC-SA licensed; do not copy that source or its templates into GPL-distributed OmniPanel without separate authorization.
+- **Licensing:** OmniPanel's intended license is GPL version 3, as approved by the project owner. Use `GPL-3.0-only` for OmniPanel's original code and retain all compatible third-party notices, license files and source provenance. S-UI, 3X-UI and 1Panel source reuse requires preserving authorship, notices and provenance. The pinned Hiddify Panel submodule is separately CC BY-NC-SA licensed; do not copy that source or its templates into GPL-distributed OmniPanel without separate authorization.
 
 ---
 
@@ -103,7 +103,7 @@ Do not change a gate to exit successfully merely because a unit test passes. M1 
 
 1. **Runtime attestation is failing at the current PR head**; diagnose permissions/signing/backend in the failed workflow, do not bypass provenance to green CI. Private-repository attestations may require repository configuration or a different independently verifiable signer.
 2. The historical `.data/kek` blob was once tracked; deleting it from a later tree does not revoke the key. Identify impacted environments, rotate credentials and plan separate Git-history remediation only after coordination.
-3. Decide exact license expression (`GPL-3.0-only` or `GPL-3.0-or-later`) before shipping LICENSE and SPDX headers. Hiddify Panel's pinned CC BY-NC-SA source must not be transplanted by assumption.
+3. Root `LICENSE` uses GPL-3.0-only for original OmniPanel code. Perform a file-level provenance, attribution and compatibility audit before reusing third-party sources; treat non-GPL-licensed Hiddify Panel code as reference only. Hiddify Panel's pinned CC BY-NC-SA source must not be transplanted by assumption.
 4. Product/security must approve quota class, offline lease/grace, existing-session revocation promises, supported exact clients, mirror trust, private-network egress exceptions and automated rotation scope.
 5. Operations must fund two independent provider/ASN exits, second subscription host, backups/keys and external probe vantages. RPO/RTO/availability remain test targets rather than promises.
 6. Verify the production migration/rollback window, imported-data retention/erasure and cutover policy before disabling the legacy application.

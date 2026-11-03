@@ -160,3 +160,18 @@ metering or production capability is activated by this increment.
 Deferred from the source review: deterministic host ordering and per-format
 exclusions, client-side balancer documents/observatory, event streaming, bulk
 lifecycle/renewal and dry-run-first S-UI/3X-UI migration.
+
+## Runtime provenance blocker (4 November 2026)
+
+[Runtime smoke run 41735253666](https://github.com/AmirrezaFarnamTaheri/Omnipanel/actions/runs/41735253666)
+built the pinned Sing-box artifact, then failed at GitHub's `attest-build-provenance`
+step: `Feature not available for user-owned private repositories`. Go setup,
+Linux dependencies, script checks and compilation passed; **no real networking,
+revocation or accounting tests ran** in that workflow. This is an external
+attestation-persistence limitation, not proof of runtime failure or success.
+
+Do not skip provenance verification, mark the runtime qualified, or weaken the
+production gates. A supported GitHub repository arrangement or an independently
+verifiable signed-artifact workflow must be selected and reviewed before this
+provenance task can be completed. Driver interfaces and pure rendering may be
+unit-tested independently, but cannot be applied by an agent without such evidence.

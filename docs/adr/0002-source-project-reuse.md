@@ -12,9 +12,9 @@ multi-format subscription behavior, deterministic host ordering, client lifecycl
 features, subscription balancers and event streaming.
 
 Both source repositories declare GPL-3.0 and their READMEs say they are intended
-for personal use, not production. OmniPanel has no declared repository license.
-Copying implementation code or vendoring modules would introduce licensing and
-maintenance obligations that have not been approved.
+for personal use, not production. OmniPanel has adopted GPL-3.0-only for its original code. Copying implementation
+code or vendoring modules still requires a file-level GPL compatibility, attribution,
+third-party notice and maintenance review.
 
 ## Decision
 
