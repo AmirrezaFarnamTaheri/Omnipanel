@@ -208,7 +208,7 @@ export async function createInbound(actor: Actor, input: InboundInput, idemKey?:
   if (!cap) throw invalid(`Unsupported combination ${input.runtime}/${input.protocol}: not in the capability registry`);
   const ev = await loadEvidence();
   if (!isAdmissible(cap, ev)) {
-    throw invalid(`${cap.key} is gated: record verified "admission" evidence on the Capabilities page first`);
+    throw invalid(`${cap.key} is unqualified: complete the version-pinned lab gate and reviewed driver integration first`);
   }
   validateListener(input.port, input.sni);
   const name = input.name.trim();

@@ -1,7 +1,7 @@
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { endpointPrincipals, inboundHealth, inbounds, nodes, plans, subscriptionTokens, users } from "@/db/schema";
-import { CLIENT_REGISTRY, findCapability, isHardQuotaCapable, loadEvidence, type ClientFormat } from "@/lib/capabilities";
+import { CLIENT_REGISTRY, findCapability, isAdmissible, isHardQuotaCapable, loadEvidence, type ClientFormat } from "@/lib/capabilities";
 import { decryptSecret, sha256 } from "@/lib/crypto";
 
 /** Canonical intermediate representation of one access path. */
@@ -76,6 +76,7 @@ export async function buildIR(userId: number, client: ClientFormat | null = null
     const cap = findCapability(ib.runtime, ib.protocol);
     if (!ib.enabled) exclude("Endpoint administratively disabled");
     else if (!cap) exclude("Unsupported runtime/protocol (not in capability registry)");
+    else if (!isAdmissible(cap, ev)) exclude("Runtime build has no production qualification; lab evidence required");
     else if (node.status === "quarantined") exclude("Node quarantined for security");
     else if (node.status === "draining") exclude("Node draining");
     else if (node.status === "pending_enrollment") exclude("Node not enrolled yet");

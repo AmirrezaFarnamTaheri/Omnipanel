@@ -36,13 +36,13 @@ export default async function CapabilitiesPage() {
     <>
       <PageHeader
         title="Capability registry"
-        subtitle="Unknown capability means unsupported. Gated runtimes and hard-quota claims stay disabled until lab evidence is recorded by an owner."
+        subtitle="No runtime build is production-qualified yet. Notes below are historical assertions, not gate evidence; they cannot enable admission or hard quotas."
       />
 
       <Card className="mb-6">
         <CardHeader>
           <CardTitle>Runtime drivers</CardTitle>
-          <CardDescription>Each runtime driver must have verified evidence before it can be used in production.</CardDescription>
+          <CardDescription>Candidate behavior below remains a hypothesis until tested against an exact build. Qualification requires a reviewed driver integration and versioned lab evidence.</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
@@ -102,7 +102,7 @@ export default async function CapabilitiesPage() {
                   </div>
                   {me.role === "owner" && (
                     <div className="mt-4 pt-4 border-t border-slate-200">
-                      <ActionForm action={recordEvidenceAction} submit="Record evidence" variant="outline" size="sm">
+                      <ActionForm action={recordEvidenceAction} submit="Record historical note" variant="outline" size="sm">
                         <input type="hidden" name="key" value={c.key} />
                         <div className="grid gap-3 md:grid-cols-3 mt-3">
                           <Field label="Claim">
@@ -167,7 +167,7 @@ export default async function CapabilitiesPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Recent evidence records</CardTitle>
+            <CardTitle>Historical evidence notes</CardTitle>
           </CardHeader>
           <CardContent>
             <TableWrapper>
@@ -185,7 +185,7 @@ export default async function CapabilitiesPage() {
                   {log.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={5}>
-                        <EmptyState title="No evidence recorded yet" description="Record lab evidence for each capability claim." />
+                        <EmptyState title="No notes recorded yet" description="Record lab evidence for each capability claim." />
                       </TableCell>
                     </TableRow>
                   ) : (

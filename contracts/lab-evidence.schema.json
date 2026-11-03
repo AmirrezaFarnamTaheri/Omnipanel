@@ -1,0 +1,424 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.omnipanel.invalid/v2/lab-evidence.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "capabilityId",
+    "runtimeVersion",
+    "runtimeArtifactDigest",
+    "platform",
+    "claim",
+    "result",
+    "testedAt",
+    "operator",
+    "client",
+    "summary",
+    "artifacts",
+    "measurements"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "capabilityId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+    },
+    "runtimeVersion": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?$"
+    },
+    "runtimeArtifactDigest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "platform": {
+      "enum": [
+        "linux/amd64",
+        "linux/arm64"
+      ]
+    },
+    "claim": {
+      "enum": [
+        "client_import",
+        "connectivity_l3",
+        "credential_revocation",
+        "accounting",
+        "outbound_reconciliation",
+        "last_good_recovery",
+        "version_rejection",
+        "impairment_diagnosis"
+      ]
+    },
+    "result": {
+      "enum": [
+        "passed",
+        "failed"
+      ]
+    },
+    "testedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "operator": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 120
+    },
+    "client": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "application",
+        "version",
+        "os"
+      ],
+      "properties": {
+        "application": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "os": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 10,
+      "maxLength": 2000
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "sha256"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_./-]*$"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        }
+      },
+      "minItems": 1
+    },
+    "measurements": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "number"
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "claim": {
+            "const": "accounting"
+          },
+          "result": {
+            "const": "passed"
+          }
+        }
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "measurements": {
+            "type": "object",
+            "required": [
+              "uploadExpectedBytes",
+              "downloadExpectedBytes",
+              "uploadMeasuredBytes",
+              "downloadMeasuredBytes",
+              "maxRelativeError"
+            ],
+            "properties": {
+              "uploadExpectedBytes": {
+                "type": "number",
+                "minimum": 1
+              },
+              "downloadExpectedBytes": {
+                "type": "number",
+                "minimum": 1
+              },
+              "uploadMeasuredBytes": {
+                "type": "number",
+                "minimum": 0
+              },
+              "downloadMeasuredBytes": {
+                "type": "number",
+                "minimum": 0
+              },
+              "maxRelativeError": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 0.05
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "claim": {
+            "const": "credential_revocation"
+          },
+          "result": {
+            "const": "passed"
+          }
+        }
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "measurements": {
+            "type": "object",
+            "required": [
+              "newAuthBlockedAfterMs",
+              "existingSessionTerminated",
+              "existingSessionObservationMs"
+            ],
+            "properties": {
+              "newAuthBlockedAfterMs": {
+                "type": "number",
+                "minimum": 0
+              },
+              "existingSessionTerminated": {
+                "enum": [
+                  0,
+                  1
+                ]
+              },
+              "existingSessionObservationMs": {
+                "type": "number",
+                "minimum": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "claim": {
+            "const": "connectivity_l3"
+          },
+          "result": {
+            "const": "passed"
+          }
+        }
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "measurements": {
+            "type": "object",
+            "required": [
+              "successfulCanaryRequests",
+              "failedCanaryRequests"
+            ],
+            "properties": {
+              "successfulCanaryRequests": {
+                "type": "number",
+                "minimum": 1
+              },
+              "failedCanaryRequests": {
+                "const": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "claim": {
+            "const": "client_import"
+          },
+          "result": {
+            "const": "passed"
+          }
+        }
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "measurements": {
+            "type": "object",
+            "required": [
+              "importSucceeded"
+            ],
+            "properties": {
+              "importSucceeded": {
+                "const": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "claim": {
+            "const": "outbound_reconciliation"
+          },
+          "result": {
+            "const": "passed"
+          }
+        }
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "measurements": {
+            "type": "object",
+            "required": [
+              "outboundPullVerified"
+            ],
+            "properties": {
+              "outboundPullVerified": {
+                "const": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "claim": {
+            "const": "last_good_recovery"
+          },
+          "result": {
+            "const": "passed"
+          }
+        }
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "measurements": {
+            "type": "object",
+            "required": [
+              "nativeValidatorPassed",
+              "rejectedConfigPreservedService",
+              "lastGoodRecovered"
+            ],
+            "properties": {
+              "nativeValidatorPassed": {
+                "const": 1
+              },
+              "rejectedConfigPreservedService": {
+                "const": 1
+              },
+              "lastGoodRecovered": {
+                "const": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "claim": {
+            "const": "version_rejection"
+          },
+          "result": {
+            "const": "passed"
+          }
+        }
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "measurements": {
+            "type": "object",
+            "required": [
+              "rejectedInvalidVersions",
+              "rejectedUnknownRequiredFields"
+            ],
+            "properties": {
+              "rejectedInvalidVersions": {
+                "type": "number",
+                "minimum": 1
+              },
+              "rejectedUnknownRequiredFields": {
+                "type": "number",
+                "minimum": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "claim": {
+            "const": "impairment_diagnosis"
+          },
+          "result": {
+            "const": "passed"
+          }
+        }
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "measurements": {
+            "type": "object",
+            "required": [
+              "packetLossTested",
+              "udpFilteringTested",
+              "delayTested"
+            ],
+            "properties": {
+              "packetLossTested": {
+                "const": 1
+              },
+              "udpFilteringTested": {
+                "const": 1
+              },
+              "delayTested": {
+                "const": 1
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

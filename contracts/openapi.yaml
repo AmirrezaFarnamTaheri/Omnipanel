@@ -1,0 +1,346 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "OmniPanel v2 candidate agent contract",
+    "version": "2.0.0-draft.1",
+    "description": "Unimplemented initial proposal, pending lab and security contract freeze. Not the legacy bearer-token API. This fragment covers structural desired/report only; enrollment, membership, accounting and recovery contracts remain pending."
+  },
+  "servers": [
+    {
+      "url": "https://agent-gateway.omnipanel.invalid",
+      "description": "Placeholder origin only; not deployed."
+    }
+  ],
+  "security": [
+    {
+      "nodeMTLS": []
+    }
+  ],
+  "paths": {
+    "/v2/nodes/self/desired": {
+      "get": {
+        "operationId": "getNodeDesired",
+        "summary": "Poll node-scoped signed structural state",
+        "description": "Identity is derived exclusively from verified end-to-end client certificate and revocation checks, never forwarded headers. Wrong/unapproved epoch returns recovery-required conflict; no automatic lower-revision recovery. A membership cursor does not provide a signed membership stream.",
+        "parameters": [
+          {
+            "name": "controlPlaneEpoch",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "structuralSequence",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "membershipSequence",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "RFC 9457 problem; no secret values or bearer tokens in detail/instance.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem; no secret values or bearer tokens in detail/instance.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem; no secret values or bearer tokens in detail/instance.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem; no secret values or bearer tokens in detail/instance.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "RFC 9457 problem; no secret values or bearer tokens in detail/instance.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem; no secret values or bearer tokens in detail/instance.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Signed structural desired state. Schema validity alone is not authorization.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "private, no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./desired-state.schema.json"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "No structural change for the supplied epoch/cursor; no assertion about membership convergence."
+          }
+        }
+      }
+    },
+    "/v2/nodes/self/reports": {
+      "post": {
+        "operationId": "reportNodeObserved",
+        "summary": "Report component-specific structural and membership cursors",
+        "description": "Scopes the report to the authenticated node. Claimed VERIFIED status is not a substitute for independent L2/L3 evidence. Reported cursors never mutate immutable desired revisions.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ObservedReport"
+              }
+            }
+          }
+        },
+        "responses": {
+          "400": {
+            "description": "RFC 9457 problem; no secret values or bearer tokens in detail/instance.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem; no secret values or bearer tokens in detail/instance.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem; no secret values or bearer tokens in detail/instance.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem; no secret values or bearer tokens in detail/instance.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "RFC 9457 problem; no secret values or bearer tokens in detail/instance.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem; no secret values or bearer tokens in detail/instance.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Report durably accepted; desired state is unchanged."
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "nodeMTLS": {
+        "type": "mutualTLS",
+        "description": "Private PKI with node-scoped identity, certificate renewal and explicit revocation checks."
+      }
+    },
+    "schemas": {
+      "Problem": {
+        "type": "object",
+        "required": [
+          "type",
+          "title",
+          "status",
+          "correlationId"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "format": "uri-reference"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer",
+            "minimum": 400,
+            "maximum": 599
+          },
+          "detail": {
+            "type": "string"
+          },
+          "instance": {
+            "type": "string",
+            "format": "uri-reference"
+          },
+          "correlationId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "ObservedReport": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "controlPlaneEpoch",
+          "structuralSequence",
+          "membershipSequence",
+          "components"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "const": "2.0"
+          },
+          "controlPlaneEpoch": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "structuralSequence": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "membershipSequence": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "components": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "state",
+                "activeConfigurationDigest",
+                "processGeneration"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+                },
+                "state": {
+                  "enum": [
+                    "RECEIVED",
+                    "SIGNATURE_VERIFIED",
+                    "VALIDATED",
+                    "STAGED",
+                    "PREFLIGHTED",
+                    "APPLYING",
+                    "APPLIED_UNVERIFIED",
+                    "VERIFIED",
+                    "FAILED",
+                    "ROLLING_BACK",
+                    "ROLLED_BACK",
+                    "DEGRADED_REQUIRES_OPERATOR"
+                  ]
+                },
+                "activeConfigurationDigest": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "processGeneration": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

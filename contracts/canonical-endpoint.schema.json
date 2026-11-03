@@ -1,0 +1,287 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.omnipanel.invalid/v2/canonical-endpoint.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "nodeId",
+    "principalId",
+    "runtime",
+    "runtimeVersion",
+    "protocol",
+    "address",
+    "port",
+    "transport",
+    "credentialRef",
+    "tls",
+    "route",
+    "health",
+    "enforceability",
+    "requiredClientCapabilities",
+    "provenance"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "2.0"
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "nodeId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "principalId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "runtime": {
+      "enum": [
+        "singbox",
+        "hysteria2",
+        "xray"
+      ]
+    },
+    "runtimeVersion": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?$"
+    },
+    "protocol": {
+      "enum": [
+        "vless-reality-vision",
+        "hysteria2"
+      ]
+    },
+    "address": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 253
+    },
+    "port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535
+    },
+    "transport": {
+      "enum": [
+        "tcp",
+        "udp"
+      ]
+    },
+    "credentialRef": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+    },
+    "tls": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "model",
+            "serverName",
+            "publicKey",
+            "shortId",
+            "fingerprint",
+            "flow",
+            "verifyCertificate"
+          ],
+          "properties": {
+            "model": {
+              "const": "reality"
+            },
+            "serverName": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 253
+            },
+            "publicKey": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43}$"
+            },
+            "shortId": {
+              "type": "string",
+              "pattern": "^(?:[a-f0-9]{2}){1,8}$"
+            },
+            "fingerprint": {
+              "type": "string",
+              "minLength": 1
+            },
+            "flow": {
+              "const": "xtls-rprx-vision"
+            },
+            "verifyCertificate": {
+              "const": true
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "model",
+            "serverName",
+            "certificateRef",
+            "verifyCertificate"
+          ],
+          "properties": {
+            "model": {
+              "enum": [
+                "origin-tls",
+                "cdn-terminated"
+              ]
+            },
+            "serverName": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 253
+            },
+            "certificateRef": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+            },
+            "verifyCertificate": {
+              "const": true
+            }
+          }
+        }
+      ]
+    },
+    "route": {
+      "enum": [
+        "direct",
+        "cdn",
+        "relay"
+      ]
+    },
+    "health": {
+      "enum": [
+        "unknown",
+        "healthy",
+        "degraded",
+        "suspected_unreachable",
+        "confirmed_unreachable",
+        "draining",
+        "quarantined",
+        "recovering"
+      ]
+    },
+    "enforceability": {
+      "enum": [
+        "hard",
+        "metered",
+        "advisory",
+        "unmanaged"
+      ]
+    },
+    "requiredClientCapabilities": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "revisionDigest",
+        "controlPlaneEpoch",
+        "structuralSequence"
+      ],
+      "properties": {
+        "source": {
+          "enum": [
+            "managed",
+            "external"
+          ]
+        },
+        "revisionDigest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "controlPlaneEpoch": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "structuralSequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "protocol": {
+            "const": "vless-reality-vision"
+          }
+        }
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "transport": {
+            "const": "tcp"
+          },
+          "route": {
+            "enum": [
+              "direct",
+              "relay"
+            ]
+          },
+          "tls": {
+            "type": "object",
+            "properties": {
+              "model": {
+                "const": "reality"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "protocol": {
+            "const": "hysteria2"
+          }
+        }
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "transport": {
+            "const": "udp"
+          },
+          "route": {
+            "enum": [
+              "direct",
+              "relay"
+            ]
+          },
+          "tls": {
+            "type": "object",
+            "properties": {
+              "model": {
+                "const": "origin-tls"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

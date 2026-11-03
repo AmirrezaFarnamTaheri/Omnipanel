@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.omnipanel.invalid/v2/metering-registry.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "contracts"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "2.0"
+    },
+    "contracts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "capabilityId",
+          "runtimeVersion",
+          "artifactDigest",
+          "measurementPoint",
+          "attributionKey",
+          "uploadSemantics",
+          "downloadSemantics",
+          "overhead",
+          "counterType",
+          "counterLifetime",
+          "generationIdentity",
+          "apiAuthentication",
+          "collectionIntervalSeconds",
+          "knownGaps",
+          "newSessionRevocation",
+          "existingSessionRevocation",
+          "enforceability",
+          "maxOvershootBytes",
+          "evidenceIds"
+        ],
+        "properties": {
+          "capabilityId": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+          },
+          "runtimeVersion": {
+            "type": "string",
+            "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?$"
+          },
+          "artifactDigest": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "measurementPoint": {
+            "type": "string",
+            "minLength": 1
+          },
+          "attributionKey": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uploadSemantics": {
+            "type": "string",
+            "minLength": 1
+          },
+          "downloadSemantics": {
+            "type": "string",
+            "minLength": 1
+          },
+          "overhead": {
+            "type": "string",
+            "minLength": 1
+          },
+          "counterType": {
+            "enum": [
+              "cumulative",
+              "delta",
+              "resettable"
+            ]
+          },
+          "counterLifetime": {
+            "type": "string",
+            "minLength": 1
+          },
+          "generationIdentity": {
+            "type": "string",
+            "minLength": 1
+          },
+          "apiAuthentication": {
+            "type": "string",
+            "minLength": 1
+          },
+          "collectionIntervalSeconds": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "knownGaps": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "newSessionRevocation": {
+            "type": "string",
+            "minLength": 1
+          },
+          "existingSessionRevocation": {
+            "type": "string",
+            "minLength": 1
+          },
+          "enforceability": {
+            "enum": [
+              "metered",
+              "advisory",
+              "hard"
+            ]
+          },
+          "maxOvershootBytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "evidenceIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "minItems": 1,
+            "uniqueItems": true
+          }
+        }
+      }
+    }
+  }
+}

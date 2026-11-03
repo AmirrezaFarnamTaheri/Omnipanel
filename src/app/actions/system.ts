@@ -12,6 +12,7 @@ import { declareRecoveryEpoch } from "@/lib/revisions";
 import { ProblemError } from "@/lib/problem";
 import { verifyTotp } from "@/lib/totp";
 import { seedDemo } from "@/lib/demo";
+import { findCapabilityByKey } from "@/lib/capabilities";
 import { drainOutbox, sweepExpiry } from "@/lib/outbox";
 import { lt } from "drizzle-orm";
 
@@ -20,6 +21,7 @@ const refresh = () => revalidatePath("/", "layout");
 export async function recordEvidenceAction(_p: ActionState, fd: FormData): Promise<ActionState> {
   return act(async () => {
     const me = await requireRole("owner");
+    if (!findCapabilityByKey(str(fd, "key"))) throw new ProblemError(422, "Validation failed", "Unknown capability");
     const claim = str(fd, "claim");
     const status = str(fd, "status");
     if (!["admission", "metering", "revocation", "hardQuota"].includes(claim)) throw new ProblemError(422, "Validation failed", "Unknown claim");
@@ -31,7 +33,7 @@ export async function recordEvidenceAction(_p: ActionState, fd: FormData): Promi
       await audit(tx, actorOf(me), "capability.evidence", "capability", str(fd, "key"), { claim, status, note });
     });
     refresh();
-    return { message: "Evidence recorded." };
+    return { message: "Historical note recorded. This does not qualify a runtime or enable production admission." };
   });
 }
 

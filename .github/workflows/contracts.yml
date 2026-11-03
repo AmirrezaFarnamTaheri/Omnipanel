@@ -1,0 +1,21 @@
+name: Contract foundation (not production qualification)
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: make check-contracts test-contracts
+      - run: npm run typecheck
+      - run: npm run lint
+      # Real gate-lab requires protected external networking evidence.
+      # Passing this workflow is deliberately not an M0/M1/M2 release gate.

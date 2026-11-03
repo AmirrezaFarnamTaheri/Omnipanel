@@ -1,26 +1,60 @@
-# OmniPanel (M1 control-plane foundation)
+# OmniPanel — v2 engineering baseline
 
-Next.js + PostgreSQL (Drizzle) implementation of the OmniPanel control plane: administration UI,
-agent-facing API, accounting, subscription compiler, health state machine and audit.
+OmniPanel aims to turn administrator intent into verified, recoverable, auditable
+multi-protocol network service. **This checkout is a prototype, not M1 or M2.**
 
-First visit `/setup` to create the owner account, enable TOTP under *Settings*, then use
-*Overview → Load demo topology* to explore, or register real nodes.
+The existing application is Next.js + PostgreSQL/Drizzle. The partial `go/` trees
+are scaffolding, not working production control-plane/agent implementations.
+The selected v2 destination is Go services + PostgreSQL and a static React/Vite
+admin UI; that migration has **not** been completed.
 
-## Agent protocol (pull based)
-All agent calls use `Authorization: Bearer <nodeId>.<key>` (never forwarded headers).
+## Start here
 
-| Call | Purpose |
-|---|---|
-| `POST /api/agent/enroll` `{token}` | Single-use token → node credential + signing public key + epoch |
-| `GET /api/agent/desired?epoch=&structural=&membership=` | Ed25519-signed structural revision (+ secrets matching signed digests) and membership delta/snapshot. A different `epoch` triggers a signed recovery snapshot |
-| `POST /api/agent/report` | Applied cursors, state machine state, per-component results, probe observations |
-| `POST /api/agent/metering` | Cumulative per-principal counters `{attributionKey, generation, seq, up, down, generationStart?}` and explicit `gaps` |
+- [Architecture and release contract](docs/architecture-v2.md)
+- [Implementation status, gaps and next increments](docs/implementation/status.md)
+- [Architecture decisions](docs/adr/0001-v2-baseline.md)
+- [Initial threat model](docs/security/threat-model.md)
+- [Lab procedure and evidence format](lab/README.md)
+- [Wire-contract notes](contracts/README.md)
 
-Subscriptions: `GET /sub/<token>[?format=singbox|mihomo|uri]`. Admin REST: `/api/admin/users` (Idempotency-Key, If-Match, RFC 9457 errors).
+## Local verification
 
-## Configuration
-- `OMNI_KEK` (base64, 32 bytes): key-encryption key. Without it a dev KEK is stored in `.data/kek`.
-- `OMNI_PUBLIC_URL`: prefix for displayed subscription URLs. `OMNI_SETUP_TOKEN`: protects first-admin bootstrap.
+Node.js 22 and npm are required. Install the locked dependencies:
 
-## Not in this repository
-The Go agent, mTLS PKI, lab/gate harness, relays/CDN/WARP/BPB integrations and real multi-vantage probes are out of scope here.
+```sh
+npm ci
+make check-contracts
+make test-contracts
+npm run typecheck
+npm run lint
+make gate-lab
+```
+
+Contract/unit checks are executable without a database or a network runtime.
+`gate-lab` deliberately exits nonzero until exact runtime builds, verified
+clients, metering contracts and real lab transcripts are supplied. The other
+production gate names explicitly report BLOCKED; they are not passing stubs.
+No synthetic fixture under `testdata/contracts/` is connectivity evidence.
+
+**Safety change:** no runtime build is currently production-qualified.
+Unqualified inbounds cannot be created or emitted in subscriptions, including
+old demo inbounds. Owner-entered historical evidence notes cannot override this.
+There are no production-qualified hard quotas. BPB Workers are unmanaged external
+sources, not a bandwidth policy engine.
+
+## Explore the legacy prototype (development only)
+
+Set `DATABASE_URL` to an isolated PostgreSQL instance, apply the existing
+`db/migrations/` in order, set `OMNI_SETUP_TOKEN`, then run
+`npm run dev -- --hostname 0.0.0.0`. Visit `/setup`. Do not expose it as production
+infrastructure or connect real subscriber credentials. Demo topology is illustrative
+only; it does not provision network runtimes.
+
+Legacy configuration includes `OMNI_KEK` (base64 32-byte key) and `OMNI_PUBLIC_URL`.
+Without `OMNI_KEK`, the prototype writes a development key in `.data/kek`. This is
+**not** an approved production key lifecycle. Keep `.data/`, raw credentials,
+lab captures and keys out of Git.
+
+The legacy `/api/agent/*` uses bearer node credentials, not mTLS. Neither those
+routes nor the old Go OpenAPI file implement the candidate v2 contracts in
+`contracts/`. See the status document for security and migration blockers.

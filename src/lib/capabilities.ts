@@ -3,12 +3,14 @@ import { db } from "@/db";
 import { capabilityEvidence } from "@/db/schema";
 
 /**
- * Evidence-backed capability registry (the in-code equivalent of
- * capabilities/runtime.yaml, clients.yaml and metering.yaml).
+ * Legacy candidate descriptions and historical notes, not runtime qualification.
+ * Version-scoped laboratory registries live in capabilities/*.json.
  * Unknown capability == unsupported for a contractual production guarantee.
  */
 
-export type Claim = "admission" | "metering" | "revocation" | "hardQuota";
+export { hasEvidence, isAdmissible, isHardQuotaCapable } from "./capability-policy";
+export type { Claim, EvidenceMap } from "./capability-policy";
+import type { EvidenceMap } from "./capability-policy";
 
 export type RuntimeCapability = {
   key: string;
@@ -31,7 +33,7 @@ export const RUNTIME_CAPABILITIES: RuntimeCapability[] = [
     protocol: "vless-reality-vision",
     transport: "tcp",
     defaultPort: 443,
-    gated: false,
+    gated: true,
     metering: {
       source: "sing-box v2ray_api per-user stats (cumulative)",
       counter: "cumulative",
@@ -41,7 +43,7 @@ export const RUNTIME_CAPABILITIES: RuntimeCapability[] = [
     revocation: { newSessions: "Blocked after config reload", existingSessions: "Persist until closed" },
     hardQuotaCandidate: false,
     credential: "uuid",
-    notes: "Reference M0/M1 runtime for Reality/Vision.",
+    notes: "Unqualified Reality/Vision candidate; native validation and real connectivity evidence required.",
   },
   {
     key: "singbox:hysteria2",
@@ -49,7 +51,7 @@ export const RUNTIME_CAPABILITIES: RuntimeCapability[] = [
     protocol: "hysteria2",
     transport: "udp",
     defaultPort: 443,
-    gated: false,
+    gated: true,
     metering: {
       source: "sing-box v2ray_api per-user stats",
       counter: "cumulative",
@@ -67,7 +69,7 @@ export const RUNTIME_CAPABILITIES: RuntimeCapability[] = [
     protocol: "hysteria2",
     transport: "udp",
     defaultPort: 443,
-    gated: false,
+    gated: true,
     metering: {
       source: "Hysteria2 Traffic Stats API (/traffic)",
       counter: "cumulative",
@@ -108,7 +110,7 @@ export const RUNTIME_CAPABILITIES: RuntimeCapability[] = [
       source: "CDN provider edge analytics",
       counter: "delta",
       direction: "edge-to-client bytes",
-      note: "CDN billing is provider-reported; reconcile against origin metering.",
+      note: "Provider capacity billing is not authoritative per-user proxy usage; meter at the authenticating core.",
     },
     revocation: { newSessions: "DNS failover immediate", existingSessions: "TTL-bound" },
     hardQuotaCandidate: false,
@@ -126,7 +128,7 @@ export const RUNTIME_CAPABILITIES: RuntimeCapability[] = [
       source: "relay tunnel flow counters",
       counter: "cumulative",
       direction: "tunnel ingress/egress",
-      note: "Relay nodes add a hop; per-flow attribution required.",
+      note: "Operational capacity telemetry only; never a second billable user meter.",
     },
     revocation: { newSessions: "Tunnel teardown", existingSessions: "Drain on tunnel close" },
     hardQuotaCandidate: false,
@@ -144,7 +146,7 @@ export const RUNTIME_CAPABILITIES: RuntimeCapability[] = [
       source: "WARP interface counters",
       counter: "cumulative",
       direction: "WARP tunnel bytes",
-      note: "WARP provides client-to-edge connectivity.",
+      note: "Tunnel capacity counters are not authoritative per-user billable usage.",
     },
     revocation: { newSessions: "Peer config revoke", existingSessions: "Keepalive timeout" },
     hardQuotaCandidate: false,
@@ -159,15 +161,15 @@ export const RUNTIME_CAPABILITIES: RuntimeCapability[] = [
     defaultPort: 443,
     gated: true,
     metering: {
-      source: "BPB bandwidth policy engine",
+      source: "Unmanaged external source; no authoritative per-user meter",
       counter: "cumulative",
-      direction: "shaped egress",
-      note: "Bandwidth Policy Bridge enforces per-user rate limits.",
+      direction: "Unknown until source-specific verification",
+      note: "Shared external credentials cannot guarantee individual suspension or quotas.",
     },
-    revocation: { newSessions: "Policy update immediate", existingSessions: "Token-bucket exhaustion" },
-    hardQuotaCandidate: true,
+    revocation: { newSessions: "Not guaranteed", existingSessions: "Not guaranteed" },
+    hardQuotaCandidate: false,
     credential: "uuid",
-    notes: "M2 BPB integration; hard quota candidate once evidence verified.",
+    notes: "BPB Workers are restricted external sources, not a managed bandwidth policy engine. No individual quota guarantee.",
   },
 ];
 
@@ -179,7 +181,7 @@ export const CLIENT_REGISTRY = [
     uaHints: ["sing-box", "sfa", "sfi", "sfm", "singbox", "hiddify"],
     protocols: ["vless-reality-vision", "hysteria2"],
     failover: "urltest group with selector",
-    evidence: "documented",
+    evidence: "unverified",
   },
   {
     id: "mihomo",
@@ -188,7 +190,7 @@ export const CLIENT_REGISTRY = [
     uaHints: ["clash", "mihomo", "stash", "verge"],
     protocols: ["vless-reality-vision", "hysteria2"],
     failover: "url-test proxy group",
-    evidence: "documented",
+    evidence: "unverified",
   },
   {
     id: "uri",
@@ -197,16 +199,16 @@ export const CLIENT_REGISTRY = [
     uaHints: [],
     protocols: ["vless-reality-vision", "hysteria2", "xray-vless-reality-vision"],
     failover: "client dependent",
-    evidence: "documented",
+    evidence: "unverified",
   },
   {
     id: "xray",
     format: "xray",
-    label: "Xray JSON inbound config",
+    label: "Xray JSON (unqualified emitter)",
     uaHints: ["xray", "v2ray", "v2rayn"],
     protocols: ["xray-vless-reality-vision"],
     failover: "uri fallback",
-    evidence: "documented",
+    evidence: "unverified",
   },
 ] as const;
 
@@ -218,8 +220,6 @@ export const findCapability = (runtime: string, protocol: string) =>
 export const findCapabilityByKey = (key: string) =>
   RUNTIME_CAPABILITIES.find((c) => c.key === key);
 
-export type EvidenceMap = Map<string, "verified" | "failed">; // `${key}|${claim}` -> latest status
-
 export async function loadEvidence(): Promise<EvidenceMap> {
   const rows = await db.select().from(capabilityEvidence).orderBy(desc(capabilityEvidence.id));
   const m: EvidenceMap = new Map();
@@ -228,16 +228,6 @@ export async function loadEvidence(): Promise<EvidenceMap> {
     if (!m.has(k)) m.set(k, r.status as "verified" | "failed");
   }
   return m;
-}
-
-export const hasEvidence = (m: EvidenceMap, key: string, claim: Claim) => m.get(`${key}|${claim}`) === "verified";
-
-export function isAdmissible(cap: RuntimeCapability, ev: EvidenceMap) {
-  return !cap.gated || hasEvidence(ev, cap.key, "admission");
-}
-
-export function isHardQuotaCapable(cap: RuntimeCapability, ev: EvidenceMap) {
-  return cap.hardQuotaCandidate && hasEvidence(ev, cap.key, "hardQuota");
 }
 
 export function clientForRequest(format: string | null, userAgent: string | null): ClientFormat {

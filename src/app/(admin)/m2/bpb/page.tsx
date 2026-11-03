@@ -31,7 +31,7 @@ export default async function BpbPage() {
     <>
       <PageHeader
         title="BPB (Border Patrol Bouncer)"
-        subtitle="BPB policies govern inbound/outbound traffic rules at the edge. Policy enforcement is gated until admission evidence is recorded."
+        subtitle="Unqualified legacy prototype. BPB Workers are external sources, not managed quota enforcers. Do not use these policies as enforcement guarantees."
       />
 
       {error && (
