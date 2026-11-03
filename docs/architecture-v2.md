@@ -179,3 +179,27 @@ revocation, client support list, suspended-subscription semantics, funded provid
 diversity/recovery, regional/privacy policy, mirror trust, WARP terms/failure
 policy, rotation approvals, advisory device/IP enforcement and upgrade authority.
 No implementation default implies product/security/legal approval.
+
+## Selective reuse from existing panels
+
+The source audit is recorded in [`docs/research/source-project-review.md`](research/source-project-review.md)
+and [ADR 0002](adr/0002-source-project-reuse.md). S-UI contributes a valuable
+session-level revocation pattern for protocols that authenticate once and then
+open multiple streams. 3X-UI contributes explicit protocol/transport capability
+predicates, deterministic subscription ordering, format-specific exclusions,
+client lifecycle and client-side subscription-balancer patterns.
+
+Two clean-room foundations now exist:
+
+- `src/lib/protocol-compatibility.ts` rejects unsupported Reality/Vision and
+  Hysteria2 runtime/transport combinations and malformed Reality identity fields
+  before subscription emission. It is structural preflight only; exact runtime,
+  client and connectivity qualification remain separate.
+- `internal/agent/sessions` tracks opaque runtime session IDs against endpoint
+  principals and credential generations. It closes runtime sessions outside its
+  lock, or blocks subsequent routed flows and reports sessions that cannot be
+  closed. It is not yet wired to a runtime driver.
+
+Both source projects declare GPL-3.0 and their READMEs warn against production
+use. No source code was copied. The migration roadmap, deferred features and
+license boundary are documented in the source review.
