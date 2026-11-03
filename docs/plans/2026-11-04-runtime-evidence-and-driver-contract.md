@@ -145,3 +145,11 @@ cryptographically verified `1.14.4+omni.2` but the smoke runner expected
 `1.14.4+omni.1`. The runner and provenance fixture now share the exact
 custom build ID, enforced by a regression test before namespace execution.
 This did not produce connectivity or metering evidence; the M0 gate remains blocked.
+
+
+**Reality client configuration regression:** Run 41739951775 passed signed
+artifact provenance and launched the isolated environment, then Sing-box
+rejected the Reality outbound because the client omitted `tls.utls.enabled`.
+The fixture now explicitly enables uTLS with a supported fingerprint and asserts
+its presence. Only a passing native runtime and traffic/accounting test can
+advance the local laboratory status.

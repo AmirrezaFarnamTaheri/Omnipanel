@@ -216,6 +216,7 @@ jq -n \
         tls: {
           enabled: true,
           server_name: "localhost",
+          utls: {enabled: true, fingerprint: "chrome"},
           reality: {
             enabled: true,
             public_key: $publicKey,
@@ -227,6 +228,15 @@ jq -n \
     ],
     route: {final: "reality"}
   }' > "$temp_dir/client.json"
+
+# The Reality client requires uTLS explicitly, not merely a binary compiled
+# with with_utls. This structural check avoids a misleading native-start test.
+jq --exit-status '
+  [.outbounds[] | select(.type == "vless")] as $outbounds
+  | ($outbounds | length) == 1
+    and $outbounds[0].tls.utls.enabled == true
+    and $outbounds[0].tls.utls.fingerprint == "chrome"
+' "$temp_dir/client.json" >/dev/null
 
 "$sing_box_bin" check -c "$temp_dir/server.json"
 "$sing_box_bin" check -c "$temp_dir/client.json"

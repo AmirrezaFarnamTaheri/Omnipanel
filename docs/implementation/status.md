@@ -232,3 +232,13 @@ The runner is updated to `1.14.4+omni.2` and provenance tests now assert exact
 version agreement across the builder, signed metadata fixture and smoke runner.
 The new run must still pass connectivity and metering before local lab evidence
 can be recorded.
+
+## Reality client uTLS setting (4 November 2026)
+
+After the binary included `with_utls` and provenance passed, the local smoke
+run (41739951775) reached client startup but Sing-box rejected the outbound
+with `uTLS is required by reality client`. The fixture previously omitted the
+client-side `tls.utls.enabled` and fingerprint fields. The client fixture now
+sets `utls: {enabled: true, fingerprint: "chrome"}`, and a structural check
+asserts that required client configuration before native validation.
+This is not yet a successful authenticated traffic transfer or accounting result.
