@@ -275,6 +275,16 @@ export function emitUris(ir: IR): string {
 
 export function compile(ir: IR, format: ClientFormat): { body: string; contentType: string } {
   if (ir.diagnostics.length) throw new CompileError(ir.diagnostics);
+  const client = CLIENT_REGISTRY.find((candidate) => candidate.format === format);
+  if (!client) throw new CompileError([`Unsupported subscription format: ${format}`]);
+  const unsupported = ir.paths.filter(
+    (path) => !(client.protocols as readonly string[]).includes(path.protocol),
+  );
+  if (unsupported.length) {
+    throw new CompileError(
+      unsupported.map((path) => `${path.tag}: ${client.label} does not support ${path.protocol}`),
+    );
+  }
   switch (format) {
     case "singbox":
       return { body: emitSingbox(ir), contentType: "application/json; charset=utf-8" };
