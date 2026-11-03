@@ -119,8 +119,10 @@ Task 1–4 success is a foundation for `gate-lab`, not automatic M0 acceptance. 
 fail-closed default adapter have been added in `internal/drivers` with
 synthetic negative tests. The separate Sing-box renderer/native validation
 and signed artifact provenance remain pending. This task is **not completed**;
-the private GitHub attestation endpoint is not available in this user-owned
-repository, and no production gate is unblocked.
+the private GitHub attestation endpoint remains unavailable, but the separate
+Sigstore/Cosign keyless signing and verifier stages passed in workflow run
+41738645706. Connectivity and metering still require their own verified result;
+no production gate is unblocked.
 
 
 **Progress note (4 November 2026):** The first Sing-box Reality/Vision inbound

@@ -29,5 +29,13 @@ jobs:
           go-version: '1.27.3'
           cache: false
       - run: make test-go
-      - run: test -z "$(gofmt -l internal/manifest/*.go internal/agent/sessions/*.go internal/drivers/*.go internal/drivers/singbox/*.go)"
+      - name: Require gofmt for the signed-manifest and new runtime-driver contracts
+        run: |
+          unformatted="$(gofmt -l internal/manifest/*.go internal/drivers/*.go internal/drivers/singbox/*.go)"
+          if [ -n "$unformatted" ]; then
+            printf 'Unformatted Go source:\n%s\n' "$unformatted" >&2
+            exit 1
+          fi
+      # The pre-existing agent/session registry is covered by the full Go
+      # tests; formatting that older package is a separate cleanup change.
       # A valid signature is not evidence of an applied node configuration.

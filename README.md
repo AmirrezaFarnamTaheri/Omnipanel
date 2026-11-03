@@ -102,7 +102,8 @@ with the repo. No network/service functionality or release gate is claimed.
 The `.github/workflows/runtime-smoke.yml` workflow builds Sing-box v1.14.4
 from its fixed upstream commit, verifies GitHub's upstream commit-signature
 result, compiles the optional `with_v2ray_api` statistics service, attests the
-resulting binary with GitHub Actions provenance, and verifies that attestation.
+resulting binary and build metadata with keyless Sigstore/Cosign signatures,
+and verifies their bundles against the GitHub workflow identity and digest.
 It then runs a real VLESS/Reality/Vision server and sing-box CLI client in two
 isolated Linux network namespaces joined by a veth pair. A raw TCP echo target
 provides known bidirectional payloads; the test checks per-user counters, invalid

@@ -101,7 +101,7 @@ Do not change a gate to exit successfully merely because a unit test passes. M1 
 
 ## Known risks and open decisions
 
-1. **Runtime attestation is failing at the current PR head**; diagnose permissions/signing/backend in the failed workflow, do not bypass provenance to green CI. Private-repository attestations may require repository configuration or a different independently verifiable signer.
+1. **Provenance and runtime acceptance are separate.** GitHub's native attestation storage rejected user-owned private repositories. The keyless Sigstore/Cosign replacement signs and verifies exact build metadata under the GitHub workflow identity. Its signature stage passed in run 41738645706; require an independently successful real networking/accounting test before accepting local lab evidence. Production runtime qualification still requires the full M0 gate.
 2. The historical `.data/kek` blob was once tracked; deleting it from a later tree does not revoke the key. Identify impacted environments, rotate credentials and plan separate Git-history remediation only after coordination.
 3. Root `LICENSE` uses GPL-3.0-only for original OmniPanel code. Perform a file-level provenance, attribution and compatibility audit before reusing third-party sources; treat non-GPL-licensed Hiddify Panel code as reference only. Hiddify Panel's pinned CC BY-NC-SA source must not be transplanted by assumption.
 4. Product/security must approve quota class, offline lease/grace, existing-session revocation promises, supported exact clients, mirror trust, private-network egress exceptions and automated rotation scope.

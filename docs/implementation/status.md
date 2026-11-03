@@ -171,10 +171,11 @@ revocation or accounting tests ran** in that workflow. This is an external
 attestation-persistence limitation, not proof of runtime failure or success.
 
 Do not skip provenance verification, mark the runtime qualified, or weaken the
-production gates. A supported GitHub repository arrangement or an independently
-verifiable signed-artifact workflow must be selected and reviewed before this
-provenance task can be completed. Driver interfaces and pure rendering may be
-unit-tested independently, but cannot be applied by an agent without such evidence.
+production gates. A replacement keyless Sigstore/Cosign workflow now signs the
+binary and metadata and validates their bundles against the repository workflow
+identity. The signing and verification stages passed in run 41738645706; the
+subsequent connectivity and accounting stages require separate successful results.
+This is still a local test, not production runtime qualification.
 
 ## Capability-gated Go driver interface (foundation only)
 
@@ -204,5 +205,6 @@ This renderer **does not emit a deployable complete configuration**: it has no
 route/outbounds, no on-host firewall protection, no native Sing-box validation,
 no privileged helper, and no reconciliation/rollback. `Validate`,
 `Preflight`, `ApplyStructure`, metering and revocation still return
-`ErrUnsupportedCapability` on this adapter. Real binary and client evidence
-are still blocked by the attestation limitation documented above.
+`ErrUnsupportedCapability` on this adapter. Native binary validation and representative external-client evidence remain
+unqualified. Keyless Sigstore provenance is available for local lab experiments,
+but neither it nor this renderer proves deployable network-service behavior.
