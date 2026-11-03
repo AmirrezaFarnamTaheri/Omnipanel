@@ -42,16 +42,15 @@ all future membership, enrollment, quota, protocol or upgrade operations.
 | `make gate-dr` | BLOCKED: funded backup/PITR+key restore and epoch drill missing |
 
 TypeScript typecheck passes. ESLint passes with two existing image-optimization
-warnings. The Go toolchain is not installed in this workspace; Go compilation
-has not been verified. Existing Go entrypoints contain stale imports/constructor
-calls and cannot be treated as a walking skeleton. No runtime binaries, private
+warnings. The obsolete Go scaffold (which had stale imports and constructors) has been
+removed rather than shipped as a plausible agent. A verified Go implementation
+remains outstanding. No runtime binaries, private
 VPSs, paying users, provider diversity or representative clients were available
 for connectivity or production verification.
 
-The legacy `scripts/verify-e2e.ts` uses pg-mem and bypasses real transaction/
-concurrency primitives; it is not a production E2E gate and its old admission/
-subscription assumptions need replacement. Do not bypass the new fail-closed
-policy to make those prototype scenarios pass.
+The old pg-mem E2E script was retired because it bypassed real transaction/
+concurrency primitives and its admission assumptions conflict with fail-closed
+runtime qualification. Real database and networking tests remain outstanding.
 
 `npm audit` reports 22 unresolved vulnerabilities in the legacy dependency tree
 (19 moderate, 2 high, 1 critical at inspection), including Next.js/PostCSS/sharp.
@@ -69,7 +68,7 @@ regression checks before any exposure. Never run an uncontrolled major-version
    Compare both Hysteria2 implementations, including UDP impairment and reload
    generations. Record native validators and redacted reproducible transcripts.
 2. **Contract freeze and Task 2:** patch-pin a supported Go toolchain/PostgreSQL,
-   fix/replace scaffolds; implement isolated service identities, organization-
+   implement service entrypoints with isolated identities, organization-
    scoped schema, MFA/bootstrap/RBAC/CSRF, endpoint-secret lifecycle, concurrent
    revisions/idempotency, transactional outbox+audit, signer/PKI and mTLS enrollment.
    Generate server/client types; migrate static UI to Vite without independent auth.
@@ -85,3 +84,19 @@ regression checks before any exposure. Never run an uncontrolled major-version
 
 Do not publish production golden configs, support claims, quota bounds, uptime,
 RPO/RTO or benchmark numbers until the corresponding real evidence exists.
+
+## Repository consolidation and cleanup
+
+The stacked foundation PRs were unified without merging either into the default
+branch. Removed non-operational milestone-specific integrations, fabricated demo
+runtime state, the duplicate login route with hard-coded demo credentials, the
+no-op settings mutation and the non-buildable Go scaffold. Settings are now
+explicitly read-only, and the main navigation reports prototype status rather
+than a fabricated operational signal. The historical optional-integration SQL
+migration remains in place to avoid breaking already-migrated databases.
+
+A tracked development key was removed from the working tree. Revoke or rotate
+keys and affected credentials in any environment that consumed it; Git history
+still contains the prior blob until separately remediated. No production safety
+claim follows from the cleanup. End-to-end validation requires CI and a real
+networking laboratory.

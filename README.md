@@ -3,10 +3,10 @@
 OmniPanel aims to turn administrator intent into verified, recoverable, auditable
 multi-protocol network service. **This checkout is a prototype, not M1 or M2.**
 
-The existing application is Next.js + PostgreSQL/Drizzle. The partial `go/` trees
-are scaffolding, not working production control-plane/agent implementations.
-The selected v2 destination is Go services + PostgreSQL and a static React/Vite
-admin UI; that migration has **not** been completed.
+The existing application is Next.js + PostgreSQL/Drizzle. The non-buildable Go scaffolding has been retired rather than represented as a
+working agent or control plane. The selected v2 destination is verified Go
+services + PostgreSQL and a static React/Vite admin UI; that migration has
+**not** been completed.
 
 ## Start here
 
@@ -47,14 +47,27 @@ sources, not a bandwidth policy engine.
 Set `DATABASE_URL` to an isolated PostgreSQL instance, apply the existing
 `db/migrations/` in order, set `OMNI_SETUP_TOKEN`, then run
 `npm run dev -- --hostname 0.0.0.0`. Visit `/setup`. Do not expose it as production
-infrastructure or connect real subscriber credentials. Demo topology is illustrative
-only; it does not provision network runtimes.
+infrastructure or connect real subscriber credentials. The former demo seeder, which fabricated enrolled nodes and verified health,
+has been removed.
 
 Legacy configuration includes `OMNI_KEK` (base64 32-byte key) and `OMNI_PUBLIC_URL`.
 Without `OMNI_KEK`, the prototype writes a development key in `.data/kek`. This is
 **not** an approved production key lifecycle. Keep `.data/`, raw credentials,
 lab captures and keys out of Git.
 
-The legacy `/api/agent/*` uses bearer node credentials, not mTLS. Neither those
-routes nor the old Go OpenAPI file implement the candidate v2 contracts in
-`contracts/`. See the status document for security and migration blockers.
+The legacy `/api/agent/*` uses bearer node credentials, not mTLS, and does not
+implement the candidate v2 contracts in `contracts/`. See the status document
+for security and migration blockers.
+
+## Repository hygiene
+
+- Application routes are named by function, not delivery milestone. Unverified
+  CDN, relay, WARP, BPB and Xray prototype endpoints and demo UI have been retired.
+- The historical `0002_m2.sql` migration and its ORM table mappings remain for
+  existing databases; migration filenames must not be rewritten after deployment.
+- Removed a locally generated key that had been committed under `.data/kek`.
+  **Any environment that used that key must rotate affected secrets and keys.**
+  Deleting the tracked file does not erase its contents from Git history.
+- Settings are deliberately read-only until mutations can be persisted and audited.
+- The obsolete pg-mem verification script was removed; use the maintained
+  contract tests, and do not misinterpret them as real networking evidence.

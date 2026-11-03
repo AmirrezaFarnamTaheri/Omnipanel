@@ -11,7 +11,6 @@ import { act, str, type ActionState } from "@/lib/action-helpers";
 import { declareRecoveryEpoch } from "@/lib/revisions";
 import { ProblemError } from "@/lib/problem";
 import { verifyTotp } from "@/lib/totp";
-import { seedDemo } from "@/lib/demo";
 import { findCapabilityByKey } from "@/lib/capabilities";
 import { drainOutbox, sweepExpiry } from "@/lib/outbox";
 import { lt } from "drizzle-orm";
@@ -71,15 +70,6 @@ export async function purgeRetentionAction(_p: ActionState, _fd: FormData): Prom
       await audit(tx, actorOf(me), "retention.purge", "system", "retention", { rawUsageDays: 30, hourlyDays: 180, healthDays: 7 });
     });
     return { message: "Raw usage events >30d, hourly aggregates >180d and health samples >7d purged. Audit records are retained." };
-  });
-}
-
-export async function seedDemoAction(_p: ActionState, _fd: FormData): Promise<ActionState> {
-  return act(async () => {
-    const me = await requireRole("owner");
-    const r = await seedDemo(actorOf(me));
-    refresh();
-    return { message: r.message, secret: r.secret };
   });
 }
 

@@ -335,7 +335,7 @@ export const alerts = pgTable(
   (t) => [uniqueIndex("alerts_open_uq").on(t.dedupeKey).where(sql`resolved_at is null`)],
 );
 
-/* ---------- M2: Integrated platform ---------- */
+/* Historical optional integration tables. Preserve schema mappings for applied migrations; no runtime driver is qualified. */
 
 export const cdnMappings = pgTable(
   "cdn_mappings",

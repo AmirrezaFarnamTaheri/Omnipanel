@@ -14,9 +14,7 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-  EmptyState,
   PageHeader,
-  Spinner,
   Stat,
   Table,
   TableBody,
@@ -27,10 +25,10 @@ import {
   TableWrapper,
 } from "@/components/ui";
 import { ActionForm } from "@/components/ActionForm";
-import { runWorkerAction, seedDemoAction } from "@/app/actions/system";
+import { runWorkerAction } from "@/app/actions/system";
 
 export default async function Overview() {
-  const me = await requirePage("viewer");
+  await requirePage("viewer");
   await sweepExpiry();
   await drainOutbox();
   const alerts = await evaluateAlerts();
@@ -52,7 +50,7 @@ export default async function Overview() {
       <>
         <PageHeader
           title="Welcome to OmniPanel"
-          subtitle="Register a VPS node, define an inbound, create a plan and a user. Or load a simulated two-provider topology to explore the platform."
+          subtitle="Register a VPS node, create a plan and a user. Runtime deployment remains gated until real capability evidence is verified."
         />
         <Card>
           <CardHeader>
@@ -82,11 +80,6 @@ export default async function Overview() {
                 <p className="mt-1 text-sm text-slate-600">One subscription identity, per-endpoint credentials.</p>
               </Link>
             </div>
-            {me.role === "owner" && (
-              <div className="mt-6">
-                <ActionForm action={seedDemoAction} submit="Load demo topology" variant="outline" />
-              </div>
-            )}
           </CardContent>
         </Card>
       </>

@@ -115,7 +115,7 @@ export const RUNTIME_CAPABILITIES: RuntimeCapability[] = [
     revocation: { newSessions: "DNS failover immediate", existingSessions: "TTL-bound" },
     hardQuotaCandidate: false,
     credential: "uuid",
-    notes: "M2 CDN integration; gated until admission evidence recorded.",
+    notes: "CDN integration candidate; gated until admission evidence recorded.",
   },
   {
     key: "relay:grpc",
@@ -133,7 +133,7 @@ export const RUNTIME_CAPABILITIES: RuntimeCapability[] = [
     revocation: { newSessions: "Tunnel teardown", existingSessions: "Drain on tunnel close" },
     hardQuotaCandidate: false,
     credential: "uuid",
-    notes: "M2 relay node integration; gated until admission evidence recorded.",
+    notes: "Relay integration candidate; gated until admission evidence recorded.",
   },
   {
     key: "warp:wireguard",
@@ -151,7 +151,7 @@ export const RUNTIME_CAPABILITIES: RuntimeCapability[] = [
     revocation: { newSessions: "Peer config revoke", existingSessions: "Keepalive timeout" },
     hardQuotaCandidate: false,
     credential: "uuid",
-    notes: "M2 WARP integration; gated until admission evidence recorded.",
+    notes: "WARP egress candidate; gated until admission evidence recorded.",
   },
   {
     key: "bpb:http",
