@@ -60,6 +60,8 @@ Reality requires a valid unpadded base64url public key, 1–8-byte lowercase hex
 
 **This is structural preflight, not a claim that any runtime build, client release, native config or network path has passed the lab gate.** Exact-build qualification remains mandatory.
 
+The subscription compiler also rejects a path when the requested client format does not declare support for its canonical protocol ID. Runtime names do not create a second protocol identity: VLESS/Reality/Vision remains the same canonical protocol for Sing-box and Xray.
+
 ### 2. Runtime-neutral session revocation primitive
 
 Added `internal/agent/sessions`, a clean-room Go registry that associates an opaque runtime session ID with an endpoint-principal ID and credential generation.
