@@ -54,86 +54,94 @@ export async function findUserByToken(token: string) {
 }
 
 /** Builds the IR plus a per-endpoint explanation of why each path is included or excluded. */
-export async function buildIR(userId: number, client: ClientFormat | null = null): Promise<IR> {
-  const [u] = await db.select().from(users).where(eq(users.id, userId));
-  const [plan] = await db.select().from(plans).where(eq(plans.id, u.planId));
-  const ev = await loadEvidence();
-  const rows = await db
-    .select({ ib: inbounds, node: nodes, h: inboundHealth.state })
+export async function buildIR(userId: number, clientFormat: ClientFormat | null = null): Promise<IR> {
+  const [user] = await db.select().from(users).where(eq(users.id, userId));
+  const [plan] = await db.select().from(plans).where(eq(plans.id, user.planId));
+  const evidence = await loadEvidence();
+  const inboundRows = await db
+    .select({ inbound: inbounds, node: nodes, healthState: inboundHealth.state })
     .from(inbounds)
     .innerJoin(nodes, eq(nodes.id, inbounds.nodeId))
     .leftJoin(inboundHealth, eq(inboundHealth.inboundId, inbounds.id))
     .orderBy(asc(inbounds.id));
-  const principals = await db
+  const activeEndpointPrincipals = await db
     .select()
     .from(endpointPrincipals)
     .where(and(eq(endpointPrincipals.userId, userId), eq(endpointPrincipals.state, "active")));
-  const clientDef = client ? CLIENT_REGISTRY.find((c) => c.format === client) ?? null : null;
+  const clientDefinition = clientFormat
+    ? (CLIENT_REGISTRY.find((candidate) => candidate.format === clientFormat) ?? null)
+    : null;
 
   const paths: AccessPath[] = [];
   const excluded: Exclusion[] = [];
-  for (const { ib, node, h } of rows) {
-    const exclude = (reason: string) => excluded.push({ inboundId: ib.id, name: `${node.name} / ${ib.name}`, reason });
-    const cap = findCapability(ib.runtime, ib.protocol);
-    const compatibility = validateInboundCompatibility({
-      runtime: ib.runtime,
-      protocol: ib.protocol,
-      transport: ib.transport,
-      serverName: ib.sni,
-      params: ib.params,
+
+  for (const { inbound, node, healthState } of inboundRows) {
+    const exclude = (reason: string) => excluded.push({
+      inboundId: inbound.id,
+      name: `${node.name} / ${inbound.name}`,
+      reason,
     });
-    const clientReason = clientAdmissionReason(clientDef, ib.protocol);
-    if (!ib.enabled) exclude("Endpoint administratively disabled");
-    else if (!cap) exclude("Unsupported runtime/protocol (not in capability registry)");
+    const runtimeCapability = findCapability(inbound.runtime, inbound.protocol);
+    const compatibility = validateInboundCompatibility({
+      runtime: inbound.runtime,
+      protocol: inbound.protocol,
+      transport: inbound.transport,
+      serverName: inbound.sni,
+      params: inbound.params,
+    });
+    const clientReason = clientAdmissionReason(clientDefinition, inbound.protocol);
+
+    if (!inbound.enabled) exclude("Endpoint administratively disabled");
+    else if (!runtimeCapability) exclude("Unsupported runtime/protocol (not in capability registry)");
     else if (!compatibility.supported) exclude(`Incompatible runtime configuration: ${compatibility.reason}`);
-    else if (!isAdmissible(cap, ev)) exclude("Runtime build has no production qualification; lab evidence required");
+    else if (!isAdmissible(runtimeCapability, evidence)) exclude("Runtime build has no production qualification; lab evidence required");
     else if (node.status === "quarantined") exclude("Node quarantined for security");
     else if (node.status === "draining") exclude("Node draining");
     else if (node.status === "pending_enrollment") exclude("Node not enrolled yet");
-    else if (h === "confirmed_unreachable") exclude("Sustained failure confirmed by independent vantages");
-    else if (clientReason) {
-      exclude(clientReason);
-    } else {
-      const p = principals.find((x) => x.inboundId === ib.id);
-      if (!p) exclude("No credential provisioned for this user on this endpoint");
-      else {
+    else if (healthState === "confirmed_unreachable") exclude("Sustained failure confirmed by independent vantages");
+    else if (clientReason) exclude(clientReason);
+    else {
+      const endpointPrincipal = activeEndpointPrincipals.find((principal) => principal.inboundId === inbound.id);
+      if (!endpointPrincipal) {
+        exclude("No credential provisioned for this user on this endpoint");
+      } else {
         paths.push({
-          inboundId: ib.id,
-          tag: `${node.name}-${ib.name}`.replace(/[^a-zA-Z0-9_.-]+/g, "-"),
+          inboundId: inbound.id,
+          tag: `${node.name}-${inbound.name}`.replace(/[^a-zA-Z0-9_.-]+/g, "-"),
           nodeName: node.name,
           server: node.publicAddress,
-          port: ib.port,
-          protocol: ib.protocol as AccessPath["protocol"],
-          transport: ib.transport as AccessPath["transport"],
-          runtime: ib.runtime as AccessPath["runtime"],
-          credential: decryptSecret(p.credentialEnc),
-          sni: ib.sni,
-          tlsModel: ib.protocol === "vless-reality-vision" ? "reality" : "tls-self-managed",
+          port: inbound.port,
+          protocol: inbound.protocol as AccessPath["protocol"],
+          transport: inbound.transport as AccessPath["transport"],
+          runtime: inbound.runtime as AccessPath["runtime"],
+          credential: decryptSecret(endpointPrincipal.credentialEnc),
+          sni: inbound.sni,
+          tlsModel: inbound.protocol === "vless-reality-vision" ? "reality" : "tls-self-managed",
           reality:
-            ib.protocol === "vless-reality-vision"
+            inbound.protocol === "vless-reality-vision"
               ? {
-                  publicKey: ib.params.realityPublicKey,
-                  shortId: ib.params.shortId,
-                  fingerprint: ib.params.fingerprint ?? "chrome",
-                  flow: ib.params.flow ?? "xtls-rprx-vision",
+                  publicKey: inbound.params.realityPublicKey,
+                  shortId: inbound.params.shortId,
+                  fingerprint: inbound.params.fingerprint ?? "chrome",
+                  flow: inbound.params.flow ?? "xtls-rprx-vision",
                 }
               : undefined,
           route: "direct",
-          enforceability: cap && isHardQuotaCapable(cap, ev) ? "hard" : "metered",
+          enforceability: isHardQuotaCapable(runtimeCapability, evidence) ? "hard" : "metered",
           revision: node.structuralSeq,
-          health: h ?? "healthy",
+          health: healthState ?? "unknown",
         });
       }
     }
   }
-  const diagnostics: string[] = [];
+
   return {
-    user: { id: u.id, name: u.name, status: u.status },
+    user: { id: user.id, name: user.name, status: user.status },
     paths,
     excluded,
-    diagnostics,
+    diagnostics: [],
     quotaBytes: plan?.quotaBytes ?? null,
-    expiresAt: u.expiresAt,
+    expiresAt: user.expiresAt,
   };
 }
 
