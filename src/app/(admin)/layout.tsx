@@ -11,6 +11,10 @@ const NAV = [
   ["/users", "Users"],
   ["/plans", "Plans"],
   ["/capabilities", "Capabilities"],
+  ["/m2/cdn", "CDN"],
+  ["/m2/relay", "Relay"],
+  ["/m2/warp", "WARP"],
+  ["/m2/bpb", "BPB"],
   ["/audit", "Audit log"],
   ["/settings", "Settings & recovery"],
 ] as const;
