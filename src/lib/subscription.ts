@@ -82,6 +82,7 @@ export async function buildIR(userId: number, client: ClientFormat | null = null
       serverName: ib.sni,
       params: ib.params,
     });
+    const clientReason = clientAdmissionReason(clientDef, ib.protocol);
     if (!ib.enabled) exclude("Endpoint administratively disabled");
     else if (!cap) exclude("Unsupported runtime/protocol (not in capability registry)");
     else if (!compatibility.supported) exclude(`Incompatible runtime configuration: ${compatibility.reason}`);
@@ -90,8 +91,8 @@ export async function buildIR(userId: number, client: ClientFormat | null = null
     else if (node.status === "draining") exclude("Node draining");
     else if (node.status === "pending_enrollment") exclude("Node not enrolled yet");
     else if (h === "confirmed_unreachable") exclude("Sustained failure confirmed by independent vantages");
-    else if (clientAdmissionReason(clientDef, ib.protocol)) {
-      exclude(clientAdmissionReason(clientDef, ib.protocol)!);
+    else if (clientReason) {
+      exclude(clientReason);
     } else {
       const p = principals.find((x) => x.inboundId === ib.id);
       if (!p) exclude("No credential provisioned for this user on this endpoint");
