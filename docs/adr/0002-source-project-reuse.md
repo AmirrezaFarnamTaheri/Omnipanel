@@ -1,7 +1,7 @@
 # ADR 0002 — Selectively adopt S-UI and 3X-UI behaviors
 
 - Date: 2026-11-03
-- Status: accepted for clean-room implementation; production integration pending
+- Status: accepted for independent implementation; production integration pending
 
 ## Context
 
