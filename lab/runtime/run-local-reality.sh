@@ -174,6 +174,7 @@ jq -n \
       users: [{name: "lab-user", uuid: $uuid, flow: "xtls-rprx-vision"}],
       tls: {
         enabled: true,
+        server_name: "localhost",
         reality: {
           enabled: true,
           handshake: {server: "127.0.0.1", server_port: 18443},
@@ -237,6 +238,20 @@ jq --exit-status '
     and $outbounds[0].tls.utls.enabled == true
     and $outbounds[0].tls.utls.fingerprint == "chrome"
 ' "$temp_dir/client.json" >/dev/null
+
+# Reality accepts only the inbound TLS server_name. With an empty or different
+# SNI allowlist, the server forwards this client to the decoy endpoint instead
+# of authenticating its Reality session. Never mask that failure with insecure.
+if ! jq --exit-status --slurpfile client "$temp_dir/client.json" '
+  ([.inbounds[] | select(.type == "vless" and .tls.reality.enabled == true)] | first) as $inbound
+  | ([$client[0].outbounds[] | select(.type == "vless")] | first) as $outbound
+  | ($inbound.tls.server_name | type == "string" and length > 0)
+    and ($inbound.tls.server_name == $outbound.tls.server_name)
+    and ($outbound.tls.insecure != true)
+' "$temp_dir/server.json" >/dev/null; then
+  echo "Reality inbound SNI must match the client SNI without disabling TLS verification." >&2
+  exit 1
+fi
 
 "$sing_box_bin" check -c "$temp_dir/server.json"
 "$sing_box_bin" check -c "$temp_dir/client.json"
