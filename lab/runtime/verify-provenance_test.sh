@@ -63,8 +63,8 @@ jq -n \
 
 # Builder, signed test metadata and runtime runner must agree on the exact
 # custom build ID. This detects drift before any privileged namespace work.
-build_version="$(sed -n 's/^readonly runtime_version="\\([^"]*\\)"/\\1/p' "$script_dir/build-sing-box.sh")"
-runner_version="$(sed -n 's/^runtime_version="\\([^"]*\\)"/\\1/p' "$script_dir/run-local-reality.sh")"
+build_version="$(awk -F '"' '/^readonly runtime_version=/{ print $2; exit }' "$script_dir/build-sing-box.sh")"
+runner_version="$(awk -F '"' '/^runtime_version=/{ print $2; exit }' "$script_dir/run-local-reality.sh")"
 fixture_version="$(jq --exit-status --raw-output '.version' "$metadata")"
 if [[ -z "$build_version" || "$build_version" != "$runner_version" || "$runner_version" != "$fixture_version" ]]; then
   echo "FAIL: version mismatch between pinned builder, metadata, and runtime runner" >&2
