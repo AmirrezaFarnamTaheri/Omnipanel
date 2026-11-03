@@ -113,3 +113,11 @@ Task 1–4 success is a foundation for `gate-lab`, not automatic M0 acceptance. 
 - Runtime-specific revocation SLA for existing streams must follow measured driver behavior; the default product contract only promises denial of new authentication where verified.
 - The operator/security team must approve exposed lab destinations, trusted signing authorities and privileged systemd/nftables allowlists before any real-node testing.
 - Hard quota and offline grace remain product/security decisions; this plan must not pre-activate them.
+
+
+**Progress note (4 November 2026):** The reviewed Go driver interface and
+fail-closed default adapter have been added in `internal/drivers` with
+synthetic negative tests. The separate Sing-box renderer/native validation
+and signed artifact provenance remain pending. This task is **not completed**;
+the private GitHub attestation endpoint is not available in this user-owned
+repository, and no production gate is unblocked.

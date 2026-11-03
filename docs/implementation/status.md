@@ -175,3 +175,17 @@ production gates. A supported GitHub repository arrangement or an independently
 verifiable signed-artifact workflow must be selected and reviewed before this
 provenance task can be completed. Driver interfaces and pure rendering may be
 unit-tested independently, but cannot be applied by an agent without such evidence.
+
+## Capability-gated Go driver interface (foundation only)
+
+The `internal/drivers` Go package introduces typed inputs and outputs for
+runtime rendering, native validation, preflight, structural application,
+membership, health, metering, revocation, rollback and diagnostics. The
+`Unsupported` adapter returns a typed `ErrUnsupportedCapability` for **all**
+operations. Unit tests exercise every method and prevent false-success no-ops.
+
+This is a contract skeleton, **not** a Sing-box/Xray/Hysteria2 runtime adapter.
+No binary has been accepted, rendered or applied, and no native validation,
+quota guarantee, ingress policy, real session revocation or lab gate is passed.
+The separately approved and authenticated runtime-driver implementations must
+supply these behaviors, with explicit release evidence.

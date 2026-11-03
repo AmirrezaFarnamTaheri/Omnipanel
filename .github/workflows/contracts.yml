@@ -29,5 +29,5 @@ jobs:
           go-version: '1.27.3'
           cache: false
       - run: make test-go
-      - run: test -z "$(gofmt -l internal/manifest/*.go)"
+      - run: test -z "$(gofmt -l internal/manifest/*.go internal/agent/sessions/*.go internal/drivers/*.go)"
       # A valid signature is not evidence of an applied node configuration.
