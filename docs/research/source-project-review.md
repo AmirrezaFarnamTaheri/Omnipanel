@@ -60,7 +60,7 @@ Reality requires a valid unpadded base64url public key, 1–8-byte lowercase hex
 
 **This is structural preflight, not a claim that any runtime build, client release, native config or network path has passed the lab gate.** Exact-build qualification remains mandatory.
 
-The subscription compiler also rejects a path when the requested client format does not declare support for its canonical protocol ID. Runtime names do not create a second protocol identity: VLESS/Reality/Vision remains the same canonical protocol for Sing-box and Xray.
+The subscription compiler also rejects a path when the requested client format does not declare support for its canonical protocol ID, and excludes all client formats until exact-release compatibility evidence is marked verified. Runtime names do not create a second protocol identity: VLESS/Reality/Vision remains the same canonical protocol for Sing-box and Xray.
 
 ### 2. Runtime-neutral session revocation primitive
 
