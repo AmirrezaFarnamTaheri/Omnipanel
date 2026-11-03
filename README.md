@@ -117,3 +117,10 @@ client, agent, subscription compiler, safe-apply/rollback, or M0 acceptance test
 The credential-removal observation uses a core restart; it does not prove hot
 per-user revocation. The full `make gate-lab` remains blocked pending external
 node/client evidence and the remaining Task 1 requirements.
+## Existing panel capability review
+
+A clean-room review of the supplied [S-UI](https://github.com/AmirrezaFarnamTaheri/S-UI)
+and [3X-UI](https://github.com/AmirrezaFarnamTaheri/3X-UI) repositories, including
+what was adopted, deferred and excluded, is documented in
+[docs/research/source-project-review.md](docs/research/source-project-review.md).
+No GPL-3.0 source files were copied or vendored.
