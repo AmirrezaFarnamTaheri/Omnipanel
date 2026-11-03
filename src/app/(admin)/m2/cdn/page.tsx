@@ -1,7 +1,6 @@
 import { requirePage } from "@/lib/auth";
-import { Badge, Card, Field, inputCls, PageHeader, Table, Td } from "@/components/ui";
+import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Field, PageHeader, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableWrapper } from "@/components/ui";
 import { ActionForm } from "@/components/ActionForm";
-import type { ActionState } from "@/lib/action-helpers";
 
 export type CdnProvider = { id: string; name: string; supported: boolean };
 export type CdnMapping = {
@@ -14,11 +13,7 @@ export type CdnMapping = {
 };
 
 async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, {
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
-    ...init,
-    cache: "no-store",
-  });
+  const res = await fetch(path, { headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) }, ...init, cache: "no-store" });
   if (!res.ok) throw new Error(`API ${path} failed: ${res.status}`);
   return res.json();
 }
@@ -45,75 +40,104 @@ export default async function CdnPage() {
       />
 
       {error && (
-        <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
-          {error}
-        </div>
+        <div className="mb-6 rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">{error}</div>
       )}
 
-      <Card title="Available providers" className="mb-6">
-        <Table head={["Provider", "Status"]}>
-          {providers.map((p) => (
-            <tr key={p.id}>
-              <Td className="font-medium">{p.name}</Td>
-              <Td>
-                <Badge tone={p.supported ? "green" : "red"}>
-                  {p.supported ? "supported" : "unsupported"}
-                </Badge>
-              </Td>
-            </tr>
-          ))}
-        </Table>
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Available providers</CardTitle>
+          <CardDescription>{providers.length} CDN provider(s) available</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            {providers.map((p) => (
+              <div key={p.id} className="rounded-lg border border-slate-200 p-4 flex flex-col items-center text-center">
+                <div className="w-10 h-10 rounded-full flex items-center justify-center mb-2 {p.supported ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-600'}">
+                  <span className="text-lg">{p.supported ? "✅" : "❌"}</span>
+                </div>
+                <h4 className="font-semibold">{p.name}</h4>
+                <Badge variant={p.supported ? "success" : "error"}>{p.supported ? "supported" : "unsupported"}</Badge>
+              </div>
+            ))}
+          </div>
+        </CardContent>
       </Card>
 
       {me.role !== "viewer" && (
-        <Card title="Create CDN mapping">
-          <ActionForm action={createCdnMapping} submit="Create mapping">
-            <div className="grid gap-4 md:grid-cols-3">
-              <Field label="Domain">
-                <input name="domain" required placeholder="cdn.example.com" className={inputCls} />
-              </Field>
-              <Field label="Origin">
-                <input name="origin" required placeholder="203.0.113.10:443" className={inputCls} />
-              </Field>
-              <Field label="Provider">
-                <select name="provider" className={inputCls}>
-                  {providers.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-            </div>
-          </ActionForm>
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle>Create CDN mapping</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ActionForm action={createCdnMapping} submit="Create mapping">
+              <div className="grid gap-4 md:grid-cols-3">
+                <Field label="Domain">
+                  <input name="domain" required placeholder="cdn.example.com" className="w-full" />
+                </Field>
+                <Field label="Origin">
+                  <input name="origin" required placeholder="203.0.113.10:443" className="w-full" />
+                </Field>
+                <Field label="Provider">
+                  <select name="provider" className="w-full">
+                    {providers.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                </Field>
+              </div>
+            </ActionForm>
+          </CardContent>
         </Card>
       )}
 
-      <Card title="CDN mappings" className="mt-6">
-        <Table
-          head={["Domain", "Origin", "Provider", "Status", "Created"]}
-          empty={mappings.length ? undefined : "No CDN mappings yet."}
-        >
-          {mappings.map((m) => (
-            <tr key={m.id}>
-              <Td className="font-medium">{m.domain}</Td>
-              <Td>{m.origin}</Td>
-              <Td>{m.provider}</Td>
-              <Td>
-                <Badge tone={m.status === "active" ? "green" : "amber"}>
-                  {m.status}
-                </Badge>
-              </Td>
-              <Td className="text-xs">{new Date(m.createdAt).toISOString()}</Td>
-            </tr>
-          ))}
-        </Table>
+      <Card>
+        <CardHeader>
+          <CardTitle>CDN mappings</CardTitle>
+          <CardDescription>{mappings.length} mapping(s) configured</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <TableWrapper>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Domain</TableHead>
+                  <TableHead>Origin</TableHead>
+                  <TableHead>Provider</TableHead>
+                  <TableHead className="w-20">Status</TableHead>
+                  <TableHead className="w-24">Created</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {mappings.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={5}>
+                      <EmptyState title="No CDN mappings yet" description="Create your first CDN mapping to route customer traffic through a CDN provider." />
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  mappings.map((m) => (
+                    <TableRow key={m.id}>
+                      <TableCell className="font-medium">{m.domain}</TableCell>
+                      <TableCell>{m.origin}</TableCell>
+                      <TableCell>{m.provider}</TableCell>
+                      <TableCell>
+                        <Badge variant={m.status === "active" ? "success" : "warning"}>{m.status}</Badge>
+                      </TableCell>
+                      <TableCell className="text-xs">{new Date(m.createdAt).toISOString()}</TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </TableWrapper>
+        </CardContent>
       </Card>
     </>
   );
 }
 
-async function createCdnMapping(_p: ActionState, fd: FormData): Promise<ActionState> {
+async function createCdnMapping(_p: { ok?: boolean; error?: string }, fd: FormData) {
+  "use server";
   try {
     const res = await fetch("/api/m2/cdn/mapping", {
       method: "POST",

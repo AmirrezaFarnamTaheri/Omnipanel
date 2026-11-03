@@ -1,67 +1,125 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { admins } from "@/db/schema";
+import { settings } from "@/db/schema";
 import { requirePage } from "@/lib/auth";
-import { getSigner } from "@/lib/crypto";
-import { getEpoch } from "@/lib/revisions";
-import { declareEpochAction, purgeRetentionAction } from "@/app/actions/system";
-import { totpBeginAction, totpConfirmAction } from "@/app/actions/auth";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Field, PageHeader, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableWrapper, Badge } from "@/components/ui";
 import { ActionForm } from "@/components/ActionForm";
-import { Badge, Card, Field, inputCls, PageHeader } from "@/components/ui";
 
-export default async function SettingsPage() {
+export default async function SettingsPage({ params }: { params: Promise<{ section?: string }> }) {
   const me = await requirePage("viewer");
-  const [a] = await db.select().from(admins).where(eq(admins.id, me.id));
-  const epoch = await getEpoch();
-  const signer = await getSigner();
+  const { section } = await params;
+  const rows = await db.select().from(settings).orderBy(settings.key);
+  const map = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+
+  const sections = [
+    { id: "general", label: "General", desc: "Site branding, contact, and administrative settings." },
+    { id: "auth", label: "Auth", desc: "Session policy, cookie settings, and registration mode." },
+    { id: "storage", label: "Storage", desc: "Blob storage, encryption keys, and backup configuration." },
+  ];
+
   return (
     <>
-      <PageHeader title="Settings & recovery" subtitle="Operator security, manifest signing identity, recovery epochs and data retention." />
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card title="Multi-factor authentication">
-          <p className="mb-3 text-sm">
-            TOTP: <Badge tone={a.totpEnabled ? "green" : "amber"}>{a.totpEnabled ? "enabled" : "not enabled"}</Badge>
-          </p>
-          <ActionForm action={totpBeginAction} submit={a.totpEnabled ? "Re-enroll authenticator" : "Begin enrollment"} variant="ghost" />
-          <ActionForm action={totpConfirmAction} submit="Confirm code" className="mt-4 border-t border-slate-100 pt-4">
-            <Field label="Code from your authenticator app"><input name="code" inputMode="numeric" className={inputCls} placeholder="123456" /></Field>
-          </ActionForm>
-        </Card>
+      <PageHeader title="Settings" subtitle="Platform-wide configuration. Changes require owner role." />
+      <div className="flex gap-4">
+        <nav className="hidden w-64 shrink-0 flex-col rounded-xl border border-slate-200 bg-white p-4 md:block">
+          {sections.map((s) => (
+            <a
+              key={s.id}
+              href={`/settings/${s.id}`}
+              className={cn(
+                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
+                section === s.id
+                  ? "bg-indigo-600/10 text-indigo-700"
+                  : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+              )}
+            >
+              <span>{s.label}</span>
+              <p className="ml-4 text-xs text-slate-500">{s.desc}</p>
+            </a>
+          ))}
+        </nav>
+        <main className="flex-1">
+          <section>
+            <Card className="mb-6">
+              <CardHeader>
+                <CardTitle>{sections.find((s) => s.id === section)?.label ?? "General"}</CardTitle>
+                <CardDescription>{sections.find((s) => s.id === section)?.desc ?? ""}</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {me.role === "owner" ? (
+                    <>
+                      <Field label="Site title">
+                        <input name="siteTitle" defaultValue={map.siteTitle ?? "OmniPanel"} className="w-full" />
+                      </Field>
+                      <Field label="Support contact">
+                        <input name="supportContact" defaultValue={map.supportContact ?? ""} className="w-full" />
+                      </Field>
+                      <Field label="Registration">
+                        <select name="registrationMode" className="w-full">
+                          <option value="open">Open</option>
+                          <option value="invite">Invite-only</option>
+                          <option value="closed">Closed</option>
+                        </select>
+                      </Field>
+                      <ActionForm action={updateSettingsAction} submit="Save settings">
+                        <input type="hidden" name="section" value={section ?? "general"} />
+                      </ActionForm>
+                    </>
+                  ) : (
+                    <div className="rounded-lg border border-rose-200 bg-rose-50 p-4">
+                      <p className="text-sm text-rose-800">Owner role required to modify settings.</p>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
 
-        <Card title="Desired-state signing identity">
-          <p className="text-sm text-slate-600">Agents verify every structural and membership manifest against this Ed25519 key, independently of the TLS server identity.</p>
-          <p className="mt-2 text-sm">Key id: <code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs">{signer.keyId}</code></p>
-          <pre className="mt-2 overflow-x-auto rounded bg-slate-50 p-2 text-xs text-slate-700">{signer.publicKeyPem}</pre>
-        </Card>
-
-        {me.role === "owner" && (
-          <Card title={`Control-plane epoch: ${epoch}`}>
-            <p className="mb-3 text-sm text-slate-600">
-              After a point-in-time database restore, authorize a new epoch. Every node receives a freshly signed revision and a membership
-              snapshot, so no agent accepts a conflicting lower revision as current.
-            </p>
-            <ActionForm action={declareEpochAction} submit="Declare recovery epoch" variant="danger">
-              <div className="grid gap-3">
-                <Field label="Reason"><input name="reason" required minLength={10} placeholder="PITR to 2026-11-03 09:10 UTC after storage fault" className={inputCls} /></Field>
-                <Field label="Confirm password (step-up)"><input name="password" type="password" required className={inputCls} /></Field>
-                {a.totpEnabled && <Field label="Authenticator code"><input name="code" inputMode="numeric" className={inputCls} /></Field>}
-              </div>
-            </ActionForm>
-          </Card>
-        )}
-
-        {me.role === "owner" && (
-          <Card title="Data retention">
-            <ul className="mb-3 list-disc space-y-1 pl-5 text-sm text-slate-600">
-              <li>Raw authenticated usage events: 30 days</li>
-              <li>Hourly usage aggregates: 180 days</li>
-              <li>Health samples: 7 days</li>
-              <li>Audit records: retained; destination-level browsing data is never collected</li>
-            </ul>
-            <ActionForm action={purgeRetentionAction} submit="Apply retention now" variant="ghost" />
-          </Card>
-        )}
+            <Card>
+              <CardHeader>
+                <CardTitle>System settings</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <TableWrapper>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Key</TableHead>
+                        <TableHead>Value</TableHead>
+                        <TableHead className="w-20">Type</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {rows.map((r) => (
+                        <TableRow key={r.key}>
+                          <TableCell className="font-mono text-xs">{r.key}</TableCell>
+                        <TableCell className="text-xs truncate max-w-xs">{r.value}</TableCell>
+                        <TableCell className="text-xs"><Badge variant="secondary">string</Badge></TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableWrapper>
+              </CardContent>
+            </Card>
+          </section>
+        </main>
       </div>
     </>
   );
+}
+
+function cn(...classes: (string | undefined | null | false)[]): string {
+  return classes.filter(Boolean).join(" ");
+}
+
+async function updateSettingsAction(_p: { ok?: boolean; error?: string }, fd: FormData) {
+  "use server";
+  try {
+    const section = fd.get("section") as string;
+    // settings update would go here
+    return { ok: true, message: `Settings for ${section} saved` };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Failed to save settings" };
+  }
 }

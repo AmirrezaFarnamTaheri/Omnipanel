@@ -1,131 +1,133 @@
 import { requirePage } from "@/lib/auth";
-import { db } from "@/db";
-import { nodes } from "@/db/schema";
-import { Badge, Card, Field, inputCls, PageHeader, Table, Td } from "@/components/ui";
+import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Field, PageHeader, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableWrapper } from "@/components/ui";
 import { ActionForm } from "@/components/ActionForm";
-import type { ActionState } from "@/lib/action-helpers";
 
 export type BpbPolicy = {
   id: number;
-  nodeId: number;
-  bandwidthLimit: number;
-  priority: number;
-  updatedAt: string;
+  rule: string;
+  description: string;
+  status: string;
+  createdAt: string;
 };
 
 async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, {
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
-    ...init,
-    cache: "no-store",
-  });
+  const res = await fetch(path, { headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) }, ...init, cache: "no-store" });
   if (!res.ok) throw new Error(`API ${path} failed: ${res.status}`);
   return res.json();
 }
 
 export default async function BpbPage() {
   const me = await requirePage("viewer");
-  const nodeRows = await db
-    .select({ id: nodes.id, name: nodes.name })
-    .from(nodes)
-    .orderBy(nodes.id);
-
-  let policy: BpbPolicy | null = null;
-  let policyError: string | null = null;
-  if (nodeRows.length > 0) {
+  const [policies, error] = await (async () => {
     try {
-      const result = await fetchJson<{ policy: BpbPolicy | null }>(
-        `/api/m2/bpb/policy?nodeId=${nodeRows[0].id}`
-      );
-      policy = result.policy;
+      const p = await fetchJson<{ policies: BpbPolicy[] }>("/api/m2/bpb/policy");
+      return [p.policies, null] as [BpbPolicy[], string | null];
     } catch (e) {
-      policyError = e instanceof Error ? e.message : "Failed to load BPB policy";
+      return [[], e instanceof Error ? e.message : "Failed to load BPB data"];
     }
-  }
+  })();
 
   return (
     <>
       <PageHeader
-        title="BPB (Bandwidth Policy Bridge)"
-        subtitle="BPB enforces per-user rate limits on shaped egress. BPB is a hard-quota candidate once evidence is verified."
+        title="BPB (Border Patrol Bouncer)"
+        subtitle="BPB policies govern inbound/outbound traffic rules at the edge. Policy enforcement is gated until admission evidence is recorded."
       />
 
-      {policyError && (
-        <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
-          {policyError}
-        </div>
+      {error && (
+        <div className="mb-6 rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">{error}</div>
       )}
 
-      <Card title="Current policy" className="mb-6">
-        {policy ? (
-          <Table head={["Property", "Value"]}>
-            <tr>
-              <Td className="font-medium">Node</Td>
-              <Td>{policy.nodeId}</Td>
-            </tr>
-            <tr>
-              <Td className="font-medium">Bandwidth limit</Td>
-              <Td>{policy.bandwidthLimit} kbps</Td>
-            </tr>
-            <tr>
-              <Td className="font-medium">Priority</Td>
-              <Td>{policy.priority}</Td>
-            </tr>
-            <tr>
-              <Td className="font-medium">Updated</Td>
-              <Td className="text-xs">{new Date(policy.updatedAt).toISOString()}</Td>
-            </tr>
-          </Table>
-        ) : (
-          <p className="text-sm text-slate-500">No BPB policy configured yet.</p>
-        )}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>BPB policies</CardTitle>
+          <CardDescription>{policies.length} policy(ies) configured</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <TableWrapper>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-12">#</TableHead>
+                  <TableHead>Rule</TableHead>
+                  <TableHead>Description</TableHead>
+                  <TableHead className="w-20">Status</TableHead>
+                  <TableHead className="w-24">Created</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {policies.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={5}>
+                      <EmptyState title="No BPB policies yet" description="Create your first BPB policy to govern edge traffic." />
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  policies.map((p) => (
+                    <TableRow key={p.id}>
+                      <TableCell className="font-medium">#{p.id}</TableCell>
+                      <TableCell>{p.rule}</TableCell>
+                      <TableCell>{p.description}</TableCell>
+                      <TableCell>
+                        <Badge variant={p.status === "active" ? "success" : "warning"}>{p.status}</Badge>
+                      </TableCell>
+                      <TableCell className="text-xs">{new Date(p.createdAt).toISOString()}</TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </TableWrapper>
+        </CardContent>
       </Card>
 
       {me.role !== "viewer" && (
-        <Card title="Update BPB policy">
-          <ActionForm action={updateBpbPolicy} submit="Update policy">
-            <input type="hidden" name="nodeId" value={String(nodeRows[0]?.id ?? "")} />
-            <div className="grid gap-4 md:grid-cols-3">
-              <Field label="Node">
-                <select name="nodeId" className={inputCls}>
-                  {nodeRows.map((n) => (
-                    <option key={n.id} value={n.id}>
-                      {n.name}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Bandwidth limit (kbps)">
-                <input name="bandwidthLimit" type="number" required defaultValue="10000" className={inputCls} />
-              </Field>
-              <Field label="Priority">
-                <input name="priority" type="number" required defaultValue="0" className={inputCls} />
-              </Field>
-            </div>
-          </ActionForm>
+        <Card>
+          <CardHeader>
+            <CardTitle>Create BPB policy</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ActionForm action={createBpbPolicy} submit="Create policy">
+              <div className="grid gap-4 md:grid-cols-3">
+                <Field label="Rule">
+                  <input name="rule" required placeholder="deny-inbound-from-rogue-nodes" className="w-full" />
+                </Field>
+                <Field label="Description">
+                  <input name="description" required placeholder="Block traffic from nodes without verified admission" className="w-full" />
+                </Field>
+                <Field label="Status">
+                  <select name="status" className="w-full">
+                    <option value="active">active</option>
+                    <option value="inactive">inactive</option>
+                  </select>
+                </Field>
+              </div>
+            </ActionForm>
+          </CardContent>
         </Card>
       )}
     </>
   );
 }
 
-async function updateBpbPolicy(_p: ActionState, fd: FormData): Promise<ActionState> {
+async function createBpbPolicy(_p: { ok?: boolean; error?: string }, fd: FormData) {
+  "use server";
   try {
     const res = await fetch("/api/m2/bpb/policy", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        nodeId: Number(fd.get("nodeId")),
-        bandwidthLimit: Number(fd.get("bandwidthLimit")),
-        priority: Number(fd.get("priority")),
+        rule: fd.get("rule"),
+        description: fd.get("description"),
+        status: fd.get("status"),
       }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       return { ok: false, error: err.detail || `Failed with status ${res.status}` };
     }
-    return { ok: true, message: "BPB policy updated" };
+    return { ok: true, message: "BPB policy created" };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "Failed to update BPB policy" };
+    return { ok: false, error: e instanceof Error ? e.message : "Failed to create BPB policy" };
   }
 }
