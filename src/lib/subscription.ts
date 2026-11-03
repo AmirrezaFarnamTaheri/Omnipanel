@@ -1,7 +1,7 @@
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { endpointPrincipals, inboundHealth, inbounds, nodes, plans, subscriptionTokens, users } from "@/db/schema";
-import { CLIENT_REGISTRY, findCapability, isAdmissible, isHardQuotaCapable, loadEvidence, type ClientFormat } from "@/lib/capabilities";
+import { CLIENT_REGISTRY, clientAdmissionReason, findCapability, isAdmissible, isHardQuotaCapable, loadEvidence, type ClientFormat } from "@/lib/capabilities";
 import { decryptSecret, sha256 } from "@/lib/crypto";
 import { validateInboundCompatibility } from "@/lib/protocol-compatibility";
 
@@ -90,8 +90,8 @@ export async function buildIR(userId: number, client: ClientFormat | null = null
     else if (node.status === "draining") exclude("Node draining");
     else if (node.status === "pending_enrollment") exclude("Node not enrolled yet");
     else if (h === "confirmed_unreachable") exclude("Sustained failure confirmed by independent vantages");
-    else if (clientDef && !(clientDef.protocols as readonly string[]).includes(ib.protocol)) {
-      exclude(`Client format ${clientDef.label} does not support ${ib.protocol}`);
+    else if (clientAdmissionReason(clientDef, ib.protocol)) {
+      exclude(clientAdmissionReason(clientDef, ib.protocol)!);
     } else {
       const p = principals.find((x) => x.inboundId === ib.id);
       if (!p) exclude("No credential provisioned for this user on this endpoint");
