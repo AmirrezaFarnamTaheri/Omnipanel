@@ -734,3 +734,17 @@ monitoring, firewall and storage features remain independently bounded by
 the map and plan; this increment does not claim those projects have been
 fully ported. Production gates remain BLOCKED pending final-head CI and
 external operational evidence.
+
+## PostgreSQL full migration-chain integration (5 November 2026)
+
+Follow-up to the review's production-shape schema concern: the grant
+integration now creates a unique disposable schema, applies migrations
+0001–0007 in order, and executes the existing admin grant, trusted step-up,
+redemption, logout and revocation tests against those published tables rather
+than minimal hand-written `admins`, `admin_sessions` and `nodes` fixtures.
+This also exposed invalid PostgreSQL syntax in 0001's active-principal
+partial uniqueness declaration; it is now represented as a partial unique
+index matching the Drizzle schema. Workflow path filters include 0001/0002.
+Final PostgreSQL 17.6 CI is pending and is the acceptance gate. This still
+does not establish production DB role separation, grants, PITR/restore, or
+trusted secret custody; those remain open.

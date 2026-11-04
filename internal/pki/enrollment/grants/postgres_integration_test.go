@@ -5,6 +5,7 @@ package grants
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/base32"
@@ -49,7 +50,36 @@ func TestPostgresAdminApprovedNodeGrants(t *testing.T) {
 		t.Fatal("requires isolated local omnipanel_enrollment_test PostgreSQL database")
 	}
 	ctx := context.Background()
-	db, err := sql.Open("postgres", dsn)
+	adminDB, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = adminDB.Close() })
+	adminDB.SetMaxOpenConns(4)
+	if err := adminDB.PingContext(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	// Every grant integration run gets an isolated schema and applies the real
+	// published migration chain. This catches production-shape drift that a
+	// hand-built auth fixture would hide, without colliding with other CI tests.
+	var suffix [12]byte
+	if _, err := rand.Read(suffix[:]); err != nil {
+		t.Fatal(err)
+	}
+	schema := "grant_chain_" + hex.EncodeToString(suffix[:])
+	if _, err := adminDB.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := adminDB.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE"); err != nil {
+			t.Errorf("drop isolated migration schema: %v", err)
+		}
+	})
+	query := parsed.Query()
+	query.Set("options", "-csearch_path="+schema)
+	parsed.RawQuery = query.Encode()
+	db, err := sql.Open("postgres", parsed.String())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,23 +88,21 @@ func TestPostgresAdminApprovedNodeGrants(t *testing.T) {
 	if err := db.PingContext(ctx); err != nil {
 		t.Fatal(err)
 	}
-
-	// Migration 0001 is a distinct legacy contract, not modified or certified
-	// by this test. Exercise the exact auth/node columns this service reads.
-	const authFixture = `
-CREATE TABLE admins(id serial PRIMARY KEY,email text NOT NULL UNIQUE,password_hash text NOT NULL,role text NOT NULL,totp_enabled boolean NOT NULL,totp_secret_enc text,created_at timestamptz NOT NULL);
-CREATE TABLE admin_sessions(id serial PRIMARY KEY,admin_id integer NOT NULL REFERENCES admins(id),token_hash text NOT NULL UNIQUE,created_at timestamptz NOT NULL,last_seen_at timestamptz NOT NULL,expires_at timestamptz NOT NULL);
-CREATE TABLE nodes(id serial PRIMARY KEY,status text NOT NULL);`
-	if _, err := db.ExecContext(ctx, authFixture); err != nil {
-		t.Fatal(err)
+	var currentSchema string
+	if err := db.QueryRowContext(ctx, "SELECT current_schema()").Scan(&currentSchema); err != nil || currentSchema != schema {
+		t.Fatalf("grant test is not isolated to its migration schema: current=%q err=%v", currentSchema, err)
 	}
-	for _, name := range []string{"0005_agent_admin_grants.sql", "0006_agent_grant_logout_revocation.sql", "0007_agent_grant_verified_stepup.sql"} {
+	for _, name := range []string{
+		"0001_initial.sql", "0002_m2.sql", "0003_agent_enrollment.sql",
+		"0004_agent_enrollment_rate_limits.sql", "0005_agent_admin_grants.sql",
+		"0006_agent_grant_logout_revocation.sql", "0007_agent_grant_verified_stepup.sql",
+	} {
 		migration, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "migrations", name))
 		if err != nil {
 			t.Fatal(err)
 		}
 		if _, err := db.ExecContext(ctx, string(migration)); err != nil {
-			t.Fatalf("real PostgreSQL admin grant migration %s failed: %v", name, err)
+			t.Fatalf("full-chain PostgreSQL migration %s failed: %v", name, err)
 		}
 	}
 	issuer, err := New(db)
@@ -94,7 +122,10 @@ CREATE TABLE nodes(id serial PRIMARY KEY,status text NOT NULL);`
 (13,'operator@test.invalid','none','operator',true,$1)`, []any{now.Add(-time.Hour)}},
 		{`INSERT INTO admin_sessions(id,admin_id,token_hash,created_at,last_seen_at,expires_at)
 VALUES (21,11,$1,$2,$3,$4)`, []any{hex.EncodeToString(sessionHash[:]), now.Add(-10 * time.Minute), now, now.Add(time.Hour)}},
-		{`INSERT INTO nodes(id,status) VALUES (31,'pending_enrollment'),(32,'pending_enrollment'),(33,'pending_enrollment')`, nil},
+		{`INSERT INTO nodes(id,name,public_address,provider,status) VALUES
+(31,'node-31','192.0.2.31','fixture','pending_enrollment'),
+(32,'node-32','192.0.2.32','fixture','pending_enrollment'),
+(33,'node-33','192.0.2.33','fixture','pending_enrollment')`, nil},
 		{`INSERT INTO agent_grant_organizations(organization_id,state) VALUES($1,'active')`, []any{organizationID}},
 		{`INSERT INTO agent_grant_admin_scopes(admin_id,organization_id,can_issue,can_approve) VALUES
 (11,$1,true,false),(12,$1,false,true),(13,$1,true,false)`, []any{organizationID}},

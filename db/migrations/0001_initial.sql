@@ -140,9 +140,10 @@ CREATE TABLE endpoint_principals (
     credential_enc text NOT NULL,
     state text NOT NULL DEFAULT 'active',
     created_at timestamptz NOT NULL DEFAULT now(),
-    revoked_at timestamptz,
-    CONSTRAINT principal_active_uq UNIQUE (user_id, inbound_id) WHERE state = 'active'
+    revoked_at timestamptz
 );
+CREATE UNIQUE INDEX principal_active_uq ON endpoint_principals(user_id, inbound_id)
+    WHERE state = 'active';
 CREATE INDEX principal_inbound_idx ON endpoint_principals(inbound_id);
 
 -- ---------- Revisions & deployment ----------
