@@ -182,7 +182,7 @@ No implementation default implies product/security/legal approval.
 
 ## Selective reuse from existing panels
 
-The source audit is recorded in [`docs/research/source-project-review.md`](research/source-project-review.md)
+The source audit is recorded in [`docs/research/source-project-review.md`](research/source-project-review.md), extended by the [four-panel integration assessment](research/four-panel-integration-assessment.md),
 and [ADR 0002](adr/0002-source-project-reuse.md). S-UI contributes a valuable
 session-level revocation pattern for protocols that authenticate once and then
 open multiple streams. 3X-UI contributes explicit protocol/transport capability
