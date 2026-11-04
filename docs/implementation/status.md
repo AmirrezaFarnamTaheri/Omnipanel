@@ -602,3 +602,27 @@ The Foundation gofmt gate now covers the new metering package. Local Go
 race/vet/gofmt and the TypeScript contract suite pass; final-head CI
 remains the verification gate. No production capability, deployed service
 or release gate is promoted by this increment.
+
+## Four-panel decomposition / recomposition increment (4 November 2026)
+
+The follow-up investigation mapped concrete source files across the four
+reference projects to OmniPanel package boundaries; the inventory is in
+`docs/research/four-panel-file-level-map.md`. It expands the earlier selective
+assessment but remains a static, pinned-revision review. It covers S-UI
+session/stat semantics, 3X-UI subscription ordering/metadata/calendar
+semantics, Hiddify-Manager's manager-vs-panel-vs-generated-service split and
+optional L4 service, and 1Panel socket ownership, backup records, monitoring,
+firewall, cron and storage concerns. No upstream source or installer was
+copied or executed; the separate Hiddify-Panel submodule remains outside the
+reviewed implementation scope.
+
+A first 1Panel-informed independent contract now exists in `internal/backup`:
+queued/running/failed/retry/succeeded lifecycle, restore verification,
+attempt count, monotonic timestamps, bounded stable error codes, and required
+artifact digests for successful completion. Go race tests cover retries,
+terminal-state immutability, restore digest requirements, invalid transitions
+and time regressions; Foundation's explicit gofmt gate includes this package.
+This is only an in-memory lifecycle model: no task persistence, byte transfer,
+provider integration, cryptographic key backup, restore executor, or PITR/DR
+evidence is implemented. Thus `gate-dr` and all other production gates remain
+BLOCKED. Full final-head CI remains pending.
