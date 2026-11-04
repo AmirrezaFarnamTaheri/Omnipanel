@@ -11,6 +11,8 @@ on:
       - 'db/migrations/0005_agent_admin_grants.sql'
       - 'db/migrations/0006_agent_grant_logout_revocation.sql'
       - 'db/migrations/0007_agent_grant_verified_stepup.sql'
+      - 'db/migrations/0008_agent_signed_desired.sql'
+      - 'internal/agent/gateway/desiredapi/**'
       - 'go.mod'
       - 'go.sum'
       - '.github/workflows/enrollment-postgres.yml'
@@ -24,6 +26,8 @@ on:
       - 'db/migrations/0005_agent_admin_grants.sql'
       - 'db/migrations/0006_agent_grant_logout_revocation.sql'
       - 'db/migrations/0007_agent_grant_verified_stepup.sql'
+      - 'db/migrations/0008_agent_signed_desired.sql'
+      - 'internal/agent/gateway/desiredapi/**'
       - 'go.mod'
       - 'go.sum'
       - '.github/workflows/enrollment-postgres.yml'
@@ -65,4 +69,7 @@ jobs:
         run: go test -race -count=1 -v -tags=postgres_integration ./internal/pki/enrollment/httpapi -run '^TestPostgresSharedEnrollmentRateLimiter$'
       - name: Apply PostgreSQL migrations 0001-0007 and exercise approved grants
         run: go test -race -count=1 -v -tags=postgres_integration ./internal/pki/enrollment/grants -run '^TestPostgresAdminApprovedNodeGrants$'
+      - name: Verify signed desired-state PostgreSQL view and restricted reader role
+        run: go test -race -count=1 -v -tags=postgres_integration ./internal/agent/gateway/desiredapi -run '^TestPostgresSignedDesiredCurrentView
+
       # This CI database is disposable; it is not a PITR, failover or key-restore drill.
