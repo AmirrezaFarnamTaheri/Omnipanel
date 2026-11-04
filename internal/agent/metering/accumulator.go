@@ -38,6 +38,9 @@ var (
 	// generation. A runtime restart must bump the generation, not reset
 	// counters under the old one.
 	ErrCounterRegression = errors.New("runtime counter regression within generation")
+	// ErrConflictingReplay rejects a replay at the most recently accepted
+	// sequence when its counters disagree with the durable observation.
+	ErrConflictingReplay = errors.New("conflicting metering sequence replay")
 	// ErrCapacity rejects a NEW user when the uncommitted window is full.
 	// Existing users keep folding; traffic is never silently discarded.
 	ErrCapacity = errors.New("metering pending window capacity exceeded")
@@ -105,7 +108,9 @@ func New() *Accumulator {
 }
 
 // Accept folds one sample. Duplicate or replayed drain sequences within the
-// current generation are idempotent no-ops. Stale generations, counter
+// current generation are idempotent only when the latest counters agree.
+// Earlier sequences remain historical no-ops since individual older counters
+// are not retained. Stale generations, counter
 // regressions, malformed tags and capacity overflow return errors and never
 // mutate state.
 func (a *Accumulator) Accept(s Sample) error {
@@ -136,7 +141,12 @@ func (a *Accumulator) acceptLocked(s Sample) error {
 		return ErrStaleGeneration
 	case seen && s.Generation == state.generation:
 		if s.Seq <= state.seq {
-			// At-least-once drain delivery: replays change nothing.
+			// Only the latest sequence has an exact counter snapshot.
+			// A conflicting latest retry indicates untrustworthy accounting,
+			// not a harmless duplicate. Older sequences remain no-ops.
+			if s.Seq == state.seq && s.Counters != state.last {
+				return ErrConflictingReplay
+			}
 			return nil
 		}
 		if s.Counters.Uplink < state.last.Uplink || s.Counters.Downlink < state.last.Downlink {
