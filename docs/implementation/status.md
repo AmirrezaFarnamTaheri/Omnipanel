@@ -751,3 +751,30 @@ index matching the Drizzle schema. Workflow path filters include 0001/0002.
 Final PostgreSQL 17.6 CI is pending and is the acceptance gate. This still
 does not establish production DB role separation, grants, PITR/restore, or
 trusted secret custody; those remain open.
+
+## Signed desired-state PostgreSQL read boundary (5 November 2026)
+
+Migration `0008_agent_signed_desired.sql` adds bounded, append-only signed
+revision rows, a constrained current pointer, monotonic same-epoch head
+updates, and an authorization-filtered `agent_desired_current` view. The
+gateway's `SQLSource` reads only that view by the node identity established
+from mTLS, using one parameterized PostgreSQL statement. Online
+binding/organization/node state is enforced in the view; revoked, suspended
+or quarantined nodes receive no snapshot. The gateway now also compares the
+stored structural/membership sequences with the independently verified Ed25519
+manifest, refusing stale or inconsistent database pointers.
+
+The new `postgres_integration` test applies migrations 0001–0008 in an
+isolated schema, exercises revocation and isolation, tests immutable revision
+and monotonic-head triggers, and validates view-only access under a separate
+PostgreSQL reader role. Unit tests cover invalid node IDs, empty/oversized
+envelopes and malformed metadata. The isolated Go reader harness passed
+race-enabled tests and vet locally; **the repository's exact-head PostgreSQL
+and complete Go CI have not yet passed at the time of this note**.
+
+An audited publisher, signed epoch-recovery approval, protected signing keys,
+production database-role provisioning and deployed gateway/node binaries
+remain UNIMPLEMENTED. No mutable publisher is made available by this
+read-only migration. External client/provider evidence, authoritative usage
+accounting, rollback watchdogs, full restoration drills and all production
+`gate-*` conditions remain BLOCKED.
