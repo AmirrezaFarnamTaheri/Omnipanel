@@ -20,8 +20,8 @@ import (
 )
 
 const (
-	fixtureNode  = "62c478bb-47c3-4dc6-a363-a2fbde813810"
-	fixtureEpoch = "ea2429da-7540-4e40-ae70-38fd3f19794b"
+	fixtureNode   = "62c478bb-47c3-4dc6-a363-a2fbde813810"
+	fixtureEpoch  = "ea2429da-7540-4e40-ae70-38fd3f19794b"
 	fixtureDomain = "omnipanel:desired-state:ed25519-jcs-v1\n"
 )
 
@@ -46,21 +46,21 @@ func signerFixture(t *testing.T) (manifest.Manifest, manifest.Verifier, ed25519.
 	m := manifest.Manifest{
 		SchemaVersion: "2.0", ControlPlaneEpoch: fixtureEpoch, NodeID: fixtureNode,
 		StructuralSequence: 2, MembershipSequence: 3,
-		IssuedAt: now.Add(-time.Minute).Format(time.RFC3339),
-		ExpiresAt: now.Add(time.Minute).Format(time.RFC3339),
+		IssuedAt:             now.Add(-time.Minute).Format(time.RFC3339),
+		ExpiresAt:            now.Add(time.Minute).Format(time.RFC3339),
 		RequiredCapabilities: []string{"singbox-reality-vision"},
 		Components: []manifest.Component{{
 			ID: "reality", Driver: "singbox", RuntimeVersion: "1.14.4+omni.2",
 			ArtifactDigest: digest, ConfigurationDigest: strings.Repeat("b", 64),
 			ConfigurationRef: "reality-config", DependsOn: []string{},
-			Listeners: []manifest.Listener{{Address: "0.0.0.0", Port: 443, Transport: "tcp"}},
+			Listeners:  []manifest.Listener{{Address: "0.0.0.0", Port: 443, Transport: "tcp"}},
 			Disruption: "listener_restart",
 		}},
 		BaseEgressPolicy: "deny-protected-v1",
 	}
 	v := manifest.Verifier{
 		NodeID: fixtureNode, AuthorizedEpoch: fixtureEpoch,
-		TrustedSigners: map[string]ed25519.PublicKey{"local-test": key.Public().(ed25519.PublicKey)},
+		TrustedSigners:      map[string]ed25519.PublicKey{"local-test": key.Public().(ed25519.PublicKey)},
 		AllowedCapabilities: map[string]bool{"singbox-reality-vision": true},
 		QualifiedBuilds: map[string]manifest.Build{"singbox": {
 			Driver: "singbox", Version: "1.14.4+omni.2", ArtifactDigest: digest,
@@ -91,7 +91,7 @@ func signFixture(t *testing.T, m manifest.Manifest, key ed25519.PrivateKey) []by
 	sig := ed25519.Sign(key, append([]byte(fixtureDomain), canonical...))
 	wire, err := json.Marshal(manifest.Envelope{
 		SignatureVersion: "ed25519-jcs-v1",
-		SignerID: "local-test", ContentDigest: hex.EncodeToString(digest[:]),
+		SignerID:         "local-test", ContentDigest: hex.EncodeToString(digest[:]),
 		Signature: base64.RawURLEncoding.EncodeToString(sig), Manifest: m,
 	})
 	if err != nil {
