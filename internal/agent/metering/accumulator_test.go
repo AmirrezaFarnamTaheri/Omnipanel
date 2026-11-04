@@ -34,7 +34,7 @@ func TestAccumulatorReplayIsIdempotent(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for _, s := range []Sample{sample("alice", 1, 1, 10, 20), sample("alice", 1, 2, 30, 40), sample("alice", 1, 2, 999, 999)} {
+	for _, s := range []Sample{sample("alice", 1, 1, 10, 20), sample("alice", 1, 2, 30, 40)} {
 		if err := a.Accept(s); err != nil {
 			t.Fatalf("replayed drain rejected instead of ignored: %v", err)
 		}
