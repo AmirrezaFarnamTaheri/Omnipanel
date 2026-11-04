@@ -393,3 +393,37 @@ Production gates remain BLOCKED: no deployed gateway, enrollment or
 revocation, no actual daemon/poll scheduler, no privileged apply,
 native driver activation, independent rollback watchdog, multi-node
 reconciliation, external VPS client qualification, or M0/M1 acceptance.
+
+
+## Bounded node-enrollment authority and credential ledger (4 November 2026)
+
+`internal/pki/enrollment` now contains an issuer-side **library only**. It
+generates 256-bit bearer token grants (store only SHA-256 token digests);
+verifies bounded Ed25519/P-256 CSR proof-of-possession; derives the node UUID
+solely from a short-lived, single-use authorized grant rather than the CSR's
+subject/SAN claims; and emits a client-auth-only URI-SAN certificate with a
+maximum 24-hour lifetime under a caller-provided CA signer. It rejects a
+mismatched signing key, expired authority, malformed CSR and replayed token.
+Token expiration is re-evaluated at the atomic redemption to prevent a
+certificate issuance delay from extending the grant's lifetime.
+
+`SQLStore` records the grant consumption and certificate registration in a
+single transaction, and tracks node/serial/key-specific revocation. The
+candidate PostgreSQL migration is `db/migrations/0003_agent_enrollment.sql`;
+it is not a migration of legacy browser-panel identities to the new UUID
+model. The SQL integration tests use SQLite as a local transaction surrogate;
+**no deployed PostgreSQL instance or recovery failover is qualified**.
+
+Enrollment key material must be protected by a separately authorized issuer
+service. The included `AuthenticatePeer` helper requires verified TLS 1.3
+chains and an active, unrevoked node-certificate ledger entry. It is not
+wired to a public gateway; authorization checks for administrative grant
+creation, identity enrollment, issuer custody, renewal, CA rollover and online
+revocation distribution remain to be implemented and independently tested.
+No real node enrollment endpoint exists, no runtime configuration is applied,
+and all production acceptance gates remain BLOCKED.
+
+This code was developed with locally observed failing and then passing Go
+race-enabled tests for one-time grants, CSR impersonation, revocation and
+expiration during issuance. **Check the current PR-head CI** for complete
+Go, PostgreSQL schema, code formatting, TypeScript and Sing-box results.

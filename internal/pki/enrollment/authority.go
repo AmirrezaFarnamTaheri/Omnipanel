@@ -191,7 +191,13 @@ func (a *Authority) Enroll(ctx context.Context, bearer string, csrPEM []byte) (I
 	if err := ctx.Err(); err != nil {
 		return Issued{}, err
 	}
-	if err := a.store.Commit(ctx, hash, node, serial.String(), sha256.Sum256(spki), notBefore, notAfter, at); err != nil {
+	// Signing and database load may cross the token expiration deadline.
+	// Recheck time at redemption, not just before creating the certificate.
+	commitAt := a.now().UTC()
+	if commitAt.Before(a.ca.NotBefore) || !commitAt.Before(notAfter) {
+		return Issued{}, ErrInvalidToken
+	}
+	if err := a.store.Commit(ctx, hash, node, serial.String(), sha256.Sum256(spki), notBefore, notAfter, commitAt); err != nil {
 		return Issued{}, err
 	}
 	return Issued{CertificatePEM: pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), NodeID: node, Serial: serial.String(), NotAfter: notAfter}, nil

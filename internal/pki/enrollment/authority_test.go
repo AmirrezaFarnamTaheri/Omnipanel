@@ -155,3 +155,34 @@ func TestGeneratedTokenEntropyAndDigestSeparation(t *testing.T){
 	token2,h2,err:=GenerateToken();if err!=nil{t.Fatal(err)}
 	if token1==token2||h1==h2||len(token1)!=43||sha256.Sum256([]byte(token1))==h1{t.Fatal("unsafe enrollment token generation")}
 }
+
+
+func TestTokenExpiresDuringIssuance(t *testing.T) {
+	ca, signer, start := issuerFixture(t)
+	store := newMockLedger()
+	token, digest, err := GenerateToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.seed(digest, testNodeA, start.Add(5*time.Minute))
+	calls := 0
+	now := func() time.Time {
+		calls++
+		if calls >= 3 {
+			return start.Add(6*time.Minute)
+		}
+		return start
+	}
+	authority, err := NewAuthority(ca, signer, testTrustDomain, store, now, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	csr, _ := csrFixture(t, testNodeA)
+	issued, err := authority.Enroll(context.Background(), token, csr)
+	if !errors.Is(err, ErrInvalidToken) || len(issued.CertificatePEM) != 0 {
+		t.Fatalf("expired token redeemed at commit: certificate_returned=%t err=%v", len(issued.CertificatePEM) > 0, err)
+	}
+	if store.count() != 0 {
+		t.Fatal("expiry race created a durable certificate")
+	}
+}
