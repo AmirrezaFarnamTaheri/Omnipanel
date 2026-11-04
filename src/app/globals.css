@@ -107,6 +107,11 @@
 }
 
 /* Focus ring utility */
-.focus-ring {
-  @apply focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background;
+.focus-ring:focus {
+  outline: none;
+}
+
+.focus-ring:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 1px;
 }

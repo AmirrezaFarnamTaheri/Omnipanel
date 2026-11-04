@@ -75,13 +75,16 @@ concurrency primitives and its admission assumptions conflict with fail-closed
 runtime qualification. Real database and networking tests remain outstanding.
 
 The previous documented `npm audit` reported 22 vulnerabilities (19 moderate,
-2 high, 1 critical). On 5 November 2026, `npm ci` reported 15 vulnerabilities
-(12 moderate, 2 high, 1 critical); this install summary is not a package-by-package
-re-audit or remediation, so affected transitive packages still need triage. New
-direct harness dependencies are patch-pinned; this change is not dependency
-security sign-off. Upgrade or retire affected prototype dependencies with
-regression checks before any exposure. Never run an uncontrolled major-version
-`audit fix --force` as a substitute for review.
+2 high, 1 critical). On 5 November 2026, a fresh `npm audit` confirmed 15 findings
+(12 moderate, 2 high, 1 critical). The Next.js 16.2.6, eslint-config-next 16.2.6
+and PostCSS 8.5.8 findings were addressed by reviewed exact upgrades to 16.4.5,
+16.4.5 and 8.5.32 respectively. A subsequent full audit reported 12 moderate,
+zero high and zero critical findings; `npm audit --omit=dev` reported zero
+vulnerabilities. The remaining moderate findings are in development/tooling
+chains, principally drizzle-kit/esbuild and TypeScript ESLint dependencies, and
+still require triage. This is not dependency security sign-off for production.
+New direct harness dependencies are patch-pinned; do not run an uncontrolled
+major-version `audit fix --force` as a substitute for review.
 
 ## Next bounded increments
 
