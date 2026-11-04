@@ -83,8 +83,8 @@ func Open(path, nodeID, epoch string) (*Store, error) {
 	}
 
 	dsn := (&url.URL{
-		Scheme: "file",
-		Path: path,
+		Scheme:   "file",
+		Path:     path,
 		RawQuery: "_busy_timeout=5000&_foreign_keys=on&_journal_mode=WAL&_synchronous=FULL",
 	}).String()
 	db, err := sql.Open("sqlite3", dsn)
@@ -292,7 +292,7 @@ func (s *Store) Cursor(ctx context.Context) (manifest.Cursor, error) {
 	return manifest.Cursor{
 		StructuralSequence: uint64(structural),
 		MembershipSequence: uint64(membership),
-		Digest: digest,
+		Digest:             digest,
 	}, nil
 }
 
