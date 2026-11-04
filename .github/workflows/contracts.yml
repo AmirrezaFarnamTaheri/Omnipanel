@@ -33,11 +33,11 @@ jobs:
           cache: false
       - name: Require gofmt for manifest, drivers, agent and enrollment APIs
         run: |
-          unformatted="$(gofmt -l internal/manifest/*.go internal/drivers/*.go internal/drivers/singbox/*.go internal/agent/state/*.go internal/agent/reconcile/*.go internal/agent/gateway/*.go internal/agent/gateway/desiredapi/*.go internal/agent/metering/*.go internal/agent/syncfeed/*.go internal/backup/*.go internal/observability/*.go internal/pki/enrollment/*.go internal/pki/enrollment/httpapi/*.go internal/pki/enrollment/grants/*.go)"
+          unformatted="$(gofmt -l internal/manifest/*.go internal/drivers/*.go internal/drivers/singbox/*.go internal/agent/state/*.go internal/agent/reconcile/*.go internal/agent/gateway/*.go internal/agent/gateway/desiredapi/*.go internal/control/desiredpublish/*.go internal/agent/metering/*.go internal/agent/syncfeed/*.go internal/backup/*.go internal/observability/*.go internal/pki/enrollment/*.go internal/pki/enrollment/httpapi/*.go internal/pki/enrollment/grants/*.go)"
           if [ -n "$unformatted" ]; then
             printf 'Unformatted Go source:\n%s\n' "$unformatted" >&2
             # Print the exact formatting delta without modifying the workspace.
-            gofmt -d internal/agent/state/*.go internal/agent/reconcile/*.go internal/agent/gateway/*.go internal/agent/gateway/desiredapi/*.go internal/agent/metering/*.go internal/agent/syncfeed/*.go internal/backup/*.go internal/observability/*.go internal/pki/enrollment/*.go internal/pki/enrollment/httpapi/*.go internal/pki/enrollment/grants/*.go >&2
+            gofmt -d internal/agent/state/*.go internal/agent/reconcile/*.go internal/agent/gateway/*.go internal/agent/gateway/desiredapi/*.go internal/control/desiredpublish/*.go internal/agent/metering/*.go internal/agent/syncfeed/*.go internal/backup/*.go internal/observability/*.go internal/pki/enrollment/*.go internal/pki/enrollment/httpapi/*.go internal/pki/enrollment/grants/*.go >&2
             exit 1
           fi
       - run: make test-go
