@@ -348,6 +348,20 @@ WHERE g.node_id=$1`, nodeID).Scan(&dbDigest, &adminID); err != nil {
 		denied("expired issuance session")
 		change("UPDATE admin_sessions SET expires_at=clock_timestamp() + interval '1 hour' WHERE id=21")
 
+		// A session can become idle-expired after grant issuance while its
+		// absolute expiry and the enrollment bearer are still live. Both the
+		// preliminary lookup and the locked commit authorization must reject it.
+		change("UPDATE admin_sessions SET last_seen_at=clock_timestamp() - interval '2 hours 1 second' WHERE id=21")
+		denied("idle-expired issuance session")
+		if err := store.Commit(ctx, digest, nodeID, "90001", key, notBefore, notAfter, time.Now().UTC()); !errors.Is(err, enrollment.ErrInvalidToken) {
+			t.Fatalf("idle-expired issuance session redeemed grant: %v", err)
+		}
+		var idleConsumed sql.NullInt64
+		if err := db.QueryRowContext(ctx, "SELECT consumed_at FROM agent_enrollment_grants WHERE token_digest=$1", digest[:]).Scan(&idleConsumed); err != nil || idleConsumed.Valid {
+			t.Fatalf("idle-expired session redemption consumed grant: consumed=%v err=%v", idleConsumed, err)
+		}
+		change("UPDATE admin_sessions SET last_seen_at=clock_timestamp() WHERE id=21")
+
 		if err := store.Commit(ctx, digest, nodeID, "90001", key, notBefore, notAfter, time.Now().UTC()); err != nil {
 			t.Fatalf("authorized commit refused: %v", err)
 		}
