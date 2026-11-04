@@ -3,6 +3,17 @@
 -- signing service, recovery API, deployed publisher or elevated gateway role.
 BEGIN;
 
+-- Signed-state publisher permissions are deliberately separate from node
+-- ENROLLMENT-grant scopes. Grant issuance must never imply permission to
+-- publish executable node configuration.
+CREATE TABLE agent_desired_publish_permissions (
+    admin_id integer NOT NULL REFERENCES admins(id) ON DELETE RESTRICT,
+    organization_id uuid NOT NULL REFERENCES agent_grant_organizations(organization_id) ON DELETE RESTRICT,
+    can_propose boolean NOT NULL DEFAULT false,
+    can_approve boolean NOT NULL DEFAULT false,
+    PRIMARY KEY (admin_id, organization_id)
+);
+
 -- Approval rows must originate from a separately protected administrator
 -- approval workflow. The publisher can consume a matching, unexpired approval
 -- but may not create or change its identity, digest or scope.
@@ -83,7 +94,8 @@ CREATE TRIGGER agent_desired_publish_outbox_immutable
 -- role must receive only SELECT + consumed_at UPDATE on approvals, minimal
 -- INSERT/UPDATE for revisions/heads, INSERT for audit/outbox, and SELECT on
 -- the live authorization tables. A read-only gateway must have NONE of these.
-REVOKE ALL ON TABLE agent_desired_publish_approvals, agent_desired_publish_audit,
+REVOKE ALL ON TABLE agent_desired_publish_permissions,
+    agent_desired_publish_approvals, agent_desired_publish_audit,
     agent_desired_publish_outbox FROM PUBLIC;
 REVOKE ALL ON SEQUENCE agent_desired_publish_audit_audit_id_seq FROM PUBLIC;
 
