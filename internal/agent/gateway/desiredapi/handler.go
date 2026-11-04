@@ -154,7 +154,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "recovery approval required", http.StatusConflict)
 		return
 	}
-	if structure == verified.Manifest.StructuralSequence && membership == verified.Manifest.MembershipSequence {
+	// Membership advances on a separate authenticated feed. Replaying an
+	// equal structural revision merely because its membership cursor lags
+	// would be rejected by the node's signed structural replay verifier.
+	if structure == verified.Manifest.StructuralSequence {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
