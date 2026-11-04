@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/AmirrezaFarnamTaheri/Omnipanel/internal/agent/gateway"
 	"github.com/AmirrezaFarnamTaheri/Omnipanel/internal/agent/state"
 	"github.com/AmirrezaFarnamTaheri/Omnipanel/internal/manifest"
 )
@@ -27,14 +28,14 @@ const (
 
 type fixturePuller struct {
 	payload []byte
-	node    string
+	poll    gateway.Request
 	calls   int
 	err     error
 }
 
-func (f *fixturePuller) FetchNodeDesired(_ context.Context, node string) ([]byte, error) {
+func (f *fixturePuller) FetchNodeDesired(_ context.Context, poll gateway.Request) ([]byte, error) {
 	f.calls++
-	f.node = node
+	f.poll = poll
 	return f.payload, f.err
 }
 
@@ -131,8 +132,10 @@ func TestAgentInitiatedSignedPullJournalsVerifiedIntentAndSurvivesRestart(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if gateway.calls != 1 || gateway.node != fixtureNode {
-		t.Fatalf("processor must request its own node-scoped intent once: %+v", gateway)
+	if gateway.calls != 1 || gateway.poll.NodeID != fixtureNode ||
+		gateway.poll.ControlPlaneEpoch != fixtureEpoch || gateway.poll.StructuralSequence != 0 ||
+		gateway.poll.MembershipSequence != 0 {
+		t.Fatalf("processor must request its authorized epoch and observed applied cursors: %+v", gateway)
 	}
 	if report.Outcome != PendingApplication || !report.NewlyRecorded ||
 		report.StructuralSequence != 2 || report.MembershipSequence != 3 {
@@ -218,5 +221,31 @@ func TestGatewayFailureDoesNotAdvanceJournal(t *testing.T) {
 	pending, err := store.Pending(ctx)
 	if err != nil || len(pending) != 0 {
 		t.Fatalf("failed pull must leave the journal unchanged: %+v, %v", pending, err)
+	}
+}
+
+// An authenticated 204 response is not proof of a structural apply, and must
+// never advance the applied cursor or insert a synthetic journal revision.
+func TestNoStructuralChangeIsNotReportedAsApplied(t *testing.T) {
+	ctx := context.Background()
+	_, store := openTestJournal(t)
+	defer store.Close()
+	_, verifier, _ := signerFixture(t)
+	p, err := New(store, verifier)
+	if err != nil {
+		t.Fatal(err)
+	}
+	puller := &fixturePuller{err: gateway.ErrNoChange}
+	report, err := p.PollOnce(ctx, puller)
+	if err != nil || report.Outcome != NoChange || report.NewlyRecorded {
+		t.Fatalf("204 must remain a no-change read, never an apply: %+v %v", report, err)
+	}
+	pending, err := store.Pending(ctx)
+	if err != nil || len(pending) != 0 {
+		t.Fatalf("204 cannot create journal state: %+v %v", pending, err)
+	}
+	cursor, err := store.Cursor(ctx)
+	if err != nil || cursor.StructuralSequence != 0 || cursor.MembershipSequence != 0 {
+		t.Fatalf("204 cannot advance observed apply cursors: %+v %v", cursor, err)
 	}
 }
