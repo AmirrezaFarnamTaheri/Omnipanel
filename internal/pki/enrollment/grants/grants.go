@@ -71,6 +71,8 @@ func validate(r Request) error {
 // step-up, organization-scoped grant authority, an independently approved
 // UUID-to-legacy-node binding, active org, and pending legacy node.
 // Token digest, issuance metadata and audit are committed atomically.
+// The issuance metadata binds the exact session credential, so administrator
+// logout invalidates the bearer until redemption without touching history.
 func (s *Service) Issue(ctx context.Context, r Request) (Issued, error) {
 	if err := ctx.Err(); err != nil {
 		return Issued{}, err
@@ -173,10 +175,14 @@ WHERE actor_admin_id=$1 AND correlation_id=$2::uuid LIMIT 1`, adminID, r.Correla
 	}
 
 	var issueID int64
+	// The session credential hash is an immutable issuance fact (migration
+	// 0006). It lets logout delete the session row while every outstanding
+	// bearer from that session fails closed, and it prevents a recycled
+	// session id from re-authorizing an old grant after a fresh login.
 	err = tx.QueryRowContext(ctx, `INSERT INTO agent_grant_issues
-(token_digest,actor_admin_id,session_id,organization_id,node_id,correlation_id,created_at,expires_at)
-VALUES ($1,$2,$3,$4::uuid,$5::uuid,$6::uuid,$7,$8) RETURNING issue_id`,
-		digest[:], adminID, sessionID, r.OrganizationID, node, r.CorrelationID, dbNow, expires).Scan(&issueID)
+(token_digest,actor_admin_id,session_id,session_token_hash,organization_id,node_id,correlation_id,created_at,expires_at)
+VALUES ($1,$2,$3,$4,$5::uuid,$6::uuid,$7::uuid,$8,$9) RETURNING issue_id`,
+		digest[:], adminID, sessionID, hex.EncodeToString(sessionHash[:]), r.OrganizationID, node, r.CorrelationID, dbNow, expires).Scan(&issueID)
 	if err != nil {
 		return Issued{}, fmt.Errorf("persist issuance metadata: %w", err)
 	}

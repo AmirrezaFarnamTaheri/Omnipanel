@@ -56,12 +56,14 @@ CREATE TABLE nodes(id serial PRIMARY KEY,status text NOT NULL);`
 	if _, err := db.ExecContext(ctx, authFixture); err != nil {
 		t.Fatal(err)
 	}
-	migration, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "migrations", "0005_agent_admin_grants.sql"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.ExecContext(ctx, string(migration)); err != nil {
-		t.Fatalf("real PostgreSQL admin grant migration failed: %v", err)
+	for _, name := range []string{"0005_agent_admin_grants.sql", "0006_agent_grant_logout_revocation.sql"} {
+		migration, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "migrations", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.ExecContext(ctx, string(migration)); err != nil {
+			t.Fatalf("real PostgreSQL admin grant migration %s failed: %v", name, err)
+		}
 	}
 	issuer, err := New(db)
 	if err != nil {
@@ -352,6 +354,118 @@ WHERE g.node_id=$1`, nodeID).Scan(&dbDigest, &adminID); err != nil {
 			t.Fatal("certificate stayed authorized in suspended organization")
 		}
 		change("UPDATE agent_grant_organizations SET state='active' WHERE organization_id=$1", organizationID)
+	})
+
+	t.Run("logout revokes outstanding tokens and preserves immutable history", func(t *testing.T) {
+		grant, err := issuer.Issue(ctx, request(otherNode, "c190a8e3-12fd-48d5-8dc4-0ab999a3da03"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, err := base64.RawURLEncoding.DecodeString(grant.Token)
+		if err != nil {
+			t.Fatal(err)
+		}
+		digest := sha256.Sum256(raw)
+		store, err := enrollment.NewApprovedSQLStore(db)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, err := store.Lookup(ctx, digest, time.Now().UTC()); err != nil || got != otherNode {
+			t.Fatalf("pre-logout grant not recognized: %q, %v", got, err)
+		}
+		key := sha256.Sum256([]byte("test-only public-key fingerprint"))
+		if ok, err := store.Active(ctx, nodeID, "90001", key, time.Now().UTC()); err != nil || !ok {
+			t.Fatalf("previously enrolled certificate not admitted before logout: %v", err)
+		}
+		beforeIssues, beforeAudit := count("agent_grant_issues"), count("agent_grant_audit")
+
+		// Regression: migration 0005's RESTRICT foreign key made this logout
+		// fail with a foreign-key violation while grant history existed.
+		if _, err := db.ExecContext(ctx, `DELETE FROM admin_sessions WHERE id=21`); err != nil {
+			t.Fatalf("administrator logout still blocked by grant history: %v", err)
+		}
+		var stepups int
+		if err := db.QueryRowContext(ctx, `SELECT count(*) FROM agent_grant_stepups WHERE session_id=21`).Scan(&stepups); err != nil || stepups != 0 {
+			t.Fatalf("logout left step-up authorization behind: n=%d err=%v", stepups, err)
+		}
+		if got, err := store.Lookup(ctx, digest, time.Now().UTC()); !errors.Is(err, enrollment.ErrInvalidToken) || got != "" {
+			t.Fatalf("outstanding token survived logout at lookup: node=%q err=%v", got, err)
+		}
+		notBefore := time.Now().UTC().Add(-time.Minute)
+		notAfter := time.Now().UTC().Add(time.Hour)
+		if err := store.Commit(ctx, digest, otherNode, "90002", key, notBefore, notAfter, time.Now().UTC()); !errors.Is(err, enrollment.ErrInvalidToken) {
+			t.Fatalf("outstanding token survived logout at commit: %v", err)
+		}
+		var consumed sql.NullInt64
+		if err := db.QueryRowContext(ctx, "SELECT consumed_at FROM agent_enrollment_grants WHERE token_digest=$1", digest[:]).Scan(&consumed); err != nil || consumed.Valid {
+			t.Fatalf("refused redemption consumed token: consumed=%v err=%v", consumed, err)
+		}
+
+		// Immutable history keeps the original session facts after logout.
+		var histSession int
+		var histHash string
+		if err := db.QueryRowContext(ctx, `SELECT session_id,session_token_hash FROM agent_grant_issues WHERE token_digest=$1`, digest[:]).Scan(&histSession, &histHash); err != nil {
+			t.Fatal(err)
+		}
+		if histSession != 21 || histHash != hex.EncodeToString(sessionHash[:]) {
+			t.Fatal("issuance history lost the original session binding")
+		}
+		if count("agent_grant_issues") != beforeIssues || count("agent_grant_audit") != beforeAudit {
+			t.Fatal("logout rewrote issuance or audit history")
+		}
+		for _, q := range []string{
+			`UPDATE agent_grant_issues SET session_id=999`,
+			`DELETE FROM agent_grant_issues`,
+			`UPDATE agent_grant_audit SET action='other'`,
+			`DELETE FROM agent_grant_audit`,
+		} {
+			if _, err := db.ExecContext(ctx, q); err == nil {
+				t.Fatalf("immutable history accepted mutation: %s", q)
+			}
+		}
+
+		// Admin logout does not revoke an already-issued node certificate;
+		// node admission depends on binding/organization/node status only.
+		if ok, err := store.Active(ctx, nodeID, "90001", key, time.Now().UTC()); err != nil || !ok {
+			t.Fatalf("admin logout revoked an enrolled node certificate: %v", err)
+		}
+
+		// A fresh login reusing the deleted serial id must not resurrect the
+		// old bearer: the recorded credential hash no longer matches.
+		relogin := base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{0xB7}, 32))
+		reloginHash := sha256.Sum256([]byte(relogin))
+		loginAt := time.Now().UTC()
+		if _, err := db.ExecContext(ctx, `INSERT INTO admin_sessions(id,admin_id,token_hash,created_at,last_seen_at,expires_at)
+VALUES (21,11,$1,$2,$2,$3)`, hex.EncodeToString(reloginHash[:]), loginAt.Add(-time.Minute), loginAt.Add(time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.ExecContext(ctx, `INSERT INTO agent_grant_stepups(session_id,method,verified_at,expires_at)
+VALUES (21,'totp',$1,$2)`, loginAt.Add(-time.Minute), loginAt.Add(5*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := store.Lookup(ctx, digest, time.Now().UTC()); !errors.Is(err, enrollment.ErrInvalidToken) || got != "" {
+			t.Fatalf("recycled session id resurrected token at lookup: node=%q err=%v", got, err)
+		}
+		if err := store.Commit(ctx, digest, otherNode, "90002", key, notBefore, notAfter, time.Now().UTC()); !errors.Is(err, enrollment.ErrInvalidToken) {
+			t.Fatalf("recycled session id resurrected token at commit: %v", err)
+		}
+
+		// The new session can issue fresh grants normally. nodeID has no
+		// pending grant left: its earlier bearers were all redeemed above.
+		r := request(nodeID, "c290a8e3-12fd-48d5-8dc4-0ab999a3da03")
+		r.AdminSessionToken = relogin
+		fresh, err := issuer.Issue(ctx, r)
+		if err != nil {
+			t.Fatalf("post-logout relogin cannot issue grants: %v", err)
+		}
+		freshRaw, err := base64.RawURLEncoding.DecodeString(fresh.Token)
+		if err != nil {
+			t.Fatal(err)
+		}
+		freshDigest := sha256.Sum256(freshRaw)
+		if got, err := store.Lookup(ctx, freshDigest, time.Now().UTC()); err != nil || got != nodeID {
+			t.Fatalf("fresh relogin grant not recognized: %q, %v", got, err)
+		}
 	})
 
 	t.Run("database outage never returns uncommitted bearer", func(t *testing.T) {

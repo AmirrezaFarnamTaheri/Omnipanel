@@ -536,3 +536,38 @@ SQLStore remains available only for backward-compatible ledger fixtures.
 This is **not** a deployed issuer, PKI rollover, secure operator approval
 writer, or distributed revocation acceptance test. All production
 acceptance gates remain BLOCKED.
+
+## Logout-safe grant revocation (4 November 2026)
+
+Migration 0005's RESTRICT foreign key from `agent_grant_issues.session_id`
+to `admin_sessions` made administrator logout impossible once any issuance
+history existed: deleting the session row failed with a foreign-key
+violation. The forward-only `0006_agent_grant_logout_revocation.sql`
+records the issuing session's credential hash as an immutable issuance
+fact (backfilled from the still-referenced session rows, which the 0005
+RESTRICT key guarantees exist), drops that referential link, and makes
+`agent_grant_issues` append-only like `agent_grant_audit`.
+
+`ApprovedSQLStore` now requires the issuing session to exist with the
+exact recorded credential hash, both at lookup and again under the
+certificate-commit row locks. Logout therefore invalidates every
+outstanding token from that session immediately, and a later login that
+recycles the deleted serial session id cannot resurrect an old bearer.
+Step-up rows already cascade on session deletion. Already-issued node
+certificates are intentionally unaffected by administrator logout: online
+admission keeps depending on the approved binding, organization and legacy
+node status. Issuance and audit history are preserved verbatim.
+
+The defect was reproduced locally on a disposable PostgreSQL 16.2
+instance: logout was rejected under the 0005 schema, then accepted after
+applying 0006 over pre-existing history with a correct credential-hash
+backfill. The extended tagged integration suite proves that an outstanding
+token fails closed at lookup and at commit after logout and is not
+consumed, that history rows survive unchanged and reject UPDATE/DELETE,
+that a recycled session id cannot re-authorize the old grant, and that a
+fresh login can still issue new grants. The narrow gofmt failure in the
+grants integration test is corrected in the same increment. **Final
+PR-head CI on the PostgreSQL 17.6 service remains the verification gate.**
+No trusted logout writer or session HTTP API exists yet; the regression
+performs the same session-row deletion a future session service will
+execute. All production acceptance gates remain BLOCKED.
