@@ -12,6 +12,8 @@ on:
       - 'db/migrations/0006_agent_grant_logout_revocation.sql'
       - 'db/migrations/0007_agent_grant_verified_stepup.sql'
       - 'db/migrations/0008_agent_signed_desired.sql'
+      - 'db/migrations/0009_agent_signed_publication.sql'
+      - 'internal/control/desiredpublish/**'
       - 'internal/agent/gateway/desiredapi/**'
       - 'go.mod'
       - 'go.sum'
@@ -27,6 +29,8 @@ on:
       - 'db/migrations/0006_agent_grant_logout_revocation.sql'
       - 'db/migrations/0007_agent_grant_verified_stepup.sql'
       - 'db/migrations/0008_agent_signed_desired.sql'
+      - 'db/migrations/0009_agent_signed_publication.sql'
+      - 'internal/control/desiredpublish/**'
       - 'internal/agent/gateway/desiredapi/**'
       - 'go.mod'
       - 'go.sum'
@@ -77,5 +81,8 @@ jobs:
         run: go test -race -count=1 -v -tags=postgres_integration ./internal/pki/enrollment/grants -run '^TestPostgresAdminApprovedNodeGrants$'
       - name: Verify signed desired-state PostgreSQL view and restricted reader role
         run: go test -race -count=1 -v -tags=postgres_integration ./internal/agent/gateway/desiredapi -run '^TestPostgresSignedDesiredCurrentView$'
+
+      - name: Exercise independently preapproved signed publication transactions
+        run: go test -race -count=1 -v -tags=postgres_integration ./internal/control/desiredpublish -run '^TestPostgresApprovedSignedPublication
 
       # This CI database is disposable; it is not a PITR, failover or key-restore drill.
