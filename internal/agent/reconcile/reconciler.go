@@ -36,8 +36,6 @@ type Processor struct {
 	verifier manifest.Verifier
 }
 
-var ErrNotImplemented = errors.New("verification-only node reconciler not implemented")
-
 func New(store *state.Store, verifier manifest.Verifier) (*Processor, error) {
 	if store == nil || verifier.NodeID == "" || verifier.AuthorizedEpoch == "" {
 		return nil, errors.New("missing protected journal or authorized verifier")
@@ -45,10 +43,60 @@ func New(store *state.Store, verifier manifest.Verifier) (*Processor, error) {
 	return &Processor{store: store, verifier: verifier}, nil
 }
 
-func (*Processor) PollOnce(context.Context, AuthenticatedPuller) (Report, error) {
-	return Report{}, ErrNotImplemented
+// PollOnce is always initiated by the node. The supplied puller is an
+// authenticated transport supplied by the caller; this package cannot claim
+// enrollment or mTLS merely because the interface exists.
+func (p *Processor) PollOnce(ctx context.Context, source AuthenticatedPuller) (Report, error) {
+	if err := ctx.Err(); err != nil {
+		return Report{}, err
+	}
+	if source == nil {
+		return Report{}, errors.New("authenticated node puller is required")
+	}
+	wire, err := source.FetchNodeDesired(ctx, p.verifier.NodeID)
+	if err != nil {
+		return Report{}, err
+	}
+	return p.Process(ctx, wire)
 }
 
-func (*Processor) Process(context.Context, []byte) (Report, error) {
-	return Report{}, ErrNotImplemented
+// Process cryptographically verifies the signed envelope BEFORE journal writes.
+// The journal's applied cursor stays unchanged until a separate native driver,
+// health observer and commit-confirm mechanism can demonstrate actual success.
+func (p *Processor) Process(ctx context.Context, envelope []byte) (Report, error) {
+	if err := ctx.Err(); err != nil {
+		return Report{}, err
+	}
+	cursor, err := p.store.Cursor(ctx)
+	if err != nil {
+		return Report{}, err
+	}
+	verifier := p.verifier
+	verifier.Current = cursor
+	revision, err := verifier.Verify(envelope)
+	if err != nil {
+		return Report{}, err
+	}
+	report := Report{
+		StructuralSequence: revision.Manifest.StructuralSequence,
+		MembershipSequence: revision.Manifest.MembershipSequence,
+		Digest:             revision.Digest,
+	}
+	if revision.Decision == manifest.AlreadyApplied {
+		report.Outcome = AlreadyApplied
+		return report, nil
+	}
+	if revision.Decision != manifest.ApplyRevision {
+		return Report{}, errors.New("unsupported signed revision decision")
+	}
+	added, err := p.store.RecordReceived(ctx, revision)
+	if err != nil {
+		return Report{}, err
+	}
+	if err := p.store.Transition(ctx, revision.Manifest.StructuralSequence, revision.Digest, state.Verified); err != nil {
+		return Report{}, err
+	}
+	report.Outcome = PendingApplication
+	report.NewlyRecorded = added
+	return report, nil
 }
