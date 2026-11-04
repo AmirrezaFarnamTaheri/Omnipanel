@@ -17,8 +17,8 @@ import (
 )
 
 var (
-	ErrInvalidConfig = errors.New("invalid node desired-state gateway configuration")
-	identityPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+	ErrInvalidConfig   = errors.New("invalid node desired-state gateway configuration")
+	identityPattern    = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 	trustDomainPattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$`)
 )
 
@@ -31,7 +31,7 @@ const (
 // Epoch is its independently authorized control-plane history, not a query
 // parameter. Envelope holds a previously signed manifest, never raw secrets.
 type Snapshot struct {
-	Epoch string
+	Epoch    string
 	Envelope []byte
 }
 
@@ -46,11 +46,11 @@ type Source interface {
 // (TLS 1.3, RequireAndVerifyClientCert); the live PKI ledger is consulted on
 // every request, including before a no-change response.
 type Handler struct {
-	ledger enrollment.CertificateChecker
-	source Source
+	ledger      enrollment.CertificateChecker
+	source      Source
 	trustDomain string
-	verifier manifest.Verifier
-	now func() time.Time
+	verifier    manifest.Verifier
+	now         func() time.Time
 }
 
 func NewHandler(ledger enrollment.CertificateChecker, source Source, trustDomain string, verifier manifest.Verifier, now func() time.Time) (*Handler, error) {
