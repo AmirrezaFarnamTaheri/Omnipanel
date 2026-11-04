@@ -41,10 +41,17 @@ const (
 // TokenStore must atomically consume a previously authorized token AND record
 // the issued certificate. Implementations must be durable and transactional;
 // one-time tokens must not be reissued after a process restart.
+// CertificateChecker is the minimal, read-only admission interface required
+// by the mTLS gateway. It must not need grant issuance or token redemption
+// privileges. The deployed gateway must use an independently restricted role.
+type CertificateChecker interface {
+	Active(ctx context.Context, nodeID, serial string, keyDigest [32]byte, at time.Time) (bool, error)
+}
+
 type TokenStore interface {
 	Lookup(ctx context.Context, tokenDigest [32]byte, at time.Time) (nodeID string, err error)
 	Commit(ctx context.Context, tokenDigest [32]byte, nodeID, serial string, keyDigest [32]byte, notBefore, notAfter, at time.Time) error
-	Active(ctx context.Context, nodeID, serial string, keyDigest [32]byte, at time.Time) (bool, error)
+	CertificateChecker
 }
 
 type Authority struct {
@@ -206,7 +213,7 @@ func (a *Authority) Enroll(ctx context.Context, bearer string, csrPEM []byte) (I
 // AuthenticatePeer must be called only with a tls.ConnectionState created by
 // Go's TLS stack after chain validation. A forwarded certificate HTTP header
 // is never an authentication source. The registry provides revocation checks.
-func AuthenticatePeer(ctx context.Context, peer tls.ConnectionState, store TokenStore, trustDomain string, at time.Time) (string, error) {
+func AuthenticatePeer(ctx context.Context, peer tls.ConnectionState, store CertificateChecker, trustDomain string, at time.Time) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
