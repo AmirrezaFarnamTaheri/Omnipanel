@@ -38,9 +38,6 @@ const (
 	maxCertificateLife = 24 * time.Hour
 )
 
-// TokenStore must atomically consume a previously authorized token AND record
-// the issued certificate. Implementations must be durable and transactional;
-// one-time tokens must not be reissued after a process restart.
 // CertificateChecker is the minimal, read-only admission interface required
 // by the mTLS gateway. It must not need grant issuance or token redemption
 // privileges. The deployed gateway must use an independently restricted role.
@@ -48,6 +45,9 @@ type CertificateChecker interface {
 	Active(ctx context.Context, nodeID, serial string, keyDigest [32]byte, at time.Time) (bool, error)
 }
 
+// TokenStore must atomically consume a previously authorized token AND record
+// the issued certificate. Implementations must be durable and transactional;
+// one-time tokens must not be reissued after a process restart.
 type TokenStore interface {
 	Lookup(ctx context.Context, tokenDigest [32]byte, at time.Time) (nodeID string, err error)
 	Commit(ctx context.Context, tokenDigest [32]byte, nodeID, serial string, keyDigest [32]byte, notBefore, notAfter, at time.Time) error
