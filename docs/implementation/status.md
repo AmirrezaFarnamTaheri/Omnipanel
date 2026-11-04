@@ -311,7 +311,43 @@ This is **not** a deployable agent or a completed Task 4. There is no
 authenticated outbound gateway transport, runtime application helper,
 separate structural/membership delivery, per-component apply journal,
 network commit-confirm watchdog, autonomous rollback, restored last-good
-generation or crash-injection matrix. The next increment must connect
-signature verification to this journal through a bounded reconciler and
-demonstrate durable, agent-initiated *read-only* polling before introducing
-any privileged host changes. All production gates remain BLOCKED.
+generation or crash-injection matrix. The next increment is a bounded verification-only desired-state polling processor;
+privileged host application, actual authenticated network transport and recovery
+remain separate and must not be inferred from the durable journal. All production gates remain BLOCKED.
+
+## Four-panel reference assessment and verification-only node polling (4 November 2026)
+
+The supplied S-UI, 3X-UI, Hiddify-Manager and 1Panel forks were reviewed at
+specific source commits in the
+[four-panel integration assessment](../research/four-panel-integration-assessment.md).
+This is a source/design review, not production qualification or a code import.
+The root repositories each contain GPL-3.0 licenses; the separate
+Hiddify-Panel submodule and any separately licensed/proprietary features
+require their own review. In particular, 1Panel's current README identifies
+multi-node management as outside its free OSS edition. No third-party source
+files or scripts were copied into OmniPanel.
+
+`internal/agent/reconcile` now provides a **verification-only** `Processor`
+with an injected, caller-authenticated `AuthenticatedPuller` interface.
+`PollOnce` requests the configured node's desired state, and `Process`
+uses the trusted `manifest.Verifier.Verify` before recording a revision
+in the private SQLite WAL journal. Duplicate signed intent remains idempotent;
+invalid signatures, other-node manifests and lower revisions are rejected.
+A restart reopens and replays journaled `VERIFIED` intent without modifying
+the applied cursor or last-known-good state. These are mock-transport
+tests and not evidence of real mTLS enrollment or network delivery.
+
+The failing test was first observed in
+[foundation run 41815727545](https://github.com/AmirrezaFarnamTaheri/Omnipanel/actions/runs/41815727545)
+against an explicitly unimplemented processor. The implementation then
+passed its behavior, Go race and contract tests in
+[foundation run 41815886651](https://github.com/AmirrezaFarnamTaheri/Omnipanel/actions/runs/41815886651).
+A dedicated `gofmt` gate covers the new Go package; the latest branch-head
+CI status must be inspected separately after subsequent formatting/doc edits.
+
+**Not yet implemented:** real gateway, node enrollment or mTLS; agent daemon,
+poll loop/backoff, separate structural/membership streams, trusted component
+staging/preflight, on-host helper or service execution, independent watchdog,
+observed deployment cursor, last-good commit/rollback, crash-injection matrix,
+full external-client/Hysteria2 lab, or production qualification. All M0/M1/M2
+production gates remain BLOCKED.
