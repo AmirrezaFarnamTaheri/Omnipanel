@@ -571,3 +571,34 @@ PR-head CI on the PostgreSQL 17.6 service remains the verification gate.**
 No trusted logout writer or session HTTP API exists yet; the regression
 performs the same session-row deletion a future session service will
 execute. All production acceptance gates remain BLOCKED.
+
+## Four-panel selective adoption increment (4 November 2026)
+
+The four supplied reference forks (S-UI, 3X-UI, Hiddify-Manager, 1Panel)
+were re-fetched and re-verified at the pinned revisions in
+`docs/research/four-panel-integration-assessment.md`; all heads are
+unchanged and the Hiddify-Panel submodule (CC BY-NC-SA 4.0) remains
+excluded. Three bounded behaviors were adopted as independent, tested
+implementations — no source was copied or vendored:
+
+- `internal/agent/metering`: a fail-closed traffic accumulator absorbing
+  S-UI's destructive-drain retention and bounded folding lessons, extended
+  with generation-scoped counters, idempotent drain replay, stale-generation
+  and counter-regression refusal, explicit pending-window capacity and
+  absolute-total flush semantics for idempotent stores. This is an
+  in-memory foundation, not billing-grade accounting; durable delivery,
+  restart rehydration and runtime wiring remain blocked.
+- `internal/agent/state`: the SQLite journal now verifies caller ownership
+  (uid, not just mode bits — studied from 1Panel's agent socket checks) of
+  its parent directory and database, and refuses hostile `-wal`/`-shm`
+  sidecars before open. Symlinked, permissive, non-regular and foreign-owned
+  companions fail closed with tests.
+- `tests/contracts/subscription-determinism.test.ts`: 3X-UI's deterministic
+  ordering discipline is pinned as regressions — byte-stable emitters,
+  exact IR-order preservation, stable per-format exclusion diagnostics and
+  refusal of diagnostic-carrying IRs.
+
+The Foundation gofmt gate now covers the new metering package. Local Go
+race/vet/gofmt and the TypeScript contract suite pass; final-head CI
+remains the verification gate. No production capability, deployed service
+or release gate is promoted by this increment.

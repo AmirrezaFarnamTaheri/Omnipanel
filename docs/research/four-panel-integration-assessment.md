@@ -61,3 +61,26 @@ No files from these projects are copied, vendored or linked into OmniPanel in th
 ## Evidence limits
 
 This is a **static source review**. It does not establish that any reference project, code path or edition is production-safe, that Pro/Ent features are available to OmniPanel, or that any existing local smoke result qualifies external VPSs, third-party clients or hard quotas. A source-specific licensing inventory and an independent integration test are prerequisites before changing that claim.
+
+## Adoption implemented (4 November 2026, second pass)
+
+All four supplied forks were re-fetched and their branch heads re-verified
+against the pinned revisions in the table above: S-UI `19302d1`, 3X-UI
+`83ea59f`, Hiddify-Manager `9974dc3` and 1Panel `30381a3` are unchanged.
+The Hiddify-Manager gitlink for `services/panel/src` still resolves to
+`hiddify/Hiddify-Panel@6f3e4457` (CC BY-NC-SA 4.0), so that submodule remains
+**excluded**; only the GPL-3.0 manager repository was inspected. No source
+file was copied, vendored or linked; every adoption below is an independent
+implementation of a studied behavior, with tests.
+
+| Reference behavior (studied) | OmniPanel artifact (implemented) | Boundary kept |
+| --- | --- | --- |
+| S-UI `service/stats.go`: a destructive counter drain retained pending traffic on storage failure and folded repeated failures instead of growing an unbounded backlog | `internal/agent/metering`: fail-closed accumulator with folded pending window, explicit `MaxPendingUsers` capacity, absolute-total (idempotent upsert) flush semantics | Adds the generation contract the panel lacks: stale-generation replay refusal, idempotent drain sequences, within-generation counter-regression refusal, overflow refusal. In-memory foundation only — durable delivery, restart rehydration and native runtime wiring remain BLOCKED; not a billing meter |
+| 1Panel `agent/server/server.go`: socket directory/file mode **and owner-uid** verification before use | `internal/agent/state`: `Open` now verifies caller ownership of the journal parent and database, and validates existing `-wal`/`-shm` sidecars (regular file, owner-only mode, caller-owned) before SQLite opens them | Non-POSIX platforms fail closed; foreign-uid refusal is unit-tested via fabricated stat because CI cannot chown. This hardens the journal boundary only; it is not helper-IPC or host hardening proof |
+| 3X-UI `internal/sub/host_order.go`: explicit, stable multi-key ordering so subscription output cannot drift | `tests/contracts/subscription-determinism.test.ts`: byte-stability of every emitter, exact IR-order preservation (ordering authority stays in `buildIR`'s inbound-id order), stable per-format exclusion diagnostics, refusal of diagnostic-carrying IRs | No host-variant system or locale-dependent sorting was adopted; per-format exclusion remains fail-closed rather than silently dropping paths |
+| Hiddify-Manager service separation (`DEVELOPMENT.md`, `services/*/run.sh`): generated configuration and secrets kept apart from installed sources, distinct service wrappers | Already reflected in `lab/runtime` (pinned build + isolated generation directories) and the subscription route's isolated public rate-limit budget; re-confirmed in this pass | The CC BY-NC-SA panel submodule is a behavior reference only. No installer, template, service script or panel code was executed, imported or copied |
+
+Verification for this increment: local Go race/vet/gofmt (including the new
+`internal/agent/metering` package now covered by the Foundation gofmt gate)
+and the TypeScript contract suite. Final-head CI remains the gate; none of
+these adoptions promotes a production capability or unblocks a release gate.
