@@ -46,14 +46,14 @@ type Source interface {
 // (TLS 1.3, RequireAndVerifyClientCert); the live PKI ledger is consulted on
 // every request, including before a no-change response.
 type Handler struct {
-	ledger enrollment.TokenStore
+	ledger enrollment.CertificateChecker
 	source Source
 	trustDomain string
 	verifier manifest.Verifier
 	now func() time.Time
 }
 
-func NewHandler(ledger enrollment.TokenStore, source Source, trustDomain string, verifier manifest.Verifier, now func() time.Time) (*Handler, error) {
+func NewHandler(ledger enrollment.CertificateChecker, source Source, trustDomain string, verifier manifest.Verifier, now func() time.Time) (*Handler, error) {
 	if ledger == nil || source == nil || now == nil ||
 		!trustDomainPattern.MatchString(trustDomain) ||
 		len(verifier.TrustedSigners) == 0 ||
