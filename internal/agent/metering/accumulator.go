@@ -41,8 +41,9 @@ var (
 	// ErrConflictingReplay rejects a replay at the most recently accepted
 	// sequence when its counters disagree with the durable observation.
 	ErrConflictingReplay = errors.New("conflicting metering sequence replay")
-	// ErrCapacity rejects a NEW user when the uncommitted window is full.
-	// Existing users keep folding; traffic is never silently discarded.
+	// ErrCapacity rejects any operation that would exceed the uncommitted
+	// window, including re-dirtying previously flushed users. Already-pending
+	// users keep folding, and rejected samples can be retried.
 	ErrCapacity = errors.New("metering pending window capacity exceeded")
 	// ErrDurableMode prevents callers from bypassing checkpoint-before-ack
 	// semantics when an accumulator was opened from durable storage.
@@ -136,6 +137,7 @@ func (a *Accumulator) acceptLocked(s Sample) error {
 		}
 		state = &userState{}
 	}
+	var up, down uint64
 	switch {
 	case seen && s.Generation < state.generation:
 		return ErrStaleGeneration
@@ -152,15 +154,20 @@ func (a *Accumulator) acceptLocked(s Sample) error {
 		if s.Counters.Uplink < state.last.Uplink || s.Counters.Downlink < state.last.Downlink {
 			return ErrCounterRegression
 		}
-		if err := addDelta(state, s.Counters.Uplink-state.last.Uplink, s.Counters.Downlink-state.last.Downlink); err != nil {
-			return err
-		}
+		up, down = s.Counters.Uplink-state.last.Uplink, s.Counters.Downlink-state.last.Downlink
 	default:
 		// First observation, or a newer generation whose counters restarted
 		// from zero: the cumulative counters are the whole delta.
-		if err := addDelta(state, s.Counters.Uplink, s.Counters.Downlink); err != nil {
-			return err
-		}
+		up, down = s.Counters.Uplink, s.Counters.Downlink
+	}
+	// A previously flushed user must acquire a new pending slot too.
+	// Check before changing any totals, so refused drains can be retried
+	// without silently making the checkpoint unrecoverable on restart.
+	if !state.dirty && a.pendingUsers >= MaxPendingUsers {
+		return ErrCapacity
+	}
+	if err := addDelta(state, up, down); err != nil {
+		return err
 	}
 	state.generation, state.seq, state.last = s.Generation, s.Seq, s.Counters
 	if !seen {
