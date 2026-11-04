@@ -30,7 +30,7 @@ var (
 	ErrNoChange       = errors.New("gateway reports no structural change")
 	ErrInvalidConfig  = errors.New("invalid authenticated gateway configuration")
 	ErrInvalidRequest = errors.New("invalid node desired-state poll request")
-	nodeIDPattern     = regexp.MustCompile("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+	nodeIDPattern     = regexp.MustCompile("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 )
 
 // Request binds a desired-state GET to the caller's authorized node and the
