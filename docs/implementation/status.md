@@ -603,53 +603,31 @@ race/vet/gofmt and the TypeScript contract suite pass; final-head CI
 remains the verification gate. No production capability, deployed service
 or release gate is promoted by this increment.
 
-## Four-panel decomposition / recomposition increment (4 November 2026)
+## Verified MFA step-up writer boundary (4 November 2026)
 
-The follow-up investigation mapped concrete source files across the four
-reference projects to OmniPanel package boundaries; the inventory is in
-`docs/research/four-panel-file-level-map.md`. It expands the earlier selective
-assessment but remains a static, pinned-revision review. It covers S-UI
-session/stat semantics, 3X-UI subscription ordering/metadata/calendar
-semantics, Hiddify-Manager's manager-vs-panel-vs-generated-service split and
-optional L4 service, and 1Panel socket ownership, backup records, monitoring,
-firewall, cron and storage concerns. No upstream source or installer was
-copied or executed; the separate Hiddify-Panel submodule remains outside the
-reviewed implementation scope.
+`internal/pki/enrollment/grants/stepup.go` adds a **non-deploying** TOTP
+step-up verification service. It derives the session/owner from a valid
+live legacy `admin_sessions` credential, obtains the current time from
+PostgreSQL, and requires an externally injected `TOTPSecretOpener` to
+decrypt the existing encrypted administrator TOTP secret. It verifies
+RFC 6238 HMAC-SHA1, six-digit, 30-second codes with a ±one-step window,
+enforces a monotonic counter across all sessions for that admin, and
+persists failed attempts under a shared five-minute per-admin budget.
+Missing KMS, database, owner session or factor authorization fails closed.
 
-A first 1Panel-informed independent contract now exists in `internal/backup`:
-queued/running/failed/retry/succeeded lifecycle, restore verification,
-attempt count, monotonic timestamps, bounded stable error codes, and required
-artifact digests for successful completion. Go race tests cover retries,
-terminal-state immutability, restore digest requirements, invalid transitions
-and time regressions; Foundation's explicit gofmt gate includes this package.
-This is only an in-memory lifecycle model: no task persistence, byte transfer,
-provider integration, cryptographic key backup, restore executor, or PITR/DR
-evidence is implemented. Thus `gate-dr` and all other production gates remain
-BLOCKED. Full final-head CI remains pending.
+Forward-only migration `0007_agent_grant_verified_stepup.sql` adds
+`verified_source` (default `legacy`) and `verified_counter` to step-up
+records, plus durable replay counters and attempt windows.
+`grants.Service.Issue` now requires
+`verified_source='trusted'` and a persisted counter, preventing a legacy
+manually populated step-up timestamp from satisfying enrollment-grant
+authorization by default. A PostgreSQL integration regression exercises
+legacy rejection, a verified owner session, bad factor, replay within/across
+sessions, role demotion and exhausted attempt budgets.
 
-## Backup task durability follow-up (4 November 2026)
-
-Advanced the previous in-memory task contract with `internal/backup/repository.go`:
-SQLite WAL plus `synchronous=FULL`, caller-owned private absolute directory/database
-checks, regular-file and private-mode validation for database and `-wal`/`-shm`
-sidecars, serialized lifecycle updates, and state/timestamp compare guards. Tests
-prove repository reopen persistence, required durability PRAGMAs, duplicate and
-missing ID behavior, and rejection of permissive directories/files and symlinked
-WAL sidecars. This is a durable local task-metadata ledger, **not** a backup
-engine, artifact store, key recovery system, distributed lease, or PostgreSQL
-outbox; process-wide multi-writer coordination and power-loss filesystem testing
-are not claimed. Backup providers, encryption, restore verification drills and
-PITR remain open. All production gates remain BLOCKED.
-
-## Read-only node resource snapshot contract (4 November 2026)
-
-Added `internal/observability` as a small 1Panel-monitoring-informed contract:
-bounded node/generation identity, sample timestamp, finite CPU percentage,
-non-overflowing memory/filesystem values, unique filesystem/interface IDs, and
-fresh/stale/unknown classification. Invalid and future samples are `unknown`;
-resource freshness says nothing about proxy listener reachability, traffic,
-client connectivity, enforcement, or billing. No host collector, process data,
-filesystem probing, firewall access, persistence, or alert delivery is wired.
-Tests exercise bounds, duplicates, stale/future cases and the explicit separation
-from proxy health. The Foundation gofmt list now includes this package. Firewall
-inventory and other operations remain deferred; production gates are unchanged.
+**Unimplemented:** a protected real `TOTPSecretOpener` backed by deployed
+key custody, trusted HTTP/CSRF and origin boundary, full legacy schema
+qualification, approval writer, token delivery, production rate/availability
+tuning and HSM-backed certificate issuer. CI on the final PR head is required
+before marking these library contracts verified. M0/M1 production gates
+remain BLOCKED.

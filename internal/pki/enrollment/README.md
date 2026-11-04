@@ -124,3 +124,30 @@ listener would bypass these authorization checks. There is still **no
 deployed gateway**, so this adapter is a mandatory future wiring contract,
 not proof of production enforcement. Neither a trusted approval/step-up
 writer nor revocation propagation across multiple live gateways is present.
+
+## Trusted step-up writer and legacy records
+
+The internal `grants.StepUpService` is a **library**, not an HTTP endpoint.
+`Verify(ctx, sessionBearer, sixDigitCode)` validates the owner session
+and time against PostgreSQL, requires a caller-supplied protected
+`TOTPSecretOpener` that binds admin ID and encrypted secret envelope,
+and checks the RFC 6238 code. Successful verification is recorded in the
+live session's step-up row for at most five minutes. The verifier stores a
+strictly increasing 30-second TOTP counter per administrator, blocking
+replay even through a second session, and limits attempts to five per
+administrator per PostgreSQL-clocked five-minute window. Failures
+never set `verified_source='trusted'`.
+
+Migration `0007_agent_grant_verified_stepup.sql` marks existing
+step-up rows `legacy` by default: a timestamp written through the former
+fixture or any untrusted route no longer qualifies for admin grant issuance.
+Only new verified records with a non-null TOTP counter qualify in the
+`grants.Service.Issue` policy and its pre-commit recheck.
+
+**Not a production MFA implementation:** the concrete encrypted-secret
+opener and secure KEK/HSM access remain unimplemented; older JavaScript
+`totp_secret_enc` and development key files must not be reused as a
+production key-custody system. DB role separation must prevent untrusted
+writers from setting `verified_source='trusted'`. Shared attempt-window
+pruning and multi-tenant denial-of-service controls require operational
+ownership. No administrator API, public listener or deployment is added.

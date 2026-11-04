@@ -106,7 +106,8 @@ WHERE s.token_hash=$1 AND a.role='owner' AND a.totp_enabled AND m.can_issue
   AND s.created_at <= $3 AND s.last_seen_at <= $3
   AND s.expires_at > $3 AND s.created_at > $3 - interval '12 hours'
   AND s.last_seen_at > $3 - interval '2 hours'
-  AND su.method='totp' AND su.verified_at <= $3
+  AND su.method='totp' AND su.verified_source='trusted' AND su.verified_counter IS NOT NULL
+  AND su.verified_at <= $3
   AND su.verified_at > $3 - interval '5 minutes'
   AND su.expires_at > $3
 FOR SHARE OF a,s,m,su`, hex.EncodeToString(sessionHash[:]), r.OrganizationID, dbNow).Scan(&adminID, &sessionID)
@@ -204,6 +205,7 @@ VALUES ($1,$2,$3::uuid,$4::uuid,$5,'grant-issued',$6::uuid,$7) RETURNING audit_i
   AND s.last_seen_at > clock_timestamp() - interval '2 hours'
   AND s.created_at > clock_timestamp() - interval '12 hours'
   AND su.verified_at <= clock_timestamp()
+  AND su.verified_source='trusted' AND su.verified_counter IS NOT NULL
   AND su.verified_at > clock_timestamp() - interval '5 minutes'
   AND su.expires_at > clock_timestamp()
   AND $2 > clock_timestamp()
