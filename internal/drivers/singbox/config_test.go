@@ -127,10 +127,14 @@ func TestUnqualifiedOrUnsafeRenderInputFailsClosed(t *testing.T) {
 		{"listener mismatch", func(_ *drivers.BuildIdentity, p *drivers.ComponentPlan) { p.Reality.Listen.Port = 443 }},
 		{"unqualified path", func(_ *drivers.BuildIdentity, p *drivers.ComponentPlan) { p.Reality.Listen.Address = "/etc/shadow" }},
 		{"missing accepted SNI", func(_ *drivers.BuildIdentity, p *drivers.ComponentPlan) { p.Reality.ServerName = "" }},
-		{"unsafe accepted SNI", func(_ *drivers.BuildIdentity, p *drivers.ComponentPlan) { p.Reality.ServerName = "localhost; echo unexpected" }},
+		{"unsafe accepted SNI", func(_ *drivers.BuildIdentity, p *drivers.ComponentPlan) {
+			p.Reality.ServerName = "localhost; echo unexpected"
+		}},
 		{"invalid accepted SNI label", func(_ *drivers.BuildIdentity, p *drivers.ComponentPlan) { p.Reality.ServerName = "bad..example.org" }},
 		{"IP address cannot be used as SNI", func(_ *drivers.BuildIdentity, p *drivers.ComponentPlan) { p.Reality.ServerName = "127.0.0.1" }},
-		{"overlong accepted SNI label", func(_ *drivers.BuildIdentity, p *drivers.ComponentPlan) { p.Reality.ServerName = strings.Repeat("a", 64) + ".example.org" }},
+		{"overlong accepted SNI label", func(_ *drivers.BuildIdentity, p *drivers.ComponentPlan) {
+			p.Reality.ServerName = strings.Repeat("a", 64) + ".example.org"
+		}},
 		{"missing users", func(_ *drivers.BuildIdentity, p *drivers.ComponentPlan) { p.Reality.Users = nil }},
 		{"duplicate users", func(_ *drivers.BuildIdentity, p *drivers.ComponentPlan) {
 			p.Reality.Users = append(p.Reality.Users, p.Reality.Users[0])
