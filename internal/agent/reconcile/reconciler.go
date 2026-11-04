@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/AmirrezaFarnamTaheri/Omnipanel/internal/agent/gateway"
 	"github.com/AmirrezaFarnamTaheri/Omnipanel/internal/agent/state"
 	"github.com/AmirrezaFarnamTaheri/Omnipanel/internal/manifest"
 )
@@ -15,6 +16,7 @@ type Outcome string
 const (
 	PendingApplication Outcome = "pending_application"
 	AlreadyApplied     Outcome = "already_applied"
+	NoChange           Outcome = "no_change"
 )
 
 type Report struct {
@@ -28,7 +30,7 @@ type Report struct {
 // AuthenticatedPuller must already enforce authenticated node-scoped transport.
 // A mock implementation verifies orchestration, not real enrollment or mTLS.
 type AuthenticatedPuller interface {
-	FetchNodeDesired(context.Context, string) ([]byte, error)
+	FetchNodeDesired(context.Context, gateway.Request) ([]byte, error)
 }
 
 type Processor struct {
@@ -53,7 +55,7 @@ func (p *Processor) PollOnce(ctx context.Context, source AuthenticatedPuller) (R
 	if source == nil {
 		return Report{}, errors.New("authenticated node puller is required")
 	}
-	wire, err := source.FetchNodeDesired(ctx, p.verifier.NodeID)
+	wire, err := source.FetchNodeDesired(ctx, gateway.Request{NodeID: p.verifier.NodeID})
 	if err != nil {
 		return Report{}, err
 	}
