@@ -453,10 +453,37 @@ test-only PostgreSQL driver. This is not proof of production PostgreSQL
 PITR, failover or an approved node registry.
 
 **Unimplemented:** a runnable enrollment service and protected signer
-process, administrator grant approval/audit, durable shared abuse limiting,
+process, administrator grant approval/audit, shared limiter deployment/key custody and edge protections,
 issuer custody/rotation, certificate renewal and online revocation delivery,
 node identity-to-organization mappings, disaster recovery, privileged host
 apply or a crash-surviving rollback watchdog. Do not promote this endpoint
 library or the local database test into production acceptance.
 CI for the current PR head must pass before this increment is considered
 verified. All M0/M1/M2 production gates remain BLOCKED.
+
+
+## Shared PostgreSQL enrollment admission limiter (4 November 2026)
+
+`internal/pki/enrollment/httpapi/pg_limiter.go` introduces a
+non-deploying, dependency-injected PostgreSQL `Limiter`: transactional
+fleet-wide and canonical peer-IP 60-second budgets use the **database clock**
+and durable rows to prevent per-process reset. The only stored peer
+identifiers are fleet-keyed HMAC-SHA256 digests. Invalid IPs and unavailable
+PostgreSQL storage are refused. A denied peer does not consume the shared
+global counter because the combined transaction rolls back. Bypass attempts
+using client-supplied forwarded IP headers remain ineffective in the existing
+TLS enrollment handler. A trusted explicit pruning operation removes
+windows older than 24 hours; it does not run automatically.
+
+Migration `0004_agent_enrollment_rate_limits.sql` and a tagged integration
+test extend the existing disposable PostgreSQL Actions job. The test checks
+atomic cross-instance budgets, concurrency near a global threshold,
+forwarded header spoofing, migration constraints, DB outage failure and
+pruning. Local red/green tests for configuration rejection and canonical
+HMAC peer identity passed with race detection. **Final PR-head CI is required
+before claiming the PostgreSQL integration is green.**
+
+There is still no configured HMAC key management, deployed gateway, actual
+administrator-approved grant workflow, edge rate controls, CA key custody,
+cert renewal, multi-gateway revocation delivery or privileged agent apply.
+All production acceptance gates remain BLOCKED.

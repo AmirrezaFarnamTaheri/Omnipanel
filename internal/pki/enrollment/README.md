@@ -8,7 +8,7 @@ This package implements token-scoped CSR issuance and certificate admission. Its
 - AuthenticatePeer requires a TLS 1.3 ConnectionState already verified by Go TLS, the exact node URI SAN, and a live ledger Active lookup for node+serial+public key. The ledger must fail closed on a missing, revoked, expired or unknown record. **Never** accept forwarded client-certificate HTTP headers.
 - SQLStore schema is introduced by PostgreSQL migration `db/migrations/0003_agent_enrollment.sql`; the issuer does not run DDL itself. SQLite is used **only** for isolated transaction/restart tests, not as proof of a deployed PostgreSQL issuer.
 
-**Not implemented / not qualified:** a deployed HTTPS enrollment listener, shared/distributed rate-limiter implementation and edge abuse controls; private root/issuer provisioning, key storage and rotation; authenticated administrator grant issuance and delivery; certificate renewal, CA rollover or revocation propagation across multiple gateways; live enrollment gateway mTLS tests; production database failover and PITR. A trusted grant-issuance caller must additionally check node existence, approval, organization scope and audit the action. All M0/M1 production gates remain BLOCKED.
+**Not implemented / not qualified:** a deployed HTTPS enrollment listener, provisioned shared rate-limiter instance/HMAC key and edge abuse controls; private root/issuer provisioning, key storage and rotation; authenticated administrator grant issuance and delivery; certificate renewal, CA rollover or revocation propagation across multiple gateways; live enrollment gateway mTLS tests; production database failover and PITR. A trusted grant-issuance caller must additionally check node existence, approval, organization scope and audit the action. All M0/M1 production gates remain BLOCKED.
 
 ## Non-deploying HTTP and PostgreSQL test seams
 
@@ -31,3 +31,34 @@ certificate-write rollback, revocation, and schema constraints. These
 tests do not prove runtime migrations, node approval/organization scope,
 real key custody, multi-gateway revocation propagation, renewal or disaster
 recovery. The `github.com/lib/pq` driver is pinned for tests only.
+
+
+## Shared, PostgreSQL-backed bootstrap admission (not deployed)
+
+`httpapi.NewPostgresLimiter(db, hmacKey, perPeerBudget, globalBudget)`
+provides a concrete fail-closed `Limiter` that can be injected into the
+existing enrollment handler. It requires an exactly 32-byte, fleet-shared
+HMAC key from a separately protected secret manager. It stores HMAC-SHA256
+digests of peer IPs, **never plaintext IPs**, using IPv4/IPv4-mapped IPv6
+canonicalization. It uses the PostgreSQL clock for 60-second windows, not
+the gateway process clock. A single transaction atomically charges the
+fleet-wide budget and the specific peer; if either budget is exhausted
+the transaction rolls back, and database errors never fall back to
+in-process allowance. Request forwarding headers are ignored by the
+enrollment handler.
+
+Migration `db/migrations/0004_agent_enrollment_rate_limits.sql` adds the
+shared hashed counters. The disposable PostgreSQL CI job exercises
+separate limiter instances, concurrency at the global threshold, forwarded
+header bypass attempts, database outage denial, and explicit pruning.
+`PruneExpired` is a **trusted maintenance API**, not automatic GC: an
+authorized periodic task must invoke it and monitor errors. No service
+or public listener has been deployed.
+
+**Operational blockers:** provisioning and rotating the shared HMAC
+key, hardening gateway direct TLS termination and upstream trust boundary,
+configuring per-peer/global budgets according to traffic and NAT,
+running/prioritizing pruning, proving multi-region database availability,
+and adding edge-wide abuse protections. A global PostgreSQL row serializes
+enrollments within each minute; load-testing this contention is required
+before production. This is not an admin-approved grant minting workflow.

@@ -5,6 +5,7 @@ on:
     paths:
       - 'internal/pki/enrollment/**'
       - 'db/migrations/0003_agent_enrollment.sql'
+      - 'db/migrations/0004_agent_enrollment_rate_limits.sql'
       - 'go.mod'
       - 'go.sum'
       - '.github/workflows/enrollment-postgres.yml'
@@ -12,6 +13,7 @@ on:
     paths:
       - 'internal/pki/enrollment/**'
       - 'db/migrations/0003_agent_enrollment.sql'
+      - 'db/migrations/0004_agent_enrollment_rate_limits.sql'
       - 'go.mod'
       - 'go.sum'
       - '.github/workflows/enrollment-postgres.yml'
@@ -49,4 +51,6 @@ jobs:
         run: go test -race -count=1 -v -tags=postgres_integration ./internal/pki/enrollment -run '^TestPostgresEnrollmentLedger$'
       - name: Verify ordinary TLS enrollment handler tests independently
         run: go test -race -count=1 ./internal/pki/enrollment/httpapi
+      - name: Exercise shared enrollment limits on real PostgreSQL
+        run: go test -race -count=1 -v -tags=postgres_integration ./internal/pki/enrollment/httpapi -run '^TestPostgresSharedEnrollmentRateLimiter$'
       # This CI database is disposable; it is not a PITR, failover or key-restore drill.
