@@ -278,7 +278,7 @@ func TestTokenExpiresDuringIssuance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	store.seed(digest, testNodeA, start.Add(5 * time.Minute))
+	store.seed(digest, testNodeA, start.Add(5*time.Minute))
 	calls := 0
 	now := func() time.Time {
 		calls++
