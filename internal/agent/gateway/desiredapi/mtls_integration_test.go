@@ -29,7 +29,7 @@ func TestActualMTLSClientAndSignedDesiredHandlerRoundTrip(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	wire, verifier := fixtureSignedDesired(t, now)
 	ledger := &fixtureLedger{active: true}
-	source := &fixtureSource{snapshot: Snapshot{Epoch: desiredEpoch, Envelope: wire}}
+	source := &fixtureSource{snapshot: Snapshot{Epoch: desiredEpoch, StructuralSequence: 2, MembershipSequence: 3, Envelope: wire}}
 	h, err := NewHandler(ledger, source, desiredDomain, verifier, func() time.Time { return now })
 	if err != nil {
 		t.Fatal(err)
