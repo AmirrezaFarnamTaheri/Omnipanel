@@ -84,5 +84,7 @@ jobs:
 
       - name: Exercise independently preapproved signed publication transactions
         run: go test -race -count=1 -v -tags=postgres_integration ./internal/control/desiredpublish -run '^TestPostgresApprovedSignedPublication
+      # This CI database is disposable; it is not a PITR, failover or key-restore drill.
+
 
       # This CI database is disposable; it is not a PITR, failover or key-restore drill.
