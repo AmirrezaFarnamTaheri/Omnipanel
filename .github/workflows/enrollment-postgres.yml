@@ -76,6 +76,6 @@ jobs:
       - name: Apply PostgreSQL migrations 0001-0007 and exercise approved grants
         run: go test -race -count=1 -v -tags=postgres_integration ./internal/pki/enrollment/grants -run '^TestPostgresAdminApprovedNodeGrants$'
       - name: Verify signed desired-state PostgreSQL view and restricted reader role
-        run: go test -race -count=1 -v -tags=postgres_integration ./internal/agent/gateway/desiredapi -run '^TestPostgresSignedDesiredCurrentView
+        run: go test -race -count=1 -v -tags=postgres_integration ./internal/agent/gateway/desiredapi -run '^TestPostgresSignedDesiredCurrentView$'
 
       # This CI database is disposable; it is not a PITR, failover or key-restore drill.
