@@ -37,12 +37,6 @@ type fixtureLedger struct {
 	calls int
 }
 
-func (*fixtureLedger) Lookup(context.Context, [32]byte, time.Time) (string, error) {
-	return "", errors.New("not an enrollment issuer")
-}
-func (*fixtureLedger) Commit(context.Context, [32]byte, string, string, [32]byte, time.Time, time.Time, time.Time) error {
-	return errors.New("not an enrollment issuer")
-}
 func (l *fixtureLedger) Active(_ context.Context, node, serial string, _ [32]byte, _ time.Time) (bool, error) {
 	l.calls++
 	if node != desiredNode || serial != "2" {
