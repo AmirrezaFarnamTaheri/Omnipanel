@@ -29,13 +29,13 @@ jobs:
           go-version: '1.27.3'
           cache: false
       - run: make test-go
-      - name: Require gofmt for manifest, drivers and node journal
+      - name: Require gofmt for manifest, drivers, node journal and mTLS gateway
         run: |
-          unformatted="$(gofmt -l internal/manifest/*.go internal/drivers/*.go internal/drivers/singbox/*.go internal/agent/state/*.go internal/agent/reconcile/*.go)"
+          unformatted="$(gofmt -l internal/manifest/*.go internal/drivers/*.go internal/drivers/singbox/*.go internal/agent/state/*.go internal/agent/reconcile/*.go internal/agent/gateway/*.go)"
           if [ -n "$unformatted" ]; then
             printf 'Unformatted Go source:\n%s\n' "$unformatted" >&2
             # Print the exact formatting delta without modifying the workspace.
-            gofmt -d internal/agent/state/*.go internal/agent/reconcile/*.go >&2
+            gofmt -d internal/agent/state/*.go internal/agent/reconcile/*.go internal/agent/gateway/*.go >&2
             exit 1
           fi
       # The pre-existing agent/session registry is covered by the full Go
