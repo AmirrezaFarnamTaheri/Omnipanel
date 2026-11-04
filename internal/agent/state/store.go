@@ -157,7 +157,10 @@ func Open(path, nodeID, epoch string) (*Store, error) {
 		" stage TEXT NOT NULL CHECK (stage IN ('RECEIVED','VERIFIED'))," +
 		" created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP," +
 		" PRIMARY KEY (epoch, structural))"
-	for _, statement := range []string{scopeSQL, journalSQL} {
+	const meteringSQL = "CREATE TABLE IF NOT EXISTS metering_checkpoint (" +
+		" singleton INTEGER PRIMARY KEY CHECK (singleton = 1)," +
+		" payload BLOB NOT NULL CHECK (length(payload) BETWEEN 1 AND 2097152))"
+	for _, statement := range []string{scopeSQL, journalSQL, meteringSQL} {
 		if _, err := db.Exec(statement); err != nil {
 			return fail(fmt.Errorf("initialize protected node journal: %w", err))
 		}
@@ -337,4 +340,39 @@ func (s *Store) LastKnownGood(ctx context.Context) (string, error) {
 	err := s.db.QueryRowContext(ctx,
 		"SELECT last_good_ref FROM node_scope WHERE singleton=1").Scan(&reference)
 	return reference, err
+}
+
+// MaxMeteringCheckpointBytes bounds the per-node persisted accumulator state.
+const MaxMeteringCheckpointBytes = 2 << 20
+
+// LoadMeteringCheckpoint returns the opaque, versioned accumulator checkpoint
+// for this node journal. The metering package owns its payload schema.
+func (s *Store) LoadMeteringCheckpoint(ctx context.Context) ([]byte, error) {
+	if s == nil || s.db == nil {
+		return nil, ErrInvalidScope
+	}
+	var payload []byte
+	err := s.db.QueryRowContext(ctx,
+		"SELECT payload FROM metering_checkpoint WHERE singleton=1").Scan(&payload)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load metering checkpoint: %w", err)
+	}
+	return payload, nil
+}
+
+// SaveMeteringCheckpoint atomically replaces the bounded checkpoint. The
+// payload is private node-local state and must not contain bearer secrets.
+func (s *Store) SaveMeteringCheckpoint(ctx context.Context, payload []byte) error {
+	if s == nil || s.db == nil || len(payload) == 0 || len(payload) > MaxMeteringCheckpointBytes {
+		return ErrInvalidScope
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT INTO metering_checkpoint(singleton,payload)
+VALUES(1,?) ON CONFLICT(singleton) DO UPDATE SET payload=excluded.payload`, payload)
+	if err != nil {
+		return fmt.Errorf("save metering checkpoint: %w", err)
+	}
+	return nil
 }

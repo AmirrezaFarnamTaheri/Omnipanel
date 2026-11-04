@@ -21,7 +21,7 @@ See [`docs/research/four-panel-file-level-map.md`](../research/four-panel-file-l
 - [ ] PostgreSQL PITR + key restore drills; current model does not verify recoverability.
 - [x] Read-only node resource snapshot validation/freshness contract (`internal/observability`); firewall inventory contract remains deferred.
 - [x] Subscription metadata header validation/encoding and pure exclusive-vs-inclusive expiry presentation tests; optional Support-Url/Profile-Web-Page-Url/Announce emitters require validated HTTPS/header-safe metadata. Integration with user-admin configuration remains deferred.
-- [ ] Metering durable outbox/rehydration and native runtime session revocation.
+- [x] Bounded durable metering checkpoint/outbox rehydration in the protected SQLite WAL node journal; native runtime drain wiring, remote transactional delivery and session revocation remain deferred.
 - [x] Hiddify-inspired bounded node cursor/tombstone page validation contract (`internal/agent/syncfeed`); authentication, persistence, application, and certificate inventory remain deferred.
 
 ## Verification
