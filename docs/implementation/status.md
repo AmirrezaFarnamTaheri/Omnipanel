@@ -308,12 +308,12 @@ A Go 1.27 test-fixture permissions issue was fixed by using a private `0700`
 subdirectory; **production permission checks were not weakened**.
 
 This is **not** a deployable agent or a completed Task 4. There is no
-authenticated outbound gateway transport, runtime application helper,
+deployed node gateway/enrollment service, runtime application helper,
 separate structural/membership delivery, per-component apply journal,
 network commit-confirm watchdog, autonomous rollback, restored last-good
-generation or crash-injection matrix. The next increment is a bounded verification-only desired-state polling processor;
-privileged host application, actual authenticated network transport and recovery
-remain separate and must not be inferred from the durable journal. All production gates remain BLOCKED.
+generation or crash-injection matrix. The verification-only polling processor and a local mTLS transport test client
+are now separate additions; real credential enrollment, deployed gateway, host
+application and recovery must not be inferred from the durable journal. All production gates remain BLOCKED.
 
 ## Four-panel reference assessment and verification-only node polling (4 November 2026)
 
@@ -334,8 +334,9 @@ uses the trusted `manifest.Verifier.Verify` before recording a revision
 in the private SQLite WAL journal. Duplicate signed intent remains idempotent;
 invalid signatures, other-node manifests and lower revisions are rejected.
 A restart reopens and replays journaled `VERIFIED` intent without modifying
-the applied cursor or last-known-good state. These are mock-transport
-tests and not evidence of real mTLS enrollment or network delivery.
+the applied cursor or last-known-good state. The initial tests used an
+injected mock puller; separate local HTTPS/mTLS tests were added later,
+without deploying enrollment or a production gateway.
 
 The failing test was first observed in
 [foundation run 41815727545](https://github.com/AmirrezaFarnamTaheri/Omnipanel/actions/runs/41815727545)
@@ -345,9 +346,50 @@ passed its behavior, Go race and contract tests in
 A dedicated `gofmt` gate covers the new Go package; the latest branch-head
 CI status must be inspected separately after subsequent formatting/doc edits.
 
-**Not yet implemented:** real gateway, node enrollment or mTLS; agent daemon,
+**Not yet implemented:** deployed mTLS gateway, certificate enrollment/revocation or trusted node identity mapping; agent daemon,
 poll loop/backoff, separate structural/membership streams, trusted component
 staging/preflight, on-host helper or service execution, independent watchdog,
 observed deployment cursor, last-good commit/rollback, crash-injection matrix,
 full external-client/Hysteria2 lab, or production qualification. All M0/M1/M2
 production gates remain BLOCKED.
+
+## Bounded authenticated desired-state fetcher (4 November 2026)
+
+The new `internal/agent/gateway` client implements the approved draft
+`GET /v2/nodes/self/desired` transport seam using real HTTPS and TLS 1.3
+mutual certificate authentication. Configuration is supplied by a trusted
+provisioning caller, **never** from an untrusted manifest. It requires an
+explicit CA PEM, a client-auth certificate and matching key, a fixed HTTPS
+origin without URL credentials or caller-controlled route/query, and rejects
+ambient proxies, redirects and compressed responses. Requests carry the
+authorized `controlPlaneEpoch` and the node's separate **applied** structural
+and membership cursors. The path uses `self`; the gateway must derive the
+node's identity from the validated client certificate rather than any
+untrusted node ID header or path parameter.
+
+Only a successful HTTP 200 JSON response with private/no-store cache policy
+may return a bounded desired-state envelope (default 1 MiB, hard ceiling
+4 MiB). An HTTP 204 is a typed `ErrNoChange` result. Untrusted response
+bodies and status errors are not logged or retried automatically.
+`internal/agent/reconcile` verifies signed content before SQLite writes;
+neither HTTP 200 nor 204 commits an observed apply cursor or last-good
+generation. The gateway's certificate **revocation, enrollment and node-to-
+certificate authorization policy** require a real server implementation;
+the mere existence of a client certificate does not satisfy those gates.
+
+The mTLS package was developed with locally observed red/green focused tests:
+`go test -race -count=1 ./internal/agent/gateway` and `go vet` passed
+in an isolated scratch module. The first transfer into GitHub introduced an
+accidental extra UUID regex segment; Go CI caught the regression and it was
+corrected at `0d52eb9`. The epoch-cursor/204 tests first failed against the
+old processor, then the behavior was updated at `3f10277`.
+`mtls_integration_test.go` now composes an in-process mTLS gateway simulator,
+signed manifest verifier and protected SQLite WAL journal, requiring the
+observed cursor to remain unchanged. Inspect the final **PR-head CI** for
+actual repository-wide pass/fail status; a green local client test is not
+a production network security claim.
+
+Production gates remain BLOCKED: no deployed gateway, enrollment or
+revocation, no actual daemon/poll scheduler, no privileged apply,
+native driver activation, independent rollback watchdog, multi-node
+reconciliation, external VPS client qualification, or M0/M1 acceptance.
