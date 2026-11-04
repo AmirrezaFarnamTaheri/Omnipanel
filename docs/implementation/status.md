@@ -1,6 +1,6 @@
 # Implementation and verification status
 
-As of 2026-11-03. **No M0 walking-skeleton, M1 or M2 acceptance is claimed.**
+As of 2026-11-04. **The isolated Sing-box Reality/Vision smoke passed; no M0 walking-skeleton, M1 or M2 production acceptance is claimed.**
 
 ## This increment
 
@@ -30,8 +30,9 @@ Implemented and locally exercised:
   not support storing attestations for user-owned private repositories. The
   replacement keyless Cosign/Sigstore workflow signs the binary and metadata,
   verifies exact workflow/ref identity and artifact digest, and retains both
-  bundles. Its first CI execution is pending. Even when green, this is local
-  runtime evidence only, not M0 acceptance or external client qualification.
+  bundles. The complete authenticated local test later passed in
+  [run 41809579179](https://github.com/AmirrezaFarnamTaheri/Omnipanel/actions/runs/41809579179).
+  This is local runtime evidence only, not M0 acceptance or external client qualification.
 - Go `internal/manifest` verification core: strict typed envelope and canonical
   digest checking, Ed25519 trust, node/epoch authorization, time and replay
   checks, exact-build capability gating, dependency/port preflight and focused
@@ -49,7 +50,7 @@ all future membership, enrollment, quota, protocol or upgrade operations.
 | `make test-contracts` | Local deterministic unit tests; includes synthetic evidence in isolated temporary directories |
 | `make test-go` | Go manifest-verifier tests (including race detector) and vet; synthetic signer/manifest, no host actions |
 | `make test-provenance` | Fail-closed verifier tests with mocked Cosign CLI; actual Sigstore signature verification is performed in the runtime workflow |
-| `make test-runtime` | Pending CI execution; local namespace-only Reality/Vision, raw TCP and per-user counter smoke; not M0 acceptance |
+| `make test-runtime` | PASSED in GitHub Actions run 41809579179 (commit e97272f); local namespace-only Reality/Vision, raw TCP and per-user counter smoke; not M0 acceptance |
 | `make gate-lab` | BLOCKED: no external VPS, reference application, agent pull/report, Hysteria2 comparison or reviewed production evidence |
 | `make gate-control` | BLOCKED: Go secure service/DB/auth migration and integration harness missing |
 | `make gate-agent` | BLOCKED: deployable agent/helper/drivers/recovery/lease harness missing |
@@ -64,9 +65,10 @@ been removed. A standalone Go manifest-verification library and local Sing-box
 runtime smoke are now present, but no deployable Go agent or control-plane
 implementation exists. No public VPSs, representative mobile/desktop clients,
 provider diversity or production topology are available for external connectivity
-or production verification. The local runtime smoke result is pending CI. The previous build-attestation
-failure is documented above; the replacement Cosign workflow must complete
-real keyless signing and verification before the namespace smoke can run.
+or production verification. The local runtime smoke passed in run 41809579179,
+including independently verified keyless Sigstore/Cosign bundles and authenticated
+Reality/Vision connectivity. This does not satisfy external connectivity,
+client qualification or production recovery evidence.
 
 The old pg-mem E2E script was retired because it bypassed real transaction/
 concurrency primitives and its admission assumptions conflict with fail-closed
@@ -241,4 +243,39 @@ with `uTLS is required by reality client`. The fixture previously omitted the
 client-side `tls.utls.enabled` and fingerprint fields. The client fixture now
 sets `utls: {enabled: true, fingerprint: "chrome"}`, and a structural check
 asserts that required client configuration before native validation.
-This is not yet a successful authenticated traffic transfer or accounting result.
+That historical run was not a successful authenticated traffic transfer or
+accounting result; the later run 41809579179 established the limited local
+smoke result described below.
+
+## Verified isolated Reality/Vision smoke and explicit SNI contract (4 November 2026)
+
+[Runtime smoke run 41809579179](https://github.com/AmirrezaFarnamTaheri/Omnipanel/actions/runs/41809579179)
+completed successfully at commit `e97272f`. It built the source-pinned
+`sing-box 1.14.4+omni.2` with both required tags, verified keyless Sigstore
+signatures for the binary and build metadata, and executed a real
+VLESS/Reality/Vision server and client in two isolated Linux network
+namespaces. The controlled raw TCP echo check transferred **1,048,576 bytes
+per direction**; the authenticating runtime reported 1,048,576 uplink and
+1,048,576 downlink bytes (0% measured payload error in this single experiment).
+The native checker rejected a deliberately unsupported inbound type without
+interrupting the already running service. A core restart terminated the
+observed established session; the removed UUID failed to reconnect and the
+replacement UUID succeeded. This does **not** establish hot user removal,
+billing-grade accounting or hard quotas.
+
+That experiment also resolved a server/client Reality SNI mismatch: the
+inbound must explicitly declare the accepted `tls.server_name`, which is
+distinct from the decoy handshake destination. The typed Go
+`internal/drivers/singbox` inbound-fragment renderer now accepts a bounded,
+explicit `ServerName`, emits it as `tls.server_name`, and rejects missing,
+malformed, IP-address and invalid-label values. A regression test first failed
+on the omitted SNI before the renderer change. The renderer remains
+**non-deploying**, with native preflight, structural application, session
+revocation, metering and rollback unsupported. Check CI on the current PR HEAD
+before interpreting Go test status as green.
+
+This evidence is local to Linux namespaces and the Sing-box CLI client.
+Public VPSs, exact external clients, Hysteria2 comparison, agent-initiated
+reconciliation, durable last-good rollback, real packet impairment and all
+M0/M1/M2 production gates remain blocked. Do not promote the report into a
+production capability or client registry.
