@@ -82,6 +82,33 @@ func TestRealityInboundRenderingIsDeterministicAndNotDeployable(t *testing.T) {
 	}
 }
 
+// Reality accepts a client only when its SNI matches the inbound's server_name.
+// The decoy-handshake fallback is not proof of an authenticated Reality session.
+func TestRealityInboundEmitsExplicitAcceptedServerName(t *testing.T) {
+	build, plan := approvedTestPlan()
+	adapter, err := New(build)
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifact, err := adapter.Render(context.Background(), plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rendered struct {
+		Inbounds []struct {
+			TLS struct {
+				ServerName string `json:"server_name"`
+			} `json:"tls"`
+		} `json:"inbounds"`
+	}
+	if err := json.Unmarshal(artifact.Content, &rendered); err != nil {
+		t.Fatal(err)
+	}
+	if len(rendered.Inbounds) != 1 || rendered.Inbounds[0].TLS.ServerName != "localhost" {
+		t.Fatal("Reality inbound must explicitly allow the intended localhost test SNI")
+	}
+}
+
 func TestUnqualifiedOrUnsafeRenderInputFailsClosed(t *testing.T) {
 	cases := []struct {
 		name   string
