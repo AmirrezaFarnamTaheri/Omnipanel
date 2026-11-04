@@ -1,0 +1,52 @@
+name: Enrollment PostgreSQL contract (not production qualification)
+
+on:
+  push:
+    paths:
+      - 'internal/pki/enrollment/**'
+      - 'db/migrations/0003_agent_enrollment.sql'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/enrollment-postgres.yml'
+  pull_request:
+    paths:
+      - 'internal/pki/enrollment/**'
+      - 'db/migrations/0003_agent_enrollment.sql'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/enrollment-postgres.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  postgres-enrollment:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17.6
+        env:
+          POSTGRES_DB: omnipanel_enrollment_test
+          POSTGRES_USER: omni_test
+          POSTGRES_PASSWORD: ephemeral-ci-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U omni_test -d omnipanel_enrollment_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Only the isolated CI service can be reached. No production DB permitted.
+      OMNIPANEL_TEST_POSTGRES_DSN: postgres://omni_test:ephemeral-ci-only@127.0.0.1:5432/omnipanel_enrollment_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.3'
+          cache: false
+      - name: Exercise real PostgreSQL migration and enrollment transactions
+        run: go test -race -count=1 -v -tags=postgres_integration ./internal/pki/enrollment -run '^TestPostgresEnrollmentLedger$'
+      - name: Verify ordinary TLS enrollment handler tests independently
+        run: go test -race -count=1 ./internal/pki/enrollment/httpapi
+      # This CI database is disposable; it is not a PITR, failover or key-restore drill.
