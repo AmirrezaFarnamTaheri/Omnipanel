@@ -2,7 +2,6 @@ package enrollment
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
 	"errors"
 	"fmt"
