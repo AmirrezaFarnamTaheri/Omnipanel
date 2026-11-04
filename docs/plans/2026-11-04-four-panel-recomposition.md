@@ -22,7 +22,7 @@ See [`docs/research/four-panel-file-level-map.md`](../research/four-panel-file-l
 - [x] Read-only node resource snapshot validation/freshness contract (`internal/observability`); firewall inventory contract remains deferred.
 - [ ] Subscription metadata header additions and pure calendar expiry presentation tests.
 - [ ] Metering durable outbox/rehydration and native runtime session revocation.
-- [ ] Hiddify-inspired node cursor/tombstone and certificate inventory contracts.
+- [x] Hiddify-inspired bounded node cursor/tombstone page validation contract (`internal/agent/syncfeed`); authentication, persistence, application, and certificate inventory remain deferred.
 
 ## Verification
 

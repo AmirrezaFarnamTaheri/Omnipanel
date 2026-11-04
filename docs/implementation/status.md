@@ -625,6 +625,47 @@ authorization by default. A PostgreSQL integration regression exercises
 legacy rejection, a verified owner session, bad factor, replay within/across
 sessions, role demotion and exhausted attempt budgets.
 
+## Backup task durability follow-up (4 November 2026)
+
+Advanced the previous in-memory task contract with `internal/backup/repository.go`:
+SQLite WAL plus `synchronous=FULL`, caller-owned private absolute directory/database
+checks, regular-file and private-mode validation for database and `-wal`/`-shm`
+sidecars, serialized lifecycle updates, and state/timestamp compare guards. Tests
+prove repository reopen persistence, required durability PRAGMAs, duplicate and
+missing ID behavior, and rejection of permissive directories/files and symlinked
+WAL sidecars. This is a durable local task-metadata ledger, **not** a backup
+engine, artifact store, key recovery system, distributed lease, or PostgreSQL
+outbox; process-wide multi-writer coordination and power-loss filesystem testing
+are not claimed. Backup providers, encryption, restore verification drills and
+PITR remain open. All production gates remain BLOCKED.
+
+## Read-only node resource snapshot contract (4 November 2026)
+
+Added `internal/observability` as a small 1Panel-monitoring-informed contract:
+bounded node/generation identity, sample timestamp, finite CPU percentage,
+non-overflowing memory/filesystem values, unique filesystem/interface IDs, and
+fresh/stale/unknown classification. Invalid and future samples are `unknown`;
+resource freshness says nothing about proxy listener reachability, traffic,
+client connectivity, enforcement, or billing. No host collector, process data,
+filesystem probing, firewall access, persistence, or alert delivery is wired.
+Tests exercise bounds, duplicates, stale/future cases and the explicit separation
+from proxy health. The Foundation gofmt list now includes this package. Firewall
+inventory and other operations remain deferred; production gates are unchanged.
+
+## Bounded node-feed page contract (4 November 2026)
+
+Added `internal/agent/syncfeed` following the Hiddify node-feed review: pages
+carry a base/next cursor, bounded records, explicit tombstones, contiguous
+sequence checks, duplicate-ID rejection, payload/record caps, and a deterministic
+length-prefixed ordered digest. Sequence gaps return a distinct resynchronization
+error. The digest is an integrity checksum only, **not authentication or a
+signature**. The package neither persists cursors nor applies membership, and
+is not connected to manifest verification, gateway polling, PKI/cert inventory,
+or a running node. Race-tested validation covers page shape, sequence, tombstone
+semantics, digest, identity and bounds. Foundation gofmt gate includes the
+package; enrollment/authentication, durable cursor, full snapshot resync and
+certificate inventory remain open.
+
 **Unimplemented:** a protected real `TOTPSecretOpener` backed by deployed
 key custody, trusted HTTP/CSRF and origin boundary, full legacy schema
 qualification, approval writer, token delivery, production rate/availability
