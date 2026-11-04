@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"regexp"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/AmirrezaFarnamTaheri/Omnipanel/internal/manifest"
