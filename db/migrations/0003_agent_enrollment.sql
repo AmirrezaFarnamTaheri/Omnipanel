@@ -17,20 +17,7 @@ CREATE INDEX agent_enrollment_pending ON agent_enrollment_grants(node_id, expire
 
 CREATE TABLE agent_node_certificates (
     serial text PRIMARY KEY,
-    node_id text NOT NULL CHECK(node_id ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}
-    spki_digest bytea NOT NULL CHECK(octet_length(spki_digest) = 32),
-    not_before bigint NOT NULL,
-    not_after bigint NOT NULL,
-    issued_at bigint NOT NULL,
-    revoked_at bigint,
-    CHECK(not_after > not_before)
-);
-
-CREATE INDEX agent_certificates_active ON agent_node_certificates(node_id, not_after)
-    WHERE revoked_at IS NULL;
-
-COMMIT;
-),
+    node_id text NOT NULL CHECK(node_id ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'),
     spki_digest bytea NOT NULL CHECK(octet_length(spki_digest) = 32),
     not_before bigint NOT NULL,
     not_after bigint NOT NULL,
