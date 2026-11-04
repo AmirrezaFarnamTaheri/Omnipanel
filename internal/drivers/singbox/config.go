@@ -28,68 +28,8 @@ var (
 	principalPattern    = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}$`)
 	uuidPattern         = regexp.MustCompile(`^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$`)
 	shortIDPattern      = regexp.MustCompile(`^(?:[a-f0-9]{2}){1,8}$`)
-	namePattern         = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?// Package singbox renders a bounded VLESS/Reality inbound fragment. It does not
-// install binaries, apply configurations or claim native runtime validation.
-package singbox
-
-import (
-	"context"
-	"crypto/sha256"
-	"encoding/base64"
-	"encoding/hex"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"net/netip"
-	"regexp"
-	"sort"
-
-	"github.com/AmirrezaFarnamTaheri/Omnipanel/internal/drivers"
-	"github.com/AmirrezaFarnamTaheri/Omnipanel/internal/manifest"
-)
-
-const protocolCapability = "singbox-reality-vision"
-const artifactFormat = "singbox/inbound-fragment+json"
-const visionFlow = "xtls-rprx-vision"
-
-var (
-	buildVersionPattern = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+(?:\+[a-zA-Z0-9._-]+)?$`)
-	digestPattern       = regexp.MustCompile(`^[a-f0-9]{64}$`)
-	principalPattern    = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}$`)
-	uuidPattern         = regexp.MustCompile(`^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$`)
-	shortIDPattern      = regexp.MustCompile(`^(?:[a-f0-9]{2}){1,8}$`)
-	)
-	serverNamePattern   = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*// Package singbox renders a bounded VLESS/Reality inbound fragment. It does not
-// install binaries, apply configurations or claim native runtime validation.
-package singbox
-
-import (
-	"context"
-	"crypto/sha256"
-	"encoding/base64"
-	"encoding/hex"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"net/netip"
-	"regexp"
-	"sort"
-
-	"github.com/AmirrezaFarnamTaheri/Omnipanel/internal/drivers"
-	"github.com/AmirrezaFarnamTaheri/Omnipanel/internal/manifest"
-)
-
-const protocolCapability = "singbox-reality-vision"
-const artifactFormat = "singbox/inbound-fragment+json"
-const visionFlow = "xtls-rprx-vision"
-
-var (
-	buildVersionPattern = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+(?:\+[a-zA-Z0-9._-]+)?$`)
-	digestPattern       = regexp.MustCompile(`^[a-f0-9]{64}$`)
-	principalPattern    = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}$`)
-	uuidPattern         = regexp.MustCompile(`^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$`)
-	shortIDPattern      = regexp.MustCompile(`^(?:[a-f0-9]{2}){1,8}$`)
-	)
+	namePattern         = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?$`)
+	serverNamePattern   = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$`)
 )
 
 type Adapter struct {
