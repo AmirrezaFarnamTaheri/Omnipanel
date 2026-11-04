@@ -778,3 +778,11 @@ remain UNIMPLEMENTED. No mutable publisher is made available by this
 read-only migration. External client/provider evidence, authoritative usage
 accounting, rollback watchdogs, full restoration drills and all production
 `gate-*` conditions remain BLOCKED.
+
+**Epoch/PITR hardening:** A further review found that the gateway had copied the
+authorized control-plane epoch from the database head into the manifest
+verifier. The constructor now requires an independently provisioned trusted
+epoch; the read path rejects even correctly signed older envelopes when the
+database head has been restored to a previously authorized epoch. Regression
+tests cover missing protected epoch configuration and a valid old signature
+after epoch recovery. A live epoch-recovery approval workflow remains blocked.
