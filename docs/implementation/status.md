@@ -626,3 +626,17 @@ This is only an in-memory lifecycle model: no task persistence, byte transfer,
 provider integration, cryptographic key backup, restore executor, or PITR/DR
 evidence is implemented. Thus `gate-dr` and all other production gates remain
 BLOCKED. Full final-head CI remains pending.
+
+## Backup task durability follow-up (4 November 2026)
+
+Advanced the previous in-memory task contract with `internal/backup/repository.go`:
+SQLite WAL plus `synchronous=FULL`, caller-owned private absolute directory/database
+checks, regular-file and private-mode validation for database and `-wal`/`-shm`
+sidecars, serialized lifecycle updates, and state/timestamp compare guards. Tests
+prove repository reopen persistence, required durability PRAGMAs, duplicate and
+missing ID behavior, and rejection of permissive directories/files and symlinked
+WAL sidecars. This is a durable local task-metadata ledger, **not** a backup
+engine, artifact store, key recovery system, distributed lease, or PostgreSQL
+outbox; process-wide multi-writer coordination and power-loss filesystem testing
+are not claimed. Backup providers, encryption, restore verification drills and
+PITR remain open. All production gates remain BLOCKED.

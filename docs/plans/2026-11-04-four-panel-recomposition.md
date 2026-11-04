@@ -16,7 +16,7 @@ See [`docs/research/four-panel-file-level-map.md`](../research/four-panel-file-l
 
 ## Deferred (separate increments)
 
-- [ ] Persistent task repository / transactional outbox, lease and crash recovery.
+- [x] Persistent SQLite WAL task repository with private-directory/database/sidecar checks and restart persistence; PostgreSQL transactional outbox, leases and multi-process crash recovery remain deferred.
 - [ ] Backup byte-transfer providers, envelope encryption and independent key recovery.
 - [ ] PostgreSQL PITR + key restore drills; current model does not verify recoverability.
 - [ ] Read-only node resource inventory and firewall inventory contracts.
@@ -26,4 +26,4 @@ See [`docs/research/four-panel-file-level-map.md`](../research/four-panel-file-l
 
 ## Verification
 
-Local `go test -race ./internal/backup` passed on Go 1.27.3. Full CI on the final PR head remains required. This contract neither performs a backup nor unblocks `gate-dr`, `gate-agent`, or any production gate.
+Local `go test -race -count=1 ./internal/backup` and `go vet ./internal/backup` passed on Go 1.27.3 for the persistent repository implementation, including restart persistence, private path/sidecar rejection, and WAL/FULL PRAGMA checks. Full CI on the final PR head remains required. This ledger neither performs a backup nor unblocks `gate-dr`, `gate-agent`, or any production gate.
