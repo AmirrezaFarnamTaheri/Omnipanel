@@ -15,7 +15,7 @@
     "dotenv": "17.3.1",
     "drizzle-orm": "0.45.2",
     "ipaddr.js": "2.5.0",
-    "next": "16.2.6",
+    "next": "16.4.5",
     "pg": "8.20.0",
     "react": "19.2.6",
     "react-dom": "19.2.6"
@@ -30,10 +30,10 @@
     "ajv-formats": "3.0.1",
     "drizzle-kit": "0.31.10",
     "eslint": "9.39.4",
-    "eslint-config-next": "16.2.6",
+    "eslint-config-next": "16.4.5",
     "pg-mem": "^3.0.14",
     "pg-server": "^0.1.8",
-    "postcss": "8.5.8",
+    "postcss": "8.5.32",
     "tailwindcss": "4.1.17",
     "tsx": "4.23.15",
     "typescript": "5.9.3"

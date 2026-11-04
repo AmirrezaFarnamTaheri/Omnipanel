@@ -75,13 +75,16 @@ concurrency primitives and its admission assumptions conflict with fail-closed
 runtime qualification. Real database and networking tests remain outstanding.
 
 The previous documented `npm audit` reported 22 vulnerabilities (19 moderate,
-2 high, 1 critical). On 5 November 2026, `npm ci` reported 15 vulnerabilities
-(12 moderate, 2 high, 1 critical); this install summary is not a package-by-package
-re-audit or remediation, so affected transitive packages still need triage. New
-direct harness dependencies are patch-pinned; this change is not dependency
-security sign-off. Upgrade or retire affected prototype dependencies with
-regression checks before any exposure. Never run an uncontrolled major-version
-`audit fix --force` as a substitute for review.
+2 high, 1 critical). On 5 November 2026, a fresh `npm audit` confirmed 15 findings
+(12 moderate, 2 high, 1 critical). The Next.js 16.2.6, eslint-config-next 16.2.6
+and PostCSS 8.5.8 findings were addressed by reviewed exact upgrades to 16.4.5,
+16.4.5 and 8.5.32 respectively. A subsequent full audit reported 12 moderate,
+zero high and zero critical findings; `npm audit --omit=dev` reported zero
+vulnerabilities. The remaining moderate findings are in development/tooling
+chains, principally drizzle-kit/esbuild and TypeScript ESLint dependencies, and
+still require triage. This is not dependency security sign-off for production.
+New direct harness dependencies are patch-pinned; do not run an uncontrolled
+major-version `audit fix --force` as a substitute for review.
 
 ## Next bounded increments
 
@@ -734,3 +737,17 @@ monitoring, firewall and storage features remain independently bounded by
 the map and plan; this increment does not claim those projects have been
 fully ported. Production gates remain BLOCKED pending final-head CI and
 external operational evidence.
+
+## PostgreSQL full migration-chain integration (5 November 2026)
+
+Follow-up to the review's production-shape schema concern: the grant
+integration now creates a unique disposable schema, applies migrations
+0001–0007 in order, and executes the existing admin grant, trusted step-up,
+redemption, logout and revocation tests against those published tables rather
+than minimal hand-written `admins`, `admin_sessions` and `nodes` fixtures.
+This also exposed invalid PostgreSQL syntax in 0001's active-principal
+partial uniqueness declaration; it is now represented as a partial unique
+index matching the Drizzle schema. Workflow path filters include 0001/0002.
+Final PostgreSQL 17.6 CI is pending and is the acceptance gate. This still
+does not establish production DB role separation, grants, PITR/restore, or
+trusted secret custody; those remain open.

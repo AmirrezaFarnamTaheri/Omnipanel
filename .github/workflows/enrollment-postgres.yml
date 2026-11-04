@@ -4,6 +4,8 @@ on:
   push:
     paths:
       - 'internal/pki/enrollment/**'
+      - 'db/migrations/0001_initial.sql'
+      - 'db/migrations/0002_m2.sql'
       - 'db/migrations/0003_agent_enrollment.sql'
       - 'db/migrations/0004_agent_enrollment_rate_limits.sql'
       - 'db/migrations/0005_agent_admin_grants.sql'
@@ -15,6 +17,8 @@ on:
   pull_request:
     paths:
       - 'internal/pki/enrollment/**'
+      - 'db/migrations/0001_initial.sql'
+      - 'db/migrations/0002_m2.sql'
       - 'db/migrations/0003_agent_enrollment.sql'
       - 'db/migrations/0004_agent_enrollment_rate_limits.sql'
       - 'db/migrations/0005_agent_admin_grants.sql'
@@ -59,6 +63,6 @@ jobs:
         run: go test -race -count=1 ./internal/pki/enrollment/httpapi
       - name: Exercise shared enrollment limits on real PostgreSQL
         run: go test -race -count=1 -v -tags=postgres_integration ./internal/pki/enrollment/httpapi -run '^TestPostgresSharedEnrollmentRateLimiter$'
-      - name: Exercise admin-approved UUID bridge and atomic grant audit on PostgreSQL
+      - name: Apply PostgreSQL migrations 0001-0007 and exercise approved grants
         run: go test -race -count=1 -v -tags=postgres_integration ./internal/pki/enrollment/grants -run '^TestPostgresAdminApprovedNodeGrants$'
       # This CI database is disposable; it is not a PITR, failover or key-restore drill.
