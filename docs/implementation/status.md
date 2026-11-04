@@ -420,11 +420,43 @@ chains and an active, unrevoked node-certificate ledger entry. It is not
 wired to a public gateway; authorization checks for administrative grant
 creation, identity enrollment, issuer custody, renewal, CA rollover and online
 revocation distribution remain to be implemented and independently tested.
-No real node enrollment endpoint exists, no runtime configuration is applied,
+No node enrollment service is deployed, no runtime configuration is applied,
 and all production acceptance gates remain BLOCKED.
 
 This code was developed with locally observed failing and then passing Go
 race-enabled tests for one-time grants, CSR impersonation, revocation and
-expiration during issuance. **Check the current PR-head CI** for Go, code formatting, TypeScript
-and Sing-box results; the candidate PostgreSQL DDL remains unqualified
-until real database migration and restore tests pass.
+expiration during issuance. **Check the current PR-head CI** for Go, formatting, TypeScript and Sing-box
+results. PostgreSQL migration semantics now have a separate disposable-server
+CI gate; production migration and restore/PITR remain unqualified.
+
+## TLS bootstrap enrollment handler and PostgreSQL integration gate (4 November 2026)
+
+`internal/pki/enrollment/httpapi` adds a bounded **non-deploying** HTTP
+bootstrap exchange at `POST /v2/nodes/enroll` and a separate OpenAPI
+operation with bearer-token authentication overriding the node's mTLS-only
+desired-state API. The handler requires direct TLS 1.3, the 43-character
+single-use bearer header, exactly one bounded `csrPem` JSON field,
+and a caller-injected **fail-closed** rate-limiter. It ignores forwarded
+client-cert and forwarded IP identity claims; no request-controlled node ID
+is accepted. Errors are short generic RFC 9457 problem JSON with
+`Cache-Control: private, no-store` and never reflect tokens, CSRs or signing
+errors. The handler has tests for a real TLS 1.3 handshake, valid token-bound
+certificate issuance, replay, malformed/duplicate JSON, untrusted headers,
+limiter outage and signing error sanitation.
+
+`.github/workflows/enrollment-postgres.yml` adds a separately gated,
+**disposable** PostgreSQL 17 integration job. It applies the exact
+`0003_agent_enrollment.sql` migration and checks `SQLStore` one-time
+consumption, certificate scope/revocation, rollback after injected insert
+failure, concurrent redemption and bytea digest constraints using a pinned
+test-only PostgreSQL driver. This is not proof of production PostgreSQL
+PITR, failover or an approved node registry.
+
+**Unimplemented:** a runnable enrollment service and protected signer
+process, administrator grant approval/audit, durable shared abuse limiting,
+issuer custody/rotation, certificate renewal and online revocation delivery,
+node identity-to-organization mappings, disaster recovery, privileged host
+apply or a crash-surviving rollback watchdog. Do not promote this endpoint
+library or the local database test into production acceptance.
+CI for the current PR head must pass before this increment is considered
+verified. All M0/M1/M2 production gates remain BLOCKED.
