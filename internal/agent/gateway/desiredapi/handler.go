@@ -154,7 +154,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// corrupted or unqualified record cannot masquerade as 'no change'.
 	verifier := h.verifier
 	verifier.NodeID = node
-		verifier.Current = manifest.Cursor{}
+	verifier.Current = manifest.Cursor{}
 	verifier.Now = func() time.Time { return at }
 	verified, err := verifier.Verify(snapshot.Envelope)
 	if err != nil || verified.Decision != manifest.ApplyRevision ||
