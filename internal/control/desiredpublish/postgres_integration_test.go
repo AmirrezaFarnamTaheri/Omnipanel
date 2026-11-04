@@ -95,6 +95,8 @@ func TestPostgresApprovedSignedPublication(t *testing.T) {
 VALUES (31,'publisher-node','192.0.2.31','fixture','pending_enrollment')`, nil},
 		{"INSERT INTO agent_grant_organizations(organization_id,state) VALUES($1,'active')", []any{fixtureOrganization}},
 		{`INSERT INTO agent_grant_admin_scopes(admin_id,organization_id,can_issue,can_approve)
+VALUES (11,$1,false,false),(12,$1,false,false)`, []any{fixtureOrganization}},
+		{`INSERT INTO agent_desired_publish_permissions(admin_id,organization_id,can_propose,can_approve)
 VALUES (11,$1,true,false),(12,$1,false,true)`, []any{fixtureOrganization}},
 		{`INSERT INTO agent_grant_node_bindings
 (node_id,legacy_node_id,organization_id,state,approved_by,approved_at)
@@ -196,13 +198,13 @@ VALUES($1::uuid,$2::uuid,$3::uuid,$4::uuid,$5,$6,$7,11,12,$8,$9)`,
 	if _, err := db.ExecContext(ctx, "UPDATE agent_grant_organizations SET state='active' WHERE organization_id=$1", fixtureOrganization); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.ExecContext(ctx, "UPDATE agent_grant_admin_scopes SET can_issue=false WHERE admin_id=11"); err != nil {
+	if _, err := db.ExecContext(ctx, "UPDATE agent_desired_publish_permissions SET can_propose=false WHERE admin_id=11"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := publisher.PublishSigned(ctx, third, fixtureNode, wire3); !errors.Is(err, ErrUnauthorizedPublication) {
 		t.Fatalf("revoked signer authority still published: %v", err)
 	}
-	if _, err := db.ExecContext(ctx, "UPDATE agent_grant_admin_scopes SET can_issue=true WHERE admin_id=11"); err != nil {
+	if _, err := db.ExecContext(ctx, "UPDATE agent_desired_publish_permissions SET can_propose=true WHERE admin_id=11"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.ExecContext(ctx, "UPDATE agent_grant_node_bindings SET state='revoked' WHERE node_id=$1", fixtureNode); err != nil {
