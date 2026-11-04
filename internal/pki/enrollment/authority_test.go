@@ -271,7 +271,6 @@ func TestGeneratedTokenEntropyAndDigestSeparation(t *testing.T) {
 	}
 }
 
-
 func TestTokenExpiresDuringIssuance(t *testing.T) {
 	ca, signer, start := issuerFixture(t)
 	store := newMockLedger()
@@ -279,12 +278,12 @@ func TestTokenExpiresDuringIssuance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	store.seed(digest, testNodeA, start.Add(5*time.Minute))
+	store.seed(digest, testNodeA, start.Add(5 * time.Minute))
 	calls := 0
 	now := func() time.Time {
 		calls++
 		if calls >= 3 {
-			return start.Add(6*time.Minute)
+			return start.Add(6 * time.Minute)
 		}
 		return start
 	}
@@ -301,7 +300,6 @@ func TestTokenExpiresDuringIssuance(t *testing.T) {
 		t.Fatal("expiry race created a durable certificate")
 	}
 }
-
 
 // TLS peers may supply intermediate certificates after the leaf. A verified
 // chain remains acceptable if the leaf has a registered, unrevoked node identity.
