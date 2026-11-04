@@ -279,3 +279,39 @@ Public VPSs, exact external clients, Hysteria2 comparison, agent-initiated
 reconciliation, durable last-good rollback, real packet impairment and all
 M0/M1/M2 production gates remain blocked. Do not promote the report into a
 production capability or client registry.
+
+## Protected SQLite WAL journal foundation (4 November 2026)
+
+The first bounded part of the journaled node-agent task has landed in
+`internal/agent/state`. It uses pinned `github.com/mattn/go-sqlite3 v1.14.52`
+(with verified Go module checksums and a CGO-capable Linux build) and
+requires an existing owner-only journal directory. The SQLite database is
+created with mode `0600`, refuses symlinks and permissive storage, and
+enforces `journal_mode=WAL` with `synchronous=FULL`. A persisted
+node ID and authorized control-plane epoch prevent a different caller from
+silently taking over the same journal.
+
+`RecordReceived` accepts only an already-verified desired-state result
+from the separately trusted `manifest.Verifier.Verify` boundary. It
+records a monotonically increasing structural revision, membership cursor,
+content digest and `RECEIVED`/`VERIFIED` stage; exact repeats are
+idempotent and conflicting or lower revisions fail closed. The journal
+survives closing and reopening its database. **A verified revision does not
+advance the applied cursor**, and the last-known-good reference remains empty
+until a real, separately verified apply/confirm implementation exists.
+
+The new store was implemented with red-green tests: the initial tests failed
+against an unimplemented journal; the later
+[foundation CI run 41813868712](https://github.com/AmirrezaFarnamTaheri/Omnipanel/actions/runs/41813868712)
+passed Go race tests, `go vet`, TypeScript contracts and lint.
+A Go 1.27 test-fixture permissions issue was fixed by using a private `0700`
+subdirectory; **production permission checks were not weakened**.
+
+This is **not** a deployable agent or a completed Task 4. There is no
+authenticated outbound gateway transport, runtime application helper,
+separate structural/membership delivery, per-component apply journal,
+network commit-confirm watchdog, autonomous rollback, restored last-good
+generation or crash-injection matrix. The next increment must connect
+signature verification to this journal through a bounded reconciler and
+demonstrate durable, agent-initiated *read-only* polling before introducing
+any privileged host changes. All production gates remain BLOCKED.
