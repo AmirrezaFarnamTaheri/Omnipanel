@@ -19,6 +19,11 @@ on:
       - "docs/implementation/status.md"
       - ".github/workflows/runtime-smoke.yml"
 
+# Superseded commits must not occupy scarce signed-runtime lab runners.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
