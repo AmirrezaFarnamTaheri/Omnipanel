@@ -19,6 +19,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/AmirrezaFarnamTaheri/Omnipanel/internal/pki/enrollment"
+
 	_ "github.com/lib/pq"
 )
 
@@ -240,7 +242,7 @@ WHERE g.node_id=$1`, nodeID).Scan(&dbDigest, &adminID); err != nil {
 		if success.Load() != 1 || conflicts.Load() != 11 || failures.Load() != 0 {
 			t.Fatalf("grant serialization failed: success=%d conflict=%d error=%d", success.Load(), conflicts.Load(), failures.Load())
 		}
-		if count("agent_grant_issues") != 2 || count("agent_grant_audit") != 2 {
+		if count("agent_grant_issues") != 3 || count("agent_grant_audit") != 3 {
 			t.Fatal("missing/extra atomic audits")
 		}
 		if _, err := db.ExecContext(ctx, `UPDATE agent_grant_audit SET action='other'`); err == nil {
@@ -249,6 +251,94 @@ WHERE g.node_id=$1`, nodeID).Scan(&dbDigest, &adminID); err != nil {
 		if _, err := db.ExecContext(ctx, `DELETE FROM agent_grant_audit`); err == nil {
 			t.Fatal("audit DELETE allowed")
 		}
+	})
+
+
+	t.Run("revoked scope or node cannot redeem previously issued bearer", func(t *testing.T) {
+		grant, err := issuer.Issue(ctx, request(nodeID, "e990a8e3-12fd-48d5-8dc4-0ab999a3da03"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, err := base64.RawURLEncoding.DecodeString(grant.Token)
+		if err != nil {
+			t.Fatal(err)
+		}
+		digest := sha256.Sum256(raw)
+		store, err := enrollment.NewApprovedSQLStore(db)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, err := store.Lookup(ctx, digest, time.Now().UTC()); err != nil || got != nodeID {
+			t.Fatalf("valid authorized grant not recognized: %q, %v", got, err)
+		}
+		change := func(query string, args ...any) {
+			t.Helper()
+			if _, err := db.ExecContext(ctx, query, args...); err != nil {
+				t.Fatal(err)
+			}
+		}
+		denied := func(where string) {
+			t.Helper()
+			if got, err := store.Lookup(ctx, digest, time.Now().UTC()); !errors.Is(err, enrollment.ErrInvalidToken) || got != "" {
+				t.Fatalf("%s bypassed at lookup: node=%q err=%v", where, got, err)
+			}
+		}
+		key := sha256.Sum256([]byte("test-only public-key fingerprint"))
+		notBefore := time.Now().UTC().Add(-time.Minute)
+		notAfter := time.Now().UTC().Add(time.Hour)
+
+		// Invalidate approval after the preliminary lookup, before commit.
+		change("UPDATE agent_grant_node_bindings SET state='revoked' WHERE node_id=$1", nodeID)
+		if err := store.Commit(ctx, digest, nodeID, "90001", key, notBefore, notAfter, time.Now().UTC()); !errors.Is(err, enrollment.ErrInvalidToken) {
+			t.Fatalf("revocation race permitted certificate commit: %v", err)
+		}
+		denied("revoked node binding")
+		var consumed sql.NullInt64
+		if err := db.QueryRowContext(ctx, "SELECT consumed_at FROM agent_enrollment_grants WHERE token_digest=$1", digest[:]).Scan(&consumed); err != nil || consumed.Valid {
+			t.Fatalf("refused redemption consumed token: consumed=%v err=%v", consumed, err)
+		}
+		change("UPDATE agent_grant_node_bindings SET state='approved' WHERE node_id=$1", nodeID)
+
+		change("UPDATE agent_grant_organizations SET state='suspended' WHERE organization_id=$1", organizationID)
+		denied("suspended organization")
+		change("UPDATE agent_grant_organizations SET state='active' WHERE organization_id=$1", organizationID)
+
+		change("UPDATE nodes SET status='quarantined' WHERE id=31")
+		denied("quarantined node")
+		change("UPDATE nodes SET status='pending_enrollment' WHERE id=31")
+
+		change("UPDATE agent_grant_admin_scopes SET can_issue=false WHERE admin_id=11")
+		denied("revoked issuing permission")
+		change("UPDATE agent_grant_admin_scopes SET can_issue=true WHERE admin_id=11")
+
+		change("UPDATE agent_grant_admin_scopes SET can_approve=false WHERE admin_id=12")
+		denied("revoked second approval")
+		change("UPDATE agent_grant_admin_scopes SET can_approve=true WHERE admin_id=12")
+
+		if err := store.Commit(ctx, digest, nodeID, "90001", key, notBefore, notAfter, time.Now().UTC()); err != nil {
+			t.Fatalf("authorized commit refused: %v", err)
+		}
+		approved, err := store.Active(ctx, nodeID, "90001", key, time.Now().UTC())
+		if err != nil || !approved {
+			t.Fatalf("registered approved certificate rejected: %v", err)
+		}
+		change("UPDATE nodes SET status='active' WHERE id=31")
+		approved, err = store.Active(ctx, nodeID, "90001", key, time.Now().UTC())
+		if err != nil || !approved {
+			t.Fatal("approved active node cannot use its previously issued certificate")
+		}
+		change("UPDATE nodes SET status='quarantined' WHERE id=31")
+		approved, err = store.Active(ctx, nodeID, "90001", key, time.Now().UTC())
+		if err != nil || approved {
+			t.Fatal("quarantined node certificate remained active")
+		}
+		change("UPDATE nodes SET status='pending_enrollment' WHERE id=31")
+		change("UPDATE agent_grant_node_bindings SET state='revoked' WHERE node_id=$1", nodeID)
+		approved, err = store.Active(ctx, nodeID, "90001", key, time.Now().UTC())
+		if err != nil || approved {
+			t.Fatal("revoked binding certificate remained active")
+		}
+		change("UPDATE agent_grant_node_bindings SET state='approved' WHERE node_id=$1", nodeID)
 	})
 
 	t.Run("database outage never returns uncommitted bearer", func(t *testing.T) {
