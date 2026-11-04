@@ -19,7 +19,7 @@ const (
 func validInput() Request {
 	return Request{
 		AdminSessionToken: base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{0xA3}, 32)),
-		OrganizationID: organizationID, NodeID: nodeID, CorrelationID: correlationID,
+		OrganizationID:    organizationID, NodeID: nodeID, CorrelationID: correlationID,
 		Lifetime: 5 * time.Minute,
 	}
 }
@@ -37,7 +37,7 @@ func TestIssueRejectsInvalidSessionScopeAndDurationWithoutDBWrites(t *testing.T)
 		t.Fatal(err)
 	}
 	cases := []struct {
-		name string
+		name   string
 		change func(*Request)
 	}{
 		{"missing token", func(r *Request) { r.AdminSessionToken = "" }},

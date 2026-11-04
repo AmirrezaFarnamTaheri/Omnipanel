@@ -26,5 +26,3 @@ func (s *SQLStore) createFixtureGrant(ctx context.Context, node string, now, exp
 	}
 	return token, nil
 }
-
-
