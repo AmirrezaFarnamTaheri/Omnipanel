@@ -32,6 +32,12 @@ on:
       - 'go.sum'
       - '.github/workflows/enrollment-postgres.yml'
 
+# Replacing a PR head must not spend the limited PostgreSQL runner pool on
+# superseded migration checks. Only the exact current head can qualify.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
