@@ -54,6 +54,26 @@
           }
         ],
         "responses": {
+          "200": {
+            "description": "Signed structural desired state. Schema validity alone is not authorization.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "private, no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./desired-state.schema.json"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "No structural change for the supplied epoch/cursor; no assertion about membership convergence."
+          },
           "400": {
             "description": "RFC 9457 problem; no secret values or bearer tokens in detail/instance.",
             "content": {
@@ -113,26 +133,6 @@
                 }
               }
             }
-          },
-          "200": {
-            "description": "Signed structural desired state. Schema validity alone is not authorization.",
-            "headers": {
-              "Cache-Control": {
-                "schema": {
-                  "const": "private, no-store"
-                }
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "./desired-state.schema.json"
-                }
-              }
-            }
-          },
-          "204": {
-            "description": "No structural change for the supplied epoch/cursor; no assertion about membership convergence."
           }
         }
       }
@@ -153,6 +153,9 @@
           }
         },
         "responses": {
+          "202": {
+            "description": "Report durably accepted; desired state is unchanged."
+          },
           "400": {
             "description": "RFC 9457 problem; no secret values or bearer tokens in detail/instance.",
             "content": {
@@ -212,9 +215,149 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/v2/nodes/enroll": {
+      "post": {
+        "operationId": "enrollNodeCertificate",
+        "summary": "Redeem a pre-authorized single-use token with a signed CSR",
+        "description": "Library-only bootstrap endpoint contract, NOT deployed. TLS 1.3 is mandatory; the caller has no client certificate yet. Identity is derived only from the server-side token grant, never CSR fields, query parameters or forwarded headers. Requires a shared fail-closed admission limiter and independently protected issuer key. Does not issue enrollment grants, renew certificates, or apply runtime configurations.",
+        "security": [
+          {
+            "enrollmentBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "csrPem"
+                ],
+                "properties": {
+                  "csrPem": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 16384,
+                    "description": "PEM encoded CSR with Ed25519 or P-256 proof-of-possession."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Certificate committed to the durable ledger; not evidence of agent enrollment completion.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "private, no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollmentIssued"
+                }
+              }
+            }
           },
-          "202": {
-            "description": "Report durably accepted; desired state is unchanged."
+          "400": {
+            "description": "RFC 9457 bootstrap problem; never echoes token, CSR, signer or database details.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollmentProblem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 bootstrap problem; never echoes token, CSR, signer or database details.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollmentProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 bootstrap problem; never echoes token, CSR, signer or database details.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollmentProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 bootstrap problem; never echoes token, CSR, signer or database details.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollmentProblem"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "RFC 9457 bootstrap problem; never echoes token, CSR, signer or database details.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollmentProblem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "RFC 9457 bootstrap problem; never echoes token, CSR, signer or database details.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollmentProblem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "RFC 9457 bootstrap problem; never echoes token, CSR, signer or database details.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollmentProblem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "RFC 9457 bootstrap problem; never echoes token, CSR, signer or database details.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollmentProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 bootstrap problem; never echoes token, CSR, signer or database details.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollmentProblem"
+                }
+              }
+            }
           }
         }
       }
@@ -225,6 +368,11 @@
       "nodeMTLS": {
         "type": "mutualTLS",
         "description": "Private PKI with node-scoped identity, certificate renewal and explicit revocation checks."
+      },
+      "enrollmentBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Single-use 256-bit enrollment bearer (15-minute maximum grant lifetime), sent only over direct TLS 1.3. The trusted administrator must create this grant out-of-band; CSR identity claims do not authorize nodes."
       }
     },
     "schemas": {
@@ -338,6 +486,55 @@
                 }
               }
             }
+          }
+        }
+      },
+      "EnrollmentProblem": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "title",
+          "status"
+        ],
+        "properties": {
+          "type": {
+            "const": "about:blank"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer",
+            "minimum": 400,
+            "maximum": 599
+          }
+        }
+      },
+      "EnrollmentIssued": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "nodeId",
+          "certificatePem",
+          "serial",
+          "expiresAt"
+        ],
+        "properties": {
+          "nodeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "certificatePem": {
+            "type": "string",
+            "description": "PEM-encoded client-only X.509 certificate; private key never leaves the caller."
+          },
+          "serial": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       }
