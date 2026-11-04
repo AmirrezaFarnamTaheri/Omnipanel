@@ -66,6 +66,10 @@ WHERE g.token_digest=$1
   AND issuer.role='owner' AND issuer.totp_enabled AND issuer_scope.can_issue
   AND approver.role='owner' AND approver_scope.can_approve
   AND b.approved_by <> i.actor_admin_id
+  AND sess.created_at <= clock_timestamp()
+  AND sess.created_at > clock_timestamp() - interval '12 hours'
+  AND sess.last_seen_at <= clock_timestamp()
+  AND sess.last_seen_at > clock_timestamp() - interval '2 hours'
   AND sess.expires_at > clock_timestamp()`
 
 func (s *ApprovedSQLStore) Lookup(ctx context.Context, digest [32]byte, at time.Time) (string, error) {

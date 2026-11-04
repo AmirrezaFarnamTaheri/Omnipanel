@@ -549,10 +549,12 @@ RESTRICT key guarantees exist), drops that referential link, and makes
 `agent_grant_issues` append-only like `agent_grant_audit`.
 
 `ApprovedSQLStore` now requires the issuing session to exist with the
-exact recorded credential hash, both at lookup and again under the
-certificate-commit row locks. Logout therefore invalidates every
-outstanding token from that session immediately, and a later login that
-recycles the deleted serial session id cannot resurrect an old bearer.
+exact recorded credential hash and to remain inside its database-clocked
+12-hour absolute and 2-hour idle lifetime, both at lookup and again under
+the certificate-commit row locks. A grant issued shortly before idle expiry
+cannot outlive the session's authorization. Logout therefore invalidates
+every outstanding token from that session immediately, and a later login
+that recycles the deleted serial session id cannot resurrect an old bearer.
 Step-up rows already cascade on session deletion. Already-issued node
 certificates are intentionally unaffected by administrator logout: online
 admission keeps depending on the approved binding, organization and legacy
@@ -685,3 +687,18 @@ second) without mutating the source Date. Contract tests cover UTF-8, CRLF and
 unsafe-URL rejection, expiry boundaries, absent expiry and invalid counters.
 Optional URLs/announce are not yet configurable in the admin product, and this
 is not evidence of interoperability with a particular client release.
+
+## Enrollment redemption session-idle revalidation (5 November 2026)
+
+Closed the source-review finding that an administrator grant could remain
+redeemable after its issuer session crossed the two-hour idle boundary.
+`ApprovedSQLStore` now rechecks database-clocked session timestamps, the
+12-hour absolute age, two-hour idle age, and explicit expiry in its shared
+authorization query, which is used by both `Lookup` and the locked `Commit`
+path. The PostgreSQL regression issues a live grant, advances only the
+session's `last_seen_at` beyond the idle limit, verifies both operations deny
+and do not consume the token, then restores a live timestamp and verifies
+commit still succeeds. Final-head PostgreSQL CI is required before marking
+the finding verified; no local PostgreSQL service or Go toolchain was
+available in this checkout. This does not resolve secret custody, trusted
+DB-role separation, full migration-chain qualification, or deployment gates.
