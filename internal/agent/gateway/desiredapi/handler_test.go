@@ -154,6 +154,7 @@ func fixtureSignedDesired(t *testing.T, now time.Time) ([]byte, manifest.Verifie
 		t.Fatal(err)
 	}
 	verifier := manifest.Verifier{
+		AuthorizedEpoch:     desiredEpoch,
 		TrustedSigners:      map[string]ed25519.PublicKey{"test-signer": key.Public().(ed25519.PublicKey)},
 		AllowedCapabilities: map[string]bool{"singbox-reality-vision": true},
 		QualifiedBuilds: map[string]manifest.Build{"singbox": {
