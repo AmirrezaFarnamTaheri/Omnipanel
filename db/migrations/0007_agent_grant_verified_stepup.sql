@@ -11,7 +11,7 @@ ALTER TABLE agent_grant_stepups
   ADD CONSTRAINT agent_grant_stepups_source_valid
     CHECK (verified_source IN ('legacy', 'trusted')),
   ADD CONSTRAINT agent_grant_stepups_trusted_counter
-    CHECK (verified_source <> 'trusted' OR verified_counter >= 0);
+    CHECK (verified_source <> 'trusted' OR (verified_counter IS NOT NULL AND verified_counter >= 0));
 
 CREATE TABLE agent_grant_stepup_counters (
   admin_id integer PRIMARY KEY REFERENCES admins(id) ON DELETE RESTRICT,
