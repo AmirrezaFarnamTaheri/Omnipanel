@@ -4,6 +4,8 @@
 **Repositories:** [S-UI](https://github.com/AmirrezaFarnamTaheri/S-UI) and [3X-UI](https://github.com/AmirrezaFarnamTaheri/3X-UI)  
 **Target:** OmniPanel v2 unified architecture
 
+For Hiddify-Manager and 1Panel, including license/submodule and OSS-edition boundaries, see the [four-panel integration assessment](four-panel-integration-assessment.md).
+
 This review inspected the supplied forks' default-branch documentation and selected implementation modules. It is a source review, not a production qualification or a claim that every feature in either panel is safe to deploy.
 
 ## Important source constraints
