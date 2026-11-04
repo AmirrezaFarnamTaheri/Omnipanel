@@ -132,6 +132,18 @@ VALUES ($1,31,$4,'approved',12,$5),($2,32,$4,'approved',12,$5),($3,33,$4,'approv
 		}
 	}
 
+	t.Run("schema rejects trusted factor with missing replay counter", func(t *testing.T) {
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer tx.Rollback()
+		_, err = tx.ExecContext(ctx, "UPDATE agent_grant_stepups SET verified_source='trusted', verified_counter=NULL WHERE session_id=21")
+		if err == nil {
+			t.Fatal("PostgreSQL accepted trusted factor with a missing anti-replay counter")
+		}
+	})
+
 	t.Run("session-bound two-person approval and atomic audit", func(t *testing.T) {
 		out, err := issuer.Issue(ctx, request(nodeID, correlationID))
 		if err != nil {
