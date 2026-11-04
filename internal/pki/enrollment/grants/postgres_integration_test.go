@@ -253,7 +253,6 @@ WHERE g.node_id=$1`, nodeID).Scan(&dbDigest, &adminID); err != nil {
 		}
 	})
 
-
 	t.Run("revoked scope or node cannot redeem previously issued bearer", func(t *testing.T) {
 		grant, err := issuer.Issue(ctx, request(nodeID, "e990a8e3-12fd-48d5-8dc4-0ab999a3da03"))
 		if err != nil {
