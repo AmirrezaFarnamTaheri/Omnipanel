@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 
 	"github.com/AmirrezaFarnamTaheri/Omnipanel/internal/manifest"
 	_ "github.com/mattn/go-sqlite3"
@@ -49,9 +50,39 @@ type Store struct {
 	epoch  string
 }
 
+// ownedByCaller verifies POSIX ownership, not just permission bits. Studied
+// from 1Panel's agent socket checks at pinned revision 30381a3 (see
+// docs/research/hiddify-1panel-review.md): a restored or hostile tree can
+// carry correct-looking modes under the wrong uid. Platforms without
+// syscall.Stat_t fail closed; the node agent targets Linux.
+func ownedByCaller(info os.FileInfo) bool {
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	return ok && int(stat.Uid) == os.Geteuid()
+}
+
+// protectSidecars refuses hostile SQLite -wal/-shm companions before the
+// database engine opens them: a symlink or permissive/foreign-owned sidecar
+// could redirect or leak journal contents even when the main file is safe.
+func protectSidecars(path string) error {
+	for _, sidecar := range []string{path + "-wal", path + "-shm"} {
+		info, err := os.Lstat(sidecar)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("%w: journal sidecar cannot be inspected: %v", ErrInvalidScope, err)
+		}
+		if !info.Mode().IsRegular() || info.Mode().Perm()&0o077 != 0 || !ownedByCaller(info) {
+			return fmt.Errorf("%w: journal sidecar must be a caller-owned private regular file", ErrInvalidScope)
+		}
+	}
+	return nil
+}
+
 // Open requires an absolute path in an existing private directory. It refuses
-// symlinks and permissive files, and never obtains its path from a manifest.
-// The parent directory protects SQLite's -wal and -shm sidecars.
+// symlinks, permissive files and foreign ownership, and never obtains its
+// path from a manifest. The parent directory protects SQLite's -wal and -shm
+// sidecars, which are additionally validated themselves before open.
 func Open(path, nodeID, epoch string) (*Store, error) {
 	if !filepath.IsAbs(path) || strings.IndexByte(path, 0) >= 0 ||
 		!uuidPattern.MatchString(nodeID) || !uuidPattern.MatchString(epoch) {
@@ -61,14 +92,14 @@ func Open(path, nodeID, epoch string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: journal parent cannot be inspected: %v", ErrInvalidScope, err)
 	}
-	if !directory.IsDir() || directory.Mode().Perm()&0o077 != 0 {
-		return nil, fmt.Errorf("%w: journal parent must be an owner-only real directory (mode %04o)", ErrInvalidScope, directory.Mode().Perm())
+	if !directory.IsDir() || directory.Mode().Perm()&0o077 != 0 || !ownedByCaller(directory) {
+		return nil, fmt.Errorf("%w: journal parent must be a caller-owned owner-only real directory (mode %04o)", ErrInvalidScope, directory.Mode().Perm())
 	}
 	info, err := os.Lstat(path)
 	switch {
 	case err == nil:
-		if !info.Mode().IsRegular() || info.Mode().Perm()&0o077 != 0 {
-			return nil, fmt.Errorf("%w: journal must be a private regular file", ErrInvalidScope)
+		if !info.Mode().IsRegular() || info.Mode().Perm()&0o077 != 0 || !ownedByCaller(info) {
+			return nil, fmt.Errorf("%w: journal must be a caller-owned private regular file", ErrInvalidScope)
 		}
 	case errors.Is(err, os.ErrNotExist):
 		file, createErr := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0o600)
@@ -80,6 +111,9 @@ func Open(path, nodeID, epoch string) (*Store, error) {
 		}
 	default:
 		return nil, fmt.Errorf("inspect SQLite journal: %w", err)
+	}
+	if err := protectSidecars(path); err != nil {
+		return nil, err
 	}
 
 	dsn := (&url.URL{

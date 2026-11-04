@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/AmirrezaFarnamTaheri/Omnipanel/internal/manifest"
@@ -141,5 +142,129 @@ func TestJournalProtectsNodeScopeAndRefusesSymlinks(t *testing.T) {
 	}
 	if _, err := Open(link, testNode, testEpoch); err == nil {
 		t.Fatal("refusing symlinked state database is required")
+	}
+}
+
+// fakeOwnedInfo fabricates POSIX ownership so the uid refusal path is tested
+// without root privileges (chown to another uid is not available in CI).
+type fakeOwnedInfo struct {
+	os.FileInfo
+	uid uint32
+}
+
+func (f fakeOwnedInfo) Sys() any { return &syscall.Stat_t{Uid: f.uid} }
+
+func TestOwnershipVerificationFailsClosed(t *testing.T) {
+	dir := privateTestDir(t)
+	info, err := os.Lstat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ownedByCaller(info) {
+		t.Fatal("caller-owned directory rejected")
+	}
+	if ownedByCaller(fakeOwnedInfo{FileInfo: info, uid: uint32(os.Geteuid() + 1)}) {
+		t.Fatal("foreign-owned tree accepted on permission bits alone")
+	}
+	if ownedByCaller(infoWithoutStat{}) {
+		t.Fatal("platform without POSIX stat must fail closed")
+	}
+}
+
+type infoWithoutStat struct{ os.FileInfo }
+
+func (infoWithoutStat) Sys() any { return nil }
+
+func TestJournalRefusesHostileSidecars(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		setup func(t *testing.T, path string)
+	}{
+		{
+			name: "symlinked wal",
+			setup: func(t *testing.T, path string) {
+				target := filepath.Join(t.TempDir(), "elsewhere.sqlite-wal")
+				if err := os.WriteFile(target, nil, 0o600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(target, path+"-wal"); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "group-readable wal",
+			setup: func(t *testing.T, path string) {
+				if err := os.WriteFile(path+"-wal", nil, 0o640); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "world-readable shm",
+			setup: func(t *testing.T, path string) {
+				if err := os.WriteFile(path+"-shm", nil, 0o604); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "directory wal",
+			setup: func(t *testing.T, path string) {
+				if err := os.Mkdir(path+"-wal", 0o700); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := privateTestDir(t)
+			path := filepath.Join(dir, "state.sqlite")
+			s, err := Open(path, testNode, testEpoch)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := s.Close(); err != nil {
+				t.Fatal(err)
+			}
+			// Remove genuine sidecars from the clean close, then plant the hostile one.
+			for _, suffix := range []string{"-wal", "-shm"} {
+				if err := os.Remove(path + suffix); err != nil && !os.IsNotExist(err) {
+					t.Fatal(err)
+				}
+			}
+			tc.setup(t, path)
+			if _, err := Open(path, testNode, testEpoch); err == nil || !strings.Contains(err.Error(), "sidecar") {
+				t.Fatalf("hostile sidecar accepted: %v", err)
+			}
+		})
+	}
+}
+
+func TestJournalAcceptsPrivateCallerOwnedSidecars(t *testing.T) {
+	dir := privateTestDir(t)
+	path := filepath.Join(dir, "state.sqlite")
+	s, err := Open(path, testNode, testEpoch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.RecordReceived(context.Background(), testRevision()); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	// Force private, caller-owned sidecars to exist at open time.
+	for _, suffix := range []string{"-wal", "-shm"} {
+		if err := os.WriteFile(path+suffix, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s, err = Open(path, testNode, testEpoch)
+	if err != nil {
+		t.Fatalf("private sidecars rejected: %v", err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
 	}
 }

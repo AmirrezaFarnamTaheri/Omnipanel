@@ -14,7 +14,7 @@ import (
 // rechecks that authorization under database locks at certificate commit.
 //
 // This adapter does not create grants or alter node approval state. It needs
-// migrations 0003 and 0005 plus the legacy admin/session/node schema.
+// migrations 0003, 0005 and 0006 plus the legacy admin/session/node schema.
 type ApprovedSQLStore struct {
 	db *sql.DB
 }
@@ -29,7 +29,11 @@ func NewApprovedSQLStore(db *sql.DB) (*ApprovedSQLStore, error) {
 // approvedGrantQuery does not trust the bearer-derived node UUID alone.
 // A previously issued token remains unusable when the organization, UUID
 // bridge, legacy node, issuing admin, approver or scoped permission is revoked.
-// The immutable issuance audit must exist and match the grant.
+// The immutable issuance audit must exist and match the grant. The issuing
+// session must still exist with the exact credential hash recorded at
+// issuance (migration 0006): administrator logout deletes the session row and
+// thereby invalidates every outstanding token, and a recycled session id from
+// a later login can never resurrect an older bearer.
 const approvedGrantQuery = `SELECT i.node_id::text
 FROM agent_enrollment_grants g
 JOIN agent_grant_issues i ON i.token_digest=g.token_digest
@@ -50,6 +54,7 @@ JOIN admins approver ON approver.id=b.approved_by
 JOIN agent_grant_admin_scopes approver_scope ON approver_scope.admin_id=approver.id
   AND approver_scope.organization_id=i.organization_id
 JOIN admin_sessions sess ON sess.id=i.session_id AND sess.admin_id=issuer.id
+  AND sess.token_hash=i.session_token_hash
 WHERE g.token_digest=$1
   AND g.node_id=i.node_id::text
   AND g.consumed_at IS NULL
