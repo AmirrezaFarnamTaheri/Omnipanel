@@ -672,3 +672,16 @@ qualification, approval writer, token delivery, production rate/availability
 tuning and HSM-backed certificate issuer. CI on the final PR head is required
 before marking these library contracts verified. M0/M1 production gates
 remain BLOCKED.
+
+## Subscription metadata and expiry-presentation contract (4 November 2026)
+
+Added `src/lib/subscription-profile.ts` with client metadata header validation:
+UTF-8 base64 Profile-Title/Announce encoding, HTTPS-only Support-Url and
+Profile-Web-Page-Url, length bounds and control-character rejection. The public
+subscription route now uses base64 title metadata and a shared Subscription-
+Userinfo formatter. Expiry remains canonical in storage; the pure formatter
+supports exclusive (default) and inclusive presentation (minus one displayed
+second) without mutating the source Date. Contract tests cover UTF-8, CRLF and
+unsafe-URL rejection, expiry boundaries, absent expiry and invalid counters.
+Optional URLs/announce are not yet configurable in the admin product, and this
+is not evidence of interoperability with a particular client release.

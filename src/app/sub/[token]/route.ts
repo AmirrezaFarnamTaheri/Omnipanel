@@ -5,6 +5,7 @@ import { clientForRequest } from "@/lib/capabilities";
 import { problemResponse, ProblemError } from "@/lib/problem";
 import { rateLimit } from "@/lib/ratelimit";
 import { buildIR, compile, CompileError, findUserByToken } from "@/lib/subscription";
+import { profileMetadataHeaders, subscriptionUserinfo } from "@/lib/subscription-profile";
 import { usageForUser } from "@/lib/users";
 
 export const dynamic = "force-dynamic";
@@ -31,9 +32,12 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
     const format = clientForRequest(url.searchParams.get("format"), req.headers.get("user-agent"));
     const usage = await usageForUser(db, u.id);
     const ir = await buildIR(u.id, format);
-    const userinfo = `upload=${Math.round(usage.up)}; download=${Math.round(usage.down)}; total=${ir.quotaBytes ?? 0}${
-      u.expiresAt ? `; expire=${Math.floor(u.expiresAt.getTime() / 1000)}` : ""
-    }`;
+    const userinfo = subscriptionUserinfo({
+      uploadBytes: usage.up,
+      downloadBytes: usage.down,
+      quotaBytes: ir.quotaBytes,
+      expiresAt: u.expiresAt,
+    });
     if (u.status !== "active") {
       // No usable credentials are ever returned for suspended or expired users.
       return new Response(`Subscription ${u.status}${u.suspendReason ? ` (${u.suspendReason})` : ""}`, {
@@ -54,7 +58,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
         "content-type": out.contentType,
         "subscription-userinfo": userinfo,
         "profile-update-interval": "6",
-        "profile-title": `OmniPanel ${u.name}`.replace(/[^\x20-\x7e]/g, ""),
+        ...profileMetadataHeaders({ title: `OmniPanel ${u.name}` }),
       },
     });
   } catch (e) {
