@@ -306,9 +306,11 @@ if ! awk -v error="$max_relative_error" 'BEGIN { exit !(error <= 0.05) }'; then
 fi
 
 # A rejected candidate config must not disturb the already running process.
-jq '.inbounds[0].listen_port = 0' "$temp_dir/server.json" > "$temp_dir/invalid.json"
+# Port zero is a valid auto-assigned listener in Sing-box, so use an unknown
+# inbound type to guarantee that native validation takes its rejection path.
+jq '.inbounds[0].type = "omni-invalid-inbound"' "$temp_dir/server.json" > "$temp_dir/invalid.json"
 if "$sing_box_bin" check -c "$temp_dir/invalid.json" >"$temp_dir/invalid-check.log" 2>&1; then
-  echo "Sing-box unexpectedly accepted a zero listener port." >&2
+  echo "Sing-box unexpectedly accepted an unsupported inbound type." >&2
   exit 1
 fi
 "$sing_box_bin" check -c "$temp_dir/server.json" >/dev/null
