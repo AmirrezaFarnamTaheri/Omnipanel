@@ -653,3 +653,17 @@ filesystem probing, firewall access, persistence, or alert delivery is wired.
 Tests exercise bounds, duplicates, stale/future cases and the explicit separation
 from proxy health. The Foundation gofmt list now includes this package. Firewall
 inventory and other operations remain deferred; production gates are unchanged.
+
+## Bounded node-feed page contract (4 November 2026)
+
+Added `internal/agent/syncfeed` following the Hiddify node-feed review: pages
+carry a base/next cursor, bounded records, explicit tombstones, contiguous
+sequence checks, duplicate-ID rejection, payload/record caps, and a deterministic
+length-prefixed ordered digest. Sequence gaps return a distinct resynchronization
+error. The digest is an integrity checksum only, **not authentication or a
+signature**. The package neither persists cursors nor applies membership, and
+is not connected to manifest verification, gateway polling, PKI/cert inventory,
+or a running node. Race-tested validation covers page shape, sequence, tombstone
+semantics, digest, identity and bounds. Foundation gofmt gate includes the
+package; enrollment/authentication, durable cursor, full snapshot resync and
+certificate inventory remain open.
