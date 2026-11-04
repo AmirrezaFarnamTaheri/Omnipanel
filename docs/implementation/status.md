@@ -640,3 +640,16 @@ engine, artifact store, key recovery system, distributed lease, or PostgreSQL
 outbox; process-wide multi-writer coordination and power-loss filesystem testing
 are not claimed. Backup providers, encryption, restore verification drills and
 PITR remain open. All production gates remain BLOCKED.
+
+## Read-only node resource snapshot contract (4 November 2026)
+
+Added `internal/observability` as a small 1Panel-monitoring-informed contract:
+bounded node/generation identity, sample timestamp, finite CPU percentage,
+non-overflowing memory/filesystem values, unique filesystem/interface IDs, and
+fresh/stale/unknown classification. Invalid and future samples are `unknown`;
+resource freshness says nothing about proxy listener reachability, traffic,
+client connectivity, enforcement, or billing. No host collector, process data,
+filesystem probing, firewall access, persistence, or alert delivery is wired.
+Tests exercise bounds, duplicates, stale/future cases and the explicit separation
+from proxy health. The Foundation gofmt list now includes this package. Firewall
+inventory and other operations remain deferred; production gates are unchanged.
