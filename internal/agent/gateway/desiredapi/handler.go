@@ -58,6 +58,7 @@ type Handler struct {
 func NewHandler(ledger enrollment.CertificateChecker, source Source, trustDomain string, verifier manifest.Verifier, now func() time.Time) (*Handler, error) {
 	if ledger == nil || source == nil || now == nil ||
 		!trustDomainPattern.MatchString(trustDomain) ||
+		!identityPattern.MatchString(verifier.AuthorizedEpoch) ||
 		len(verifier.TrustedSigners) == 0 ||
 		len(verifier.AllowedCapabilities) == 0 ||
 		len(verifier.QualifiedBuilds) == 0 ||
@@ -137,6 +138,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
 		return
 	}
+	// The trusted control-plane epoch is provisioned independently of DB
+	// state. A PITR rollback must not reauthorize an old, correctly signed
+	// epoch merely by restoring its head and envelope.
+	if snapshot.Epoch != h.verifier.AuthorizedEpoch {
+		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+		return
+	}
 	if snapshot.Epoch != epoch {
 		http.Error(w, "recovery approval required", http.StatusConflict)
 		return
@@ -146,8 +154,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// corrupted or unqualified record cannot masquerade as 'no change'.
 	verifier := h.verifier
 	verifier.NodeID = node
-	verifier.AuthorizedEpoch = snapshot.Epoch
-	verifier.Current = manifest.Cursor{}
+		verifier.Current = manifest.Cursor{}
 	verifier.Now = func() time.Time { return at }
 	verified, err := verifier.Verify(snapshot.Envelope)
 	if err != nil || verified.Decision != manifest.ApplyRevision ||
