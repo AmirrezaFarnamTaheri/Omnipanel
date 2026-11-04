@@ -31,8 +31,10 @@ const (
 // Epoch is its independently authorized control-plane history, not a query
 // parameter. Envelope holds a previously signed manifest, never raw secrets.
 type Snapshot struct {
-	Epoch    string
-	Envelope []byte
+	Epoch              string
+	StructuralSequence uint64
+	MembershipSequence uint64
+	Envelope           []byte
 }
 
 // Source returns only the current immutable snapshot for the authenticated
@@ -129,7 +131,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	snapshot, err := h.source.Latest(r.Context(), node)
-	if err != nil || !identityPattern.MatchString(snapshot.Epoch) || len(snapshot.Envelope) == 0 {
+	if err != nil || !identityPattern.MatchString(snapshot.Epoch) ||
+		snapshot.StructuralSequence == 0 || snapshot.StructuralSequence > maxSequence ||
+		snapshot.MembershipSequence > maxSequence || len(snapshot.Envelope) == 0 {
 		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
 		return
 	}
@@ -146,7 +150,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	verifier.Current = manifest.Cursor{}
 	verifier.Now = func() time.Time { return at }
 	verified, err := verifier.Verify(snapshot.Envelope)
-	if err != nil || verified.Decision != manifest.ApplyRevision {
+	if err != nil || verified.Decision != manifest.ApplyRevision ||
+		verified.Manifest.StructuralSequence != snapshot.StructuralSequence ||
+		verified.Manifest.MembershipSequence != snapshot.MembershipSequence {
 		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
 		return
 	}
