@@ -34,6 +34,8 @@ jobs:
           unformatted="$(gofmt -l internal/manifest/*.go internal/drivers/*.go internal/drivers/singbox/*.go internal/agent/state/*.go)"
           if [ -n "$unformatted" ]; then
             printf 'Unformatted Go source:\n%s\n' "$unformatted" >&2
+            # Print the exact formatting delta without modifying the workspace.
+            gofmt -d internal/agent/state/*.go >&2
             exit 1
           fi
       # The pre-existing agent/session registry is covered by the full Go
