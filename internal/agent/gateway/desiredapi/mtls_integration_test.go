@@ -103,7 +103,7 @@ func TestActualMTLSClientAndSignedDesiredHandlerRoundTrip(t *testing.T) {
 	if got,err := client.FetchNodeDesired(context.Background(),poll); !errors.Is(err,gateway.ErrNoChange) || len(got)!=0 {
 		t.Fatalf("equal applied cursor did not produce verified no-change: bytes=%d err=%v",len(got),err)
 	}
-	ledger.active = false
+	ledger.SetActive(false)
 	if _,err := client.FetchNodeDesired(context.Background(),poll); err == nil || errors.Is(err,gateway.ErrNoChange) {
 		t.Fatalf("revoked certificate still authorized a desired-state response: %v",err)
 	}
