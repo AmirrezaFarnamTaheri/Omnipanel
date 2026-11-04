@@ -176,6 +176,14 @@ func TestDesiredHandlerAuthenticatesCertificateAndVerifiesEnvelopeBefore200Or204
 	if ledger.calls != 1 || src.calls != 1 || src.lastNode != desiredNode {
 		t.Fatalf("did not scope access to authenticated node: ledger=%d source=%d node=%q",ledger.calls,src.calls,src.lastNode)
 	}
+	// A structural manifest is not a membership update feed. An applied
+	// structural revision with a lagging membership cursor must not cause
+	// the node to re-verify an equal structural revision as a new change.
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w,desiredRequest(requestQuery("2","0"),&peer))
+	if w.Code != http.StatusNoContent || w.Body.Len()!=0 {
+		t.Fatalf("equal structural cursor with lagging membership must be 204: status=%d",w.Code)
+	}
 	w = httptest.NewRecorder()
 	h.ServeHTTP(w,desiredRequest(requestQuery("2","3"),&peer))
 	if w.Code != http.StatusNoContent || w.Body.Len()!=0 {
