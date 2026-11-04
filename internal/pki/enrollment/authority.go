@@ -211,7 +211,7 @@ func AuthenticatePeer(ctx context.Context, peer tls.ConnectionState, store Token
 		return "", err
 	}
 	if store == nil || !domainPattern.MatchString(trustDomain) || peer.Version != tls.VersionTLS13 ||
-		len(peer.PeerCertificates) != 1 || len(peer.VerifiedChains) == 0 {
+		len(peer.PeerCertificates) == 0 || len(peer.VerifiedChains) == 0 {
 		return "", ErrUnauthorized
 	}
 	cert := peer.PeerCertificates[0]

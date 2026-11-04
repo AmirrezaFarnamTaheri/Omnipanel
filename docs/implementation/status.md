@@ -425,5 +425,6 @@ and all production acceptance gates remain BLOCKED.
 
 This code was developed with locally observed failing and then passing Go
 race-enabled tests for one-time grants, CSR impersonation, revocation and
-expiration during issuance. **Check the current PR-head CI** for complete
-Go, PostgreSQL schema, code formatting, TypeScript and Sing-box results.
+expiration during issuance. **Check the current PR-head CI** for Go, code formatting, TypeScript
+and Sing-box results; the candidate PostgreSQL DDL remains unqualified
+until real database migration and restore tests pass.

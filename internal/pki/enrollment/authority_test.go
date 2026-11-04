@@ -301,3 +301,37 @@ func TestTokenExpiresDuringIssuance(t *testing.T) {
 		t.Fatal("expiry race created a durable certificate")
 	}
 }
+
+
+// TLS peers may supply intermediate certificates after the leaf. A verified
+// chain remains acceptable if the leaf has a registered, unrevoked node identity.
+func TestAuthenticatePeerAcceptsVerifiedIssuerChain(t *testing.T) {
+	auth, store, token, at, ca := authorized(t)
+	csr, _ := csrFixture(t, testNodeA)
+	issued, err := auth.Enroll(context.Background(), token, csr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, _ := pem.Decode(issued.CertificatePEM)
+	leaf, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	roots := x509.NewCertPool()
+	roots.AddCert(ca)
+	chains, err := leaf.Verify(x509.VerifyOptions{
+		Roots: roots, CurrentTime: at, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	peer := tls.ConnectionState{
+		Version: tls.VersionTLS13,
+		PeerCertificates: []*x509.Certificate{leaf, ca},
+		VerifiedChains: chains,
+	}
+	node, err := AuthenticatePeer(context.Background(), peer, store, testTrustDomain, at)
+	if err != nil || node != testNodeA {
+		t.Fatalf("a valid issuer chain must not be rejected: node=%q err=%v", node, err)
+	}
+}
