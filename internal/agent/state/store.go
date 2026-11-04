@@ -55,17 +55,20 @@ type Store struct {
 func Open(path, nodeID, epoch string) (*Store, error) {
 	if !filepath.IsAbs(path) || strings.IndexByte(path, 0) >= 0 ||
 		!uuidPattern.MatchString(nodeID) || !uuidPattern.MatchString(epoch) {
-		return nil, ErrInvalidScope
+		return nil, fmt.Errorf("%w: invalid path or node/epoch identifier", ErrInvalidScope)
 	}
 	directory, err := os.Lstat(filepath.Dir(path))
-	if err != nil || !directory.IsDir() || directory.Mode().Perm()&0o077 != 0 {
-		return nil, ErrInvalidScope
+	if err != nil {
+		return nil, fmt.Errorf("%w: journal parent cannot be inspected: %v", ErrInvalidScope, err)
+	}
+	if !directory.IsDir() || directory.Mode().Perm()&0o077 != 0 {
+		return nil, fmt.Errorf("%w: journal parent must be an owner-only real directory (mode %04o)", ErrInvalidScope, directory.Mode().Perm())
 	}
 	info, err := os.Lstat(path)
 	switch {
 	case err == nil:
 		if !info.Mode().IsRegular() || info.Mode().Perm()&0o077 != 0 {
-			return nil, ErrInvalidScope
+			return nil, fmt.Errorf("%w: journal must be a private regular file", ErrInvalidScope)
 		}
 	case errors.Is(err, os.ErrNotExist):
 		file, createErr := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0o600)
@@ -140,7 +143,7 @@ func Open(path, nodeID, epoch string) (*Store, error) {
 	}
 	if actualNode != nodeID || actualEpoch != epoch {
 		_ = tx.Rollback()
-		return fail(ErrInvalidScope)
+		return fail(fmt.Errorf("%w: persisted scope differs from configured node or epoch", ErrInvalidScope))
 	}
 	if err := tx.Commit(); err != nil {
 		return fail(err)
