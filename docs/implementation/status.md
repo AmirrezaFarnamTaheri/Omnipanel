@@ -487,3 +487,29 @@ There is still no configured HMAC key management, deployed gateway, actual
 administrator-approved grant workflow, edge rate controls, CA key custody,
 cert renewal, multi-gateway revocation delivery or privileged agent apply.
 All production acceptance gates remain BLOCKED.
+
+## Administrator-authorized single-use grant foundation (4 November 2026)
+
+`internal/pki/enrollment/grants` adds a **non-HTTP** PostgreSQL issuer
+requiring a live owner session, bounded session idle/absolute age, a recent
+trusted TOTP step-up record, organization-level grant permission, an explicit
+v2 UUID-to-legacy integer node binding, and a different authorized approver.
+The legacy node must still be pending enrollment. It makes a grant, its digest,
+organization/actor/session metadata and append-only audit entry atomically:
+storage failure or duplicate/pending grants return no bearer.
+
+Migration `0005_agent_admin_grants.sql` adds the namespace, approval scope
+and audit schema; a tagged PostgreSQL integration test exercises genuine
+SQL constraints, competing calls, session and node rejection and audit
+rollback. The unsafe exported `SQLStore.CreateGrant` convenience method is
+removed from production and replaced by test-only fixture provisioning.
+
+**Production blockers:** a real owner authentication/MFA step-up route,
+authorized organization/node approval writes, safe one-time token delivery,
+redemption-time revocation/scope recheck, CA key custody, certificate
+rotation, durable independent apply/rollback and the real legacy `0001`
+schema migration verification. The integration test deliberately uses only
+the legacy columns required by this library, and does not certify complete
+migration of the Next.js prototype database. No control-plane listener,
+host agent apply, or release gate is enabled. Check final PR-head CI before
+calling this integration verified.

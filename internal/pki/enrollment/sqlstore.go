@@ -21,25 +21,6 @@ func NewSQLStore(db *sql.DB) (*SQLStore, error) {
 	return &SQLStore{db: db}, nil
 }
 
-// CreateGrant is a trusted-administrator-only operation. The caller MUST
-// authorize this node and deliver the returned bearer token over a separate
-// trusted channel; the plaintext is not persisted or logged here.
-func (s *SQLStore) CreateGrant(ctx context.Context, node string, now, expires time.Time) (string, error) {
-	if !nodePattern.MatchString(node) || !expires.After(now) || expires.Sub(now) > 15*time.Minute {
-		return "", ErrInvalidToken
-	}
-	token, digest, err := GenerateToken()
-	if err != nil {
-		return "", err
-	}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO agent_enrollment_grants(token_digest,node_id,expires_at,created_at)
-        VALUES($1,$2,$3,$4)`, digest[:], node, expires.Unix(), now.Unix())
-	if err != nil {
-		return "", fmt.Errorf("persist enrollment grant: %w", err)
-	}
-	return token, nil
-}
-
 func (s *SQLStore) Lookup(ctx context.Context, digest [32]byte, at time.Time) (string, error) {
 	var node string
 	err := s.db.QueryRowContext(ctx, `SELECT node_id FROM agent_enrollment_grants

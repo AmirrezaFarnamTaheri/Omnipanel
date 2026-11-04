@@ -62,3 +62,36 @@ running/prioritizing pruning, proving multi-region database availability,
 and adding edge-wide abuse protections. A global PostgreSQL row serializes
 enrollments within each minute; load-testing this contention is required
 before production. This is not an admin-approved grant minting workflow.
+
+## Approved administrator grant issuance (not deployed)
+
+`internal/pki/enrollment/grants` adds an **internal-only** PostgreSQL
+grant issuer; it is not an API route or automatic enrollment writer.
+It verifies an actual legacy admin-session SHA-256 hash, owner role,
+TOTP enrollment plus a separately populated, recent TOTP step-up record,
+organization-specific `can_issue` permission, and an approved UUID-to-legacy
+integer node binding. It also requires a **different** scoped owner to have
+approved the binding, an active organization, and a legacy node still in
+`pending_enrollment` state. The service uses the database clock and locks
+the relevant authorization/approval rows to keep issuance decisions atomic.
+
+Migration `db/migrations/0005_agent_admin_grants.sql` explicitly bridges the
+legacy integer node ID to the agent's UUID, and adds grant operator scopes,
+step-up records, issuance metadata and an append-only audit table. Token
+issuance, hash-only storage, authorization metadata and audit creation are
+**one transaction**; if any write fails, no bearer is returned and all writes
+roll back. Pending grants are limited to one active grant per node, and a
+repeated correlation cannot recover plaintext previously delivered.
+The old unguarded `SQLStore.CreateGrant` Go method is removed from production;
+an isolated fixture helper remains available to existing tests.
+
+The PostgreSQL integration job exercises scoped permission, live/expired
+sessions, MFA step-up, a second admin's approval, suspended organizations,
+quarantined nodes, concurrent issuance and injected audit-write failure.
+The integration test uses **minimal faithful auth/node table fixtures**
+instead of certifying the entire legacy `0001_initial.sql` migration.
+No public admin grant route, trusted approval writer, out-of-band token
+delivery, fully qualified legacy-to-v2 migration, or secure step-up
+verification service is deployed. Existing `SQLStore.Lookup` still needs
+scope/status revalidation when a node is suspended *after* grant issuance.
+Those missing pieces block actual production enrollment.

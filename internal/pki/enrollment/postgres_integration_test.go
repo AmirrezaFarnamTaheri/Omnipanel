@@ -57,7 +57,7 @@ func TestPostgresEnrollmentLedger(t *testing.T) {
 	}
 
 	t.Run("persist, replay refusal, key scope and revocation", func(t *testing.T) {
-		token, err := store.CreateGrant(ctx, testNodeA, at, at.Add(5*time.Minute))
+		token, err := store.createFixtureGrant(ctx, testNodeA, at, at.Add(5*time.Minute))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -112,7 +112,7 @@ func TestPostgresEnrollmentLedger(t *testing.T) {
 		}
 	})
 	t.Run("failed insert rolls back grant and concurrent redemption is single use", func(t *testing.T) {
-		token, err := store.CreateGrant(ctx, testNodeA, at, at.Add(5*time.Minute))
+		token, err := store.createFixtureGrant(ctx, testNodeA, at, at.Add(5*time.Minute))
 		if err != nil {
 			t.Fatal(err)
 		}

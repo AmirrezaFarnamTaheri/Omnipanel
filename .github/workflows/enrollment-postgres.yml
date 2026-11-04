@@ -6,6 +6,7 @@ on:
       - 'internal/pki/enrollment/**'
       - 'db/migrations/0003_agent_enrollment.sql'
       - 'db/migrations/0004_agent_enrollment_rate_limits.sql'
+      - 'db/migrations/0005_agent_admin_grants.sql'
       - 'go.mod'
       - 'go.sum'
       - '.github/workflows/enrollment-postgres.yml'
@@ -14,6 +15,7 @@ on:
       - 'internal/pki/enrollment/**'
       - 'db/migrations/0003_agent_enrollment.sql'
       - 'db/migrations/0004_agent_enrollment_rate_limits.sql'
+      - 'db/migrations/0005_agent_admin_grants.sql'
       - 'go.mod'
       - 'go.sum'
       - '.github/workflows/enrollment-postgres.yml'
@@ -53,4 +55,6 @@ jobs:
         run: go test -race -count=1 ./internal/pki/enrollment/httpapi
       - name: Exercise shared enrollment limits on real PostgreSQL
         run: go test -race -count=1 -v -tags=postgres_integration ./internal/pki/enrollment/httpapi -run '^TestPostgresSharedEnrollmentRateLimiter$'
+      - name: Exercise admin-approved UUID bridge and atomic grant audit on PostgreSQL
+        run: go test -race -count=1 -v -tags=postgres_integration ./internal/pki/enrollment/grants -run '^TestPostgresAdminApprovedNodeGrants$'
       # This CI database is disposable; it is not a PITR, failover or key-restore drill.

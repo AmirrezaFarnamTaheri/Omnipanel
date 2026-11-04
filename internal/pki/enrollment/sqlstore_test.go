@@ -44,7 +44,7 @@ func TestSQLTokenPersistenceRevocationAndWrongNode(t *testing.T) {
 	ctx := context.Background()
 	db, store, dsn := sqliteFixture(t)
 	ca, key, now := issuerFixture(t)
-	bearer, err := store.CreateGrant(ctx, testNodeA, now, now.Add(5*time.Minute))
+	bearer, err := store.createFixtureGrant(ctx, testNodeA, now, now.Add(5*time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestSQLAtomicConsumeRollbackAndConcurrency(t *testing.T) {
 	ctx := context.Background()
 	db, store, _ := sqliteFixture(t)
 	ca, key, now := issuerFixture(t)
-	bearer, err := store.CreateGrant(ctx, testNodeA, now, now.Add(5*time.Minute))
+	bearer, err := store.createFixtureGrant(ctx, testNodeA, now, now.Add(5*time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,7 +166,7 @@ func TestSQLRejectsUnscopedOrLongLivedGrants(t *testing.T) {
 	}{
 		{testNodeB, 16 * time.Minute}, {"invalid", time.Minute}, {testNodeA, -time.Minute},
 	} {
-		if token, err := store.CreateGrant(context.Background(), tc.node, at, at.Add(tc.ttl)); err == nil || token != "" {
+		if token, err := store.createFixtureGrant(context.Background(), tc.node, at, at.Add(tc.ttl)); err == nil || token != "" {
 			t.Fatal("unapproved or unbounded grant issued")
 		}
 	}
