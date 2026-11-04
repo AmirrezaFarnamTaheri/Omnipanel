@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/base32"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -29,6 +30,17 @@ const (
 	thirdNode = "1dd5747c-5adc-471f-a933-0c9f72f3ca9c"
 )
 
+// The integration fixture models a separately protected secret opener.
+// It never takes the secret or administrator identity from request inputs.
+type fixtureTOTPOpener struct{}
+
+func (fixtureTOTPOpener) OpenTOTP(_ context.Context, id int64, envelope string) ([]byte, error) {
+	if id != 11 || envelope != "fixture:encrypted:totp" {
+		return nil, errors.New("test key custody refused unbound identity")
+	}
+	return []byte(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString([]byte("12345678901234567890"))), nil
+}
+
 func TestPostgresAdminApprovedNodeGrants(t *testing.T) {
 	dsn := os.Getenv("OMNIPANEL_TEST_POSTGRES_DSN")
 	parsed, err := url.Parse(dsn)
@@ -50,13 +62,13 @@ func TestPostgresAdminApprovedNodeGrants(t *testing.T) {
 	// Migration 0001 is a distinct legacy contract, not modified or certified
 	// by this test. Exercise the exact auth/node columns this service reads.
 	const authFixture = `
-CREATE TABLE admins(id serial PRIMARY KEY,email text NOT NULL UNIQUE,password_hash text NOT NULL,role text NOT NULL,totp_enabled boolean NOT NULL,created_at timestamptz NOT NULL);
+CREATE TABLE admins(id serial PRIMARY KEY,email text NOT NULL UNIQUE,password_hash text NOT NULL,role text NOT NULL,totp_enabled boolean NOT NULL,totp_secret_enc text,created_at timestamptz NOT NULL);
 CREATE TABLE admin_sessions(id serial PRIMARY KEY,admin_id integer NOT NULL REFERENCES admins(id),token_hash text NOT NULL UNIQUE,created_at timestamptz NOT NULL,last_seen_at timestamptz NOT NULL,expires_at timestamptz NOT NULL);
 CREATE TABLE nodes(id serial PRIMARY KEY,status text NOT NULL);`
 	if _, err := db.ExecContext(ctx, authFixture); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"0005_agent_admin_grants.sql", "0006_agent_grant_logout_revocation.sql"} {
+	for _, name := range []string{"0005_agent_admin_grants.sql", "0006_agent_grant_logout_revocation.sql", "0007_agent_grant_verified_stepup.sql"} {
 		migration, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "migrations", name))
 		if err != nil {
 			t.Fatal(err)
@@ -86,8 +98,8 @@ VALUES (21,11,$1,$2,$3,$4)`, []any{hex.EncodeToString(sessionHash[:]), now.Add(-
 		{`INSERT INTO agent_grant_organizations(organization_id,state) VALUES($1,'active')`, []any{organizationID}},
 		{`INSERT INTO agent_grant_admin_scopes(admin_id,organization_id,can_issue,can_approve) VALUES
 (11,$1,true,false),(12,$1,false,true),(13,$1,true,false)`, []any{organizationID}},
-		{`INSERT INTO agent_grant_stepups(session_id,method,verified_at,expires_at)
-VALUES (21,'totp',$1,$2)`, []any{now, now.Add(5 * time.Minute)}},
+		{`INSERT INTO agent_grant_stepups(session_id,method,verified_at,expires_at,verified_counter,verified_source)
+VALUES (21,'totp',$1,$2,0,'trusted')`, []any{now, now.Add(5 * time.Minute)}},
 		{`INSERT INTO agent_grant_node_bindings(node_id,legacy_node_id,organization_id,state,approved_by,approved_at)
 VALUES ($1,31,$4,'approved',12,$5),($2,32,$4,'approved',12,$5),($3,33,$4,'approved',12,$5)`, []any{nodeID, otherNode, thirdNode, organizationID, now}},
 	}
@@ -119,6 +131,18 @@ VALUES ($1,31,$4,'approved',12,$5),($2,32,$4,'approved',12,$5),($3,33,$4,'approv
 			t.Fatal("denied operation changed durable audit")
 		}
 	}
+
+	t.Run("schema rejects trusted factor with missing replay counter", func(t *testing.T) {
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer tx.Rollback()
+		_, err = tx.ExecContext(ctx, "UPDATE agent_grant_stepups SET verified_source='trusted', verified_counter=NULL WHERE session_id=21")
+		if err == nil {
+			t.Fatal("PostgreSQL accepted trusted factor with a missing anti-replay counter")
+		}
+	})
 
 	t.Run("session-bound two-person approval and atomic audit", func(t *testing.T) {
 		out, err := issuer.Issue(ctx, request(nodeID, correlationID))
@@ -356,6 +380,77 @@ WHERE g.node_id=$1`, nodeID).Scan(&dbDigest, &adminID); err != nil {
 		change("UPDATE agent_grant_organizations SET state='active' WHERE organization_id=$1", organizationID)
 	})
 
+	t.Run("verified TOTP writer, stale records, replay and attempt budget", func(t *testing.T) {
+		change := func(query string, args ...any) {
+			t.Helper()
+			if _, err := db.ExecContext(ctx, query, args...); err != nil {
+				t.Fatal(err)
+			}
+		}
+		// A legacy/unverified row is not permission to mint a grant even
+		// when someone populated its verified_at column recently.
+		change("UPDATE agent_grant_stepups SET verified_source='legacy',verified_counter=NULL WHERE session_id=21")
+		if output, err := issuer.Issue(ctx, request(otherNode, "d290a8e3-12fd-48d5-8dc4-0ab999a3da03")); !errors.Is(err, ErrUnauthorized) || output.Token != "" {
+			t.Fatalf("unverified legacy step-up was admitted: token=%t err=%v", output.Token != "", err)
+		}
+		change("UPDATE admins SET totp_secret_enc='fixture:encrypted:totp' WHERE id=11")
+		verifier, err := NewStepUpService(db, fixtureTOTPOpener{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var postgresNow time.Time
+		if err := db.QueryRowContext(ctx, "SELECT clock_timestamp()").Scan(&postgresNow); err != nil {
+			t.Fatal(err)
+		}
+		secret := []byte("12345678901234567890")
+		code := totpCode(secret, postgresNow.Unix()/30)
+		wrong := "000000"
+		if code == wrong {
+			wrong = "111111"
+		}
+		if err := verifier.Verify(ctx, session, wrong); !errors.Is(err, ErrStepUpCode) {
+			t.Fatalf("incorrect factor accepted or storage failure: %v", err)
+		}
+		if err := verifier.Verify(ctx, session, code); err != nil {
+			t.Fatalf("valid time-bound factor rejected: %v", err)
+		}
+		var verifiedSource string
+		var verifiedCounter sql.NullInt64
+		if err := db.QueryRowContext(ctx, "SELECT verified_source,verified_counter FROM agent_grant_stepups WHERE session_id=21").Scan(&verifiedSource, &verifiedCounter); err != nil || verifiedSource != "trusted" || !verifiedCounter.Valid {
+			t.Fatalf("verified factor not persisted as trusted: source=%q counter=%v err=%v", verifiedSource, verifiedCounter, err)
+		}
+		// A trusted row permits subsequent authorization checks (the third
+		// node intentionally already has one outstanding grant).
+		if output, err := issuer.Issue(ctx, request(thirdNode, "d390a8e3-12fd-48d5-8dc4-0ab999a3da03")); !errors.Is(err, ErrConflict) || output.Token != "" {
+			t.Fatalf("trusted factor could not reach node-grant check: %v", err)
+		}
+		if err := verifier.Verify(ctx, session, code); !errors.Is(err, ErrStepUpCode) {
+			t.Fatalf("same TOTP counter was reused: %v", err)
+		}
+		// A second session for the same owner cannot replay a code that
+		// was already consumed by the first session.
+		otherSession := base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{0xB3}, 32))
+		otherDigest := sha256.Sum256([]byte(otherSession))
+		change("INSERT INTO admin_sessions(id,admin_id,token_hash,created_at,last_seen_at,expires_at) VALUES(22,11,$1,$2,$2,$3)", hex.EncodeToString(otherDigest[:]), postgresNow.Add(-time.Minute), postgresNow.Add(time.Hour))
+		if err := verifier.Verify(ctx, otherSession, code); !errors.Is(err, ErrStepUpCode) {
+			t.Fatalf("replay via other session accepted: %v", err)
+		}
+		change("DELETE FROM admin_sessions WHERE id=22")
+
+		change("UPDATE admins SET role='operator' WHERE id=11")
+		if err := verifier.Verify(ctx, session, code); !errors.Is(err, ErrStepUpSession) {
+			t.Fatalf("operator role admitted to owner step-up: %v", err)
+		}
+		change("UPDATE admins SET role='owner' WHERE id=11")
+		// Force the current database-clock budget to the limit, avoiding
+		// dependence on the external runner's wall-clock window.
+		change("INSERT INTO agent_grant_stepup_attempts(admin_id,window_start,hits) VALUES(11,floor(extract(epoch FROM clock_timestamp()) / 300)::bigint,5) ON CONFLICT(admin_id,window_start) DO UPDATE SET hits=5")
+		if err := verifier.Verify(ctx, session, wrong); !errors.Is(err, ErrStepUpLimited) {
+			t.Fatalf("attempt quota exceeded but verifier did not fail closed: %v", err)
+		}
+		change("DELETE FROM agent_grant_stepup_attempts WHERE admin_id=11")
+	})
+
 	t.Run("logout revokes outstanding tokens and preserves immutable history", func(t *testing.T) {
 		grant, err := issuer.Issue(ctx, request(otherNode, "c190a8e3-12fd-48d5-8dc4-0ab999a3da03"))
 		if err != nil {
@@ -439,8 +534,8 @@ WHERE g.node_id=$1`, nodeID).Scan(&dbDigest, &adminID); err != nil {
 VALUES (21,11,$1,$2,$2,$3)`, hex.EncodeToString(reloginHash[:]), loginAt.Add(-time.Minute), loginAt.Add(time.Hour)); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := db.ExecContext(ctx, `INSERT INTO agent_grant_stepups(session_id,method,verified_at,expires_at)
-VALUES (21,'totp',$1,$2)`, loginAt.Add(-time.Minute), loginAt.Add(5*time.Minute)); err != nil {
+		if _, err := db.ExecContext(ctx, `INSERT INTO agent_grant_stepups(session_id,method,verified_at,expires_at,verified_counter,verified_source)
+VALUES (21,'totp',$1,$2,0,'trusted')`, loginAt.Add(-time.Minute), loginAt.Add(5*time.Minute)); err != nil {
 			t.Fatal(err)
 		}
 		if got, err := store.Lookup(ctx, digest, time.Now().UTC()); !errors.Is(err, enrollment.ErrInvalidToken) || got != "" {
