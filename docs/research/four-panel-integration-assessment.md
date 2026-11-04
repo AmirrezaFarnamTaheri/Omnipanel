@@ -84,3 +84,16 @@ Verification for this increment: local Go race/vet/gofmt (including the new
 `internal/agent/metering` package now covered by the Foundation gofmt gate)
 and the TypeScript contract suite. Final-head CI remains the gate; none of
 these adoptions promotes a production capability or unblocks a release gate.
+
+## Reference head re-verification (5 November 2026)
+
+The four canonical fork refs were checked again with `git ls-remote` while
+preparing the durable metering follow-up. `1Panel/dev-v2` remains
+`30381a3c68d40b04a2f4117286d7d19cc5b18557`, `3x-UI/main` remains
+`83ea59fb693fee1815d867dff4d33028ddaf12a9`, `S-UI/main` (the supplied
+`SUI` URL is malformed/nonexistent; the assessed repository is `S-UI`)
+remains `19302d16f6c1fddf68595cf1ddd4b2e03077c2f6`, and
+`Hiddify-Manager/dev` remains `9974dc390fb96528346a4c3cd4a4063b5bae6d97`.
+This verifies refs only; the earlier file-level static review and its scope
+limits remain in force. No source was copied or vendored, and the
+Hiddify-Panel submodule remains excluded.

@@ -1,7 +1,7 @@
 // Package metering implements a bounded, fail-closed traffic counter
-// accumulator for the node agent. It is a foundation for authoritative
-// accounting, NOT a billing-grade meter: durable delivery, restart
-// rehydration and native runtime wiring are separate, blocked work.
+// accumulator for the node agent. It supports protected local checkpoint and
+// at-least-once absolute-total delivery, but is NOT a billing-grade meter:
+// native runtime wiring and authoritative remote accounting remain blocked.
 //
 // Design inputs (studied, not copied) from the S-UI stats service at pinned
 // revision 19302d1 (see docs/research/four-panel-integration-assessment.md):
@@ -41,11 +41,18 @@ var (
 	// ErrCapacity rejects a NEW user when the uncommitted window is full.
 	// Existing users keep folding; traffic is never silently discarded.
 	ErrCapacity = errors.New("metering pending window capacity exceeded")
+	// ErrDurableMode prevents callers from bypassing checkpoint-before-ack
+	// semantics when an accumulator was opened from durable storage.
+	ErrDurableMode = errors.New("durable accumulator requires durable operations")
 )
 
-// MaxPendingUsers bounds the distinct users with uncommitted traffic.
+// MaxPendingUsers bounds distinct users with uncommitted traffic, while
+// MaxTrackedUsers also bounds retained generation/replay state after flush.
 // Overflow is an explicit operator-visible error, not a silent drop.
-const MaxPendingUsers = 4096
+const (
+	MaxPendingUsers = 4096
+	MaxTrackedUsers = 8192
+)
 
 // maxUserTagBytes bounds a runtime user tag; the verifier, not this package,
 // decides which tags are authorized members.
@@ -87,9 +94,10 @@ type userState struct {
 // totals to a store. It is safe for concurrent use. The zero value is not
 // usable; call New.
 type Accumulator struct {
-	mu           sync.Mutex
-	users        map[string]*userState
-	pendingUsers int
+	mu              sync.Mutex
+	users           map[string]*userState
+	pendingUsers    int
+	checkpointStore CheckpointStore
 }
 
 func New() *Accumulator {
@@ -101,14 +109,24 @@ func New() *Accumulator {
 // regressions, malformed tags and capacity overflow return errors and never
 // mutate state.
 func (a *Accumulator) Accept(s Sample) error {
-	if a == nil || s.User == "" || len(s.User) > maxUserTagBytes {
+	if a == nil {
 		return ErrInvalidSample
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.checkpointStore != nil {
+		return ErrDurableMode
+	}
+	return a.acceptLocked(s)
+}
+
+func (a *Accumulator) acceptLocked(s Sample) error {
+	if s.User == "" || len(s.User) > maxUserTagBytes {
+		return ErrInvalidSample
+	}
 	state, seen := a.users[s.User]
 	if !seen {
-		if a.pendingUsers >= MaxPendingUsers {
+		if a.pendingUsers >= MaxPendingUsers || len(a.users) >= MaxTrackedUsers {
 			return ErrCapacity
 		}
 		state = &userState{}
@@ -169,6 +187,9 @@ func (a *Accumulator) Flush(ctx context.Context, store func(totals map[string]Us
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.checkpointStore != nil {
+		return ErrDurableMode
+	}
 	if a.pendingUsers == 0 {
 		return nil
 	}

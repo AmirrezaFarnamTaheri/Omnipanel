@@ -74,10 +74,12 @@ The old pg-mem E2E script was retired because it bypassed real transaction/
 concurrency primitives and its admission assumptions conflict with fail-closed
 runtime qualification. Real database and networking tests remain outstanding.
 
-`npm audit` reports 22 unresolved vulnerabilities in the legacy dependency tree
-(19 moderate, 2 high, 1 critical at inspection), including Next.js/PostCSS/sharp.
-New direct harness dependencies are patch-pinned; this change is not dependency
-security sign-off. Upgrade or retire the affected prototype dependencies with
+The previous documented `npm audit` reported 22 vulnerabilities (19 moderate,
+2 high, 1 critical). On 5 November 2026, `npm ci` reported 15 vulnerabilities
+(12 moderate, 2 high, 1 critical); this install summary is not a package-by-package
+re-audit or remediation, so affected transitive packages still need triage. New
+direct harness dependencies are patch-pinned; this change is not dependency
+security sign-off. Upgrade or retire affected prototype dependencies with
 regression checks before any exposure. Never run an uncontrolled major-version
 `audit fix --force` as a substitute for review.
 
@@ -702,3 +704,33 @@ commit still succeeds. Final-head PostgreSQL CI is required before marking
 the finding verified; no local PostgreSQL service or Go toolchain was
 available in this checkout. This does not resolve secret custody, trusted
 DB-role separation, full migration-chain qualification, or deployment gates.
+
+## Four-panel re-review and durable metering checkpoint (5 November 2026)
+
+Rechecked canonical fork branch heads: 1Panel `dev-v2` `30381a3`, 3X-UI
+`main` `83ea59f`, S-UI `main` `19302d1`, and Hiddify-Manager `dev` `9974dc3`
+remain at the pinned revisions in the static file-level assessment. The
+supplied `/SUI` URL does not resolve; the previously assessed repository is
+`/S-UI`. No reference source is copied. The Hiddify-Panel submodule is still
+excluded.
+
+The S-UI destructive-drain retention lesson now has a bounded durable
+checkpoint path: `internal/agent/metering.OpenDurable` rehydrates versioned
+counter/generation/sequence state from `internal/agent/state.Store`'s
+owner-only SQLite WAL journal. `AcceptDurable` persists before reporting a
+drain accepted and rolls back in-memory mutation on checkpoint failure.
+`FlushDurable` sends absolute totals and clears the persistent dirty window
+only after destination success; a crash between remote commit and local
+checkpoint can repeat delivery, so the destination must be idempotent.
+Corrupt/unknown/oversized checkpoints fail closed, and retained generation
+state is bounded. Race tests cover reopen, failure/retry, no-loss destination
+failure, malformed checkpoints and limits.
+
+Still not connected to a native runtime drain or remote billing/accounting
+store; this is not exactly-once delivery, a billable meter, session revocation,
+or production durability evidence. The S-UI session contract, 3X-UI
+protocol/client conformance, Hiddify service topology and 1Panel task,
+monitoring, firewall and storage features remain independently bounded by
+the map and plan; this increment does not claim those projects have been
+fully ported. Production gates remain BLOCKED pending final-head CI and
+external operational evidence.

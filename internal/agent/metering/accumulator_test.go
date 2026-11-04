@@ -166,6 +166,27 @@ func TestAccumulatorCapacityIsExplicit(t *testing.T) {
 	}
 }
 
+func TestAccumulatorBoundsRetainedReplayStateAfterFlush(t *testing.T) {
+	a := New()
+	ctx := context.Background()
+	for i := 0; i < MaxTrackedUsers; i++ {
+		if err := a.Accept(sample(fmt.Sprintf("user-%d", i), 1, 1, 1, 1)); err != nil {
+			t.Fatalf("accepted user %d: %v", i, err)
+		}
+		if (i+1)%MaxPendingUsers == 0 {
+			if err := a.Flush(ctx, func(map[string]Usage) error { return nil }); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := a.Accept(sample("one-too-many", 1, 1, 1, 1)); !errors.Is(err, ErrCapacity) {
+		t.Fatalf("retained replay-state capacity was not bounded: %v", err)
+	}
+	if len(a.Totals()) != MaxTrackedUsers {
+		t.Fatal("capacity refusal changed tracked user state")
+	}
+}
+
 func TestAccumulatorRefusesOverflowAndInvalidTags(t *testing.T) {
 	a := New()
 	max := ^uint64(0)
