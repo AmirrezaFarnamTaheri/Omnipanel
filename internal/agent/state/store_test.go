@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	testNode = "62c478bb-47c3-4dc6-a363-a2fbde813810"
+	testNode  = "62c478bb-47c3-4dc6-a363-a2fbde813810"
 	testEpoch = "ea2429da-7540-4e40-ae70-38fd3f19794b"
 )
 
@@ -29,14 +29,14 @@ func privateTestDir(t *testing.T) string {
 func testRevision() manifest.Verified {
 	return manifest.Verified{
 		Decision: manifest.ApplyRevision,
-		Digest: strings.Repeat("a", 64),
+		Digest:   strings.Repeat("a", 64),
 		Manifest: manifest.Manifest{
-			SchemaVersion: "2.0",
-			NodeID: testNode,
-			ControlPlaneEpoch: testEpoch,
+			SchemaVersion:      "2.0",
+			NodeID:             testNode,
+			ControlPlaneEpoch:  testEpoch,
 			StructuralSequence: 2,
 			MembershipSequence: 3,
-			BaseEgressPolicy: "deny-protected-v1",
+			BaseEgressPolicy:   "deny-protected-v1",
 		},
 	}
 }
@@ -97,7 +97,7 @@ func TestJournalRejectsConflictingOrUnverifiedRevisions(t *testing.T) {
 		t.Fatal(err)
 	}
 	changes := []struct {
-		name string
+		name   string
 		change func(*manifest.Verified)
 	}{
 		{"same structural sequence different digest", func(v *manifest.Verified) { v.Digest = strings.Repeat("b", 64) }},
