@@ -786,3 +786,30 @@ epoch; the read path rejects even correctly signed older envelopes when the
 database head has been restored to a previously authorized epoch. Regression
 tests cover missing protected epoch configuration and a valid old signature
 after epoch recovery. A live epoch-recovery approval workflow remains blocked.
+
+## Independently preapproved signed publication (5 November 2026)
+
+Migration `0009_agent_signed_publication.sql` adds one-time, digest/epoch/node/
+revision-scoped publication approvals, **new publication-specific administrator
+permissions**, append-only commit audit and immutable outbox records. The
+`internal/control/desiredpublish` library verifies an already-signed
+exact-build-qualified Ed25519 manifest against independently provisioned trust.
+It rechecks the approved node, organization, two distinct TOTP-enabled owner
+administrators and publication-specific permissions under PostgreSQL locks.
+The signed revision, monotonic head, approval consumption, audit and outbox
+are one transaction; failures roll back all changes. The read-only gateway
+does not gain a signing or publisher role.
+
+The new `postgres_integration` test applies migrations 0001-0009 in an isolated
+schema and exercises replay refusal, a concurrent publication race, live
+revocation, audit injection with rollback and safe retry, and immutable history.
+The fixture deliberately grants no enrollment-issuer capability, proving
+publication requires separate authority. Exact-head CI remains the acceptance
+gate and is not marked green by this document.
+
+**Not yet implemented:** independently authenticated dual-person approval
+writer and session/factor provenance, signer/key custody, production role grants
+and delivery acknowledgements, deployable Go publisher/gateway/agent,
+native apply with watchdog-confirm rollback, authoritative accounting,
+external provider/reference-client security tests and PITR drills. These
+require independent evidence; all production gates remain BLOCKED.
