@@ -85,10 +85,10 @@ JOIN agent_grant_organizations org ON org.organization_id=b.organization_id
 JOIN nodes n ON n.id=b.legacy_node_id
 JOIN admins issuer ON issuer.id=a.issuer_admin_id
 JOIN admins approver ON approver.id=a.approver_admin_id
-JOIN agent_grant_admin_scopes issuer_scope
- ON issuer_scope.admin_id=issuer.id AND issuer_scope.organization_id=a.organization_id
-JOIN agent_grant_admin_scopes approver_scope
- ON approver_scope.admin_id=approver.id AND approver_scope.organization_id=a.organization_id
+JOIN agent_desired_publish_permissions proposer_perm
+ ON proposer_perm.admin_id=issuer.id AND proposer_perm.organization_id=a.organization_id
+JOIN agent_desired_publish_permissions approver_perm
+ ON approver_perm.admin_id=approver.id AND approver_perm.organization_id=a.organization_id
 WHERE a.approval_id=$1::uuid AND a.node_id=$2::uuid
  AND a.control_plane_epoch=$3::uuid AND a.structural_sequence=$4
  AND a.membership_sequence=$5 AND a.envelope_sha256=$6
@@ -97,11 +97,11 @@ WHERE a.approval_id=$1::uuid AND a.node_id=$2::uuid
  AND b.state='approved' AND b.approved_by=a.approver_admin_id
  AND b.approved_at <= clock_timestamp() AND org.state='active'
  AND n.status IN ('pending_enrollment','active','draining')
- AND issuer.role='owner' AND issuer.totp_enabled AND issuer_scope.can_issue
- AND approver.role='owner' AND approver.totp_enabled AND approver_scope.can_approve
+ AND issuer.role='owner' AND issuer.totp_enabled AND proposer_perm.can_propose
+ AND approver.role='owner' AND approver.totp_enabled AND approver_perm.can_approve
  AND a.issuer_admin_id <> a.approver_admin_id
 FOR UPDATE OF a,b
-FOR SHARE OF org,n,issuer,approver,issuer_scope,approver_scope`
+FOR SHARE OF org,n,issuer,approver,proposer_perm,approver_perm`
 
 // PublishSigned is a fail-closed, no-key-custody, transactional publisher.
 // The pending approval must have been inserted by a separately protected,
