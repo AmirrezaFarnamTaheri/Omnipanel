@@ -14,9 +14,10 @@ No unsigned or unqualified desired state may be served. The control plane cannot
 1. Terminate TLS 1.3 using Go's TLS stack configured with `RequireAndVerifyClientCert` and the separately provisioned node CA. The handler itself requires `tls.ConnectionState.VerifiedChains` and refuses missing or malformed client identity.
 2. Authenticate the SPIFFE node identity with `enrollment.AuthenticatePeer`, invoking the database-backed `CertificateChecker.Active` on **every** request. This read-only interface must be deployed with a role that cannot create grants, issue certificates, mutate trusted step-ups or revoke node approval.
 3. Read the latest immutable snapshot **only by authenticated node ID**. The `Source.Latest` interface and its epoch must be implemented using one server-side, node-scoped transactional read; the HTTP query cannot choose another tenant, node or source.
-4. Reject wrong epochs, rollback / advanced cursors, extra or ambiguous parameters, noncanonical numeric sequences and unexpected methods. Never serve an unspecified or empty snapshot as successful.
-5. Validate the stored envelope with the current provisioned Ed25519 trusted signers, exact qualified builds, supported capabilities, node and epoch **before** returning 200 **or** 204. An invalid record is a fail-closed service error.
-6. Emit a bounded signed JSON envelope with `Cache-Control: private, no-store`. Never expose credential material in errors. A 204 reports unchanged *signed intent* only and never proves native application or connectivity.
+4. Require `Verifier.AuthorizedEpoch` from protected, independently provisioned gateway configuration. Never copy it from the PostgreSQL head, a snapshot body, or an HTTP poll. Database PITR must not reauthorize an old, properly signed epoch without a separately approved epoch-recovery procedure.
+5. Reject wrong epochs, rollback / advanced cursors, extra or ambiguous parameters, noncanonical numeric sequences and unexpected methods. Never serve an unspecified or empty snapshot as successful.
+6. Validate the stored envelope with the current provisioned Ed25519 trusted signers, exact qualified builds, supported capabilities, node and epoch **before** returning 200 **or** 204. An invalid record is a fail-closed service error.
+7. Emit a bounded signed JSON envelope with `Cache-Control: private, no-store`. Never expose credential material in errors. A 204 reports unchanged *signed intent* only and never proves native application or connectivity.
 
 ## Verification
 
