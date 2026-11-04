@@ -28,7 +28,68 @@ var (
 	principalPattern    = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}$`)
 	uuidPattern         = regexp.MustCompile(`^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$`)
 	shortIDPattern      = regexp.MustCompile(`^(?:[a-f0-9]{2}){1,8}$`)
-	namePattern         = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?$`)
+	namePattern         = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?// Package singbox renders a bounded VLESS/Reality inbound fragment. It does not
+// install binaries, apply configurations or claim native runtime validation.
+package singbox
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/netip"
+	"regexp"
+	"sort"
+
+	"github.com/AmirrezaFarnamTaheri/Omnipanel/internal/drivers"
+	"github.com/AmirrezaFarnamTaheri/Omnipanel/internal/manifest"
+)
+
+const protocolCapability = "singbox-reality-vision"
+const artifactFormat = "singbox/inbound-fragment+json"
+const visionFlow = "xtls-rprx-vision"
+
+var (
+	buildVersionPattern = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+(?:\+[a-zA-Z0-9._-]+)?$`)
+	digestPattern       = regexp.MustCompile(`^[a-f0-9]{64}$`)
+	principalPattern    = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}$`)
+	uuidPattern         = regexp.MustCompile(`^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$`)
+	shortIDPattern      = regexp.MustCompile(`^(?:[a-f0-9]{2}){1,8}$`)
+	)
+	serverNamePattern   = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*// Package singbox renders a bounded VLESS/Reality inbound fragment. It does not
+// install binaries, apply configurations or claim native runtime validation.
+package singbox
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/netip"
+	"regexp"
+	"sort"
+
+	"github.com/AmirrezaFarnamTaheri/Omnipanel/internal/drivers"
+	"github.com/AmirrezaFarnamTaheri/Omnipanel/internal/manifest"
+)
+
+const protocolCapability = "singbox-reality-vision"
+const artifactFormat = "singbox/inbound-fragment+json"
+const visionFlow = "xtls-rprx-vision"
+
+var (
+	buildVersionPattern = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+(?:\+[a-zA-Z0-9._-]+)?$`)
+	digestPattern       = regexp.MustCompile(`^[a-f0-9]{64}$`)
+	principalPattern    = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}$`)
+	uuidPattern         = regexp.MustCompile(`^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$`)
+	shortIDPattern      = regexp.MustCompile(`^(?:[a-f0-9]{2}){1,8}$`)
+	)
 )
 
 type Adapter struct {
@@ -100,6 +161,12 @@ func (d *Adapter) Render(ctx context.Context, plan drivers.ComponentPlan) (drive
 	if in.HandshakePort == 0 || !namePattern.MatchString(in.HandshakeServer) && !isIPLiteral(in.HandshakeServer) {
 		return drivers.ConfigArtifact{}, errors.New("invalid Reality handshake destination")
 	}
+	// Reality's accepted SNI is a separate, explicit hostname. Without this
+	// field Sing-box forwards the client to its handshake decoy instead of
+	// authenticating the requested Reality user.
+	if len(in.ServerName) > 253 || !serverNamePattern.MatchString(in.ServerName) || isIPLiteral(in.ServerName) {
+		return drivers.ConfigArtifact{}, errors.New("invalid Reality accepted server name")
+	}
 	key, err := base64.RawURLEncoding.DecodeString(in.PrivateKey)
 	if err != nil || len(in.PrivateKey) != 43 || len(key) != 32 {
 		return drivers.ConfigArtifact{}, errors.New("invalid Reality key encoding")
@@ -129,7 +196,7 @@ func (d *Adapter) Render(ctx context.Context, plan drivers.ComponentPlan) (drive
 	sort.Slice(users, func(i, j int) bool { return users[i].Name < users[j].Name })
 	fragment := inboundFragment{Inbounds: []inbound{{
 		Type: "vless", Tag: component.ID, Listen: listener.Address, ListenPort: listener.Port, Users: users,
-		TLS: inboundTLS{Enabled: true, Reality: realitySettings{Enabled: true, Handshake: handshake{Server: in.HandshakeServer, ServerPort: in.HandshakePort}, PrivateKey: in.PrivateKey, ShortIDs: ids}},
+		TLS: inboundTLS{Enabled: true, ServerName: in.ServerName, Reality: realitySettings{Enabled: true, Handshake: handshake{Server: in.HandshakeServer, ServerPort: in.HandshakePort}, PrivateKey: in.PrivateKey, ShortIDs: ids}},
 	}}}
 	content, err := json.MarshalIndent(fragment, "", "  ")
 	if err != nil {
@@ -161,8 +228,9 @@ type inboundUser struct {
 	Flow string `json:"flow"`
 }
 type inboundTLS struct {
-	Enabled bool            `json:"enabled"`
-	Reality realitySettings `json:"reality"`
+	Enabled    bool            `json:"enabled"`
+	ServerName string          `json:"server_name"`
+	Reality    realitySettings `json:"reality"`
 }
 type realitySettings struct {
 	Enabled    bool      `json:"enabled"`

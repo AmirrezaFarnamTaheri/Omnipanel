@@ -35,6 +35,7 @@ type ComponentPlan struct {
 // not contain egress routing or operational host commands.
 type RealityInbound struct {
 	Listen          manifest.Listener
+	ServerName      string // Explicitly accepted client SNI; independent of decoy handshake address.
 	HandshakeServer string
 	HandshakePort   uint16
 	PrivateKey      string

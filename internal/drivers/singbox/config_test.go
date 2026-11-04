@@ -27,6 +27,7 @@ func approvedTestPlan() (drivers.BuildIdentity, drivers.ComponentPlan) {
 		Revision: verified, ComponentID: "reality", Capability: "singbox-reality-vision",
 		Reality: &drivers.RealityInbound{
 			Listen:          manifest.Listener{Address: "0.0.0.0", Port: 24443, Transport: "tcp"},
+			ServerName:      "localhost",
 			HandshakeServer: "127.0.0.1", HandshakePort: 18443,
 			PrivateKey: strings.Repeat("A", 43), ShortIDs: []string{"aabbccdd"},
 			Users: []drivers.Principal{{ID: "user-two", UUID: "f85acbc7-6f7c-4c8b-a7dc-a2296ce36f29"}, {ID: "user-one", UUID: "a77556d4-4ab6-4a80-bfd3-10f129a0aa8e"}},
@@ -125,6 +126,11 @@ func TestUnqualifiedOrUnsafeRenderInputFailsClosed(t *testing.T) {
 		{"capability mismatch", func(_ *drivers.BuildIdentity, p *drivers.ComponentPlan) { p.Capability = "hysteria2" }},
 		{"listener mismatch", func(_ *drivers.BuildIdentity, p *drivers.ComponentPlan) { p.Reality.Listen.Port = 443 }},
 		{"unqualified path", func(_ *drivers.BuildIdentity, p *drivers.ComponentPlan) { p.Reality.Listen.Address = "/etc/shadow" }},
+		{"missing accepted SNI", func(_ *drivers.BuildIdentity, p *drivers.ComponentPlan) { p.Reality.ServerName = "" }},
+		{"unsafe accepted SNI", func(_ *drivers.BuildIdentity, p *drivers.ComponentPlan) { p.Reality.ServerName = "localhost; echo unexpected" }},
+		{"invalid accepted SNI label", func(_ *drivers.BuildIdentity, p *drivers.ComponentPlan) { p.Reality.ServerName = "bad..example.org" }},
+		{"IP address cannot be used as SNI", func(_ *drivers.BuildIdentity, p *drivers.ComponentPlan) { p.Reality.ServerName = "127.0.0.1" }},
+		{"overlong accepted SNI label", func(_ *drivers.BuildIdentity, p *drivers.ComponentPlan) { p.Reality.ServerName = strings.Repeat("a", 64) + ".example.org" }},
 		{"missing users", func(_ *drivers.BuildIdentity, p *drivers.ComponentPlan) { p.Reality.Users = nil }},
 		{"duplicate users", func(_ *drivers.BuildIdentity, p *drivers.ComponentPlan) {
 			p.Reality.Users = append(p.Reality.Users, p.Reality.Users[0])
