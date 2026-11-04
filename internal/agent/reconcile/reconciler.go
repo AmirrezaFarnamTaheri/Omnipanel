@@ -55,7 +55,27 @@ func (p *Processor) PollOnce(ctx context.Context, source AuthenticatedPuller) (R
 	if source == nil {
 		return Report{}, errors.New("authenticated node puller is required")
 	}
-	wire, err := source.FetchNodeDesired(ctx, gateway.Request{NodeID: p.verifier.NodeID})
+	// Poll with the durable *applied* cursors. A signed revision that is only
+	// RECEIVED or VERIFIED in the journal must never masquerade as applied.
+	cursor, err := p.store.Cursor(ctx)
+	if err != nil {
+		return Report{}, err
+	}
+	wire, err := source.FetchNodeDesired(ctx, gateway.Request{
+		NodeID:             p.verifier.NodeID,
+		ControlPlaneEpoch:  p.verifier.AuthorizedEpoch,
+		StructuralSequence: cursor.StructuralSequence,
+		MembershipSequence: cursor.MembershipSequence,
+	})
+	if errors.Is(err, gateway.ErrNoChange) {
+		// A 204 is an authenticated no-change response, not applied or healthy.
+		return Report{
+			Outcome:            NoChange,
+			StructuralSequence: cursor.StructuralSequence,
+			MembershipSequence: cursor.MembershipSequence,
+			Digest:             cursor.Digest,
+		}, nil
+	}
 	if err != nil {
 		return Report{}, err
 	}
