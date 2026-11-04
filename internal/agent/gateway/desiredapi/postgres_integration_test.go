@@ -154,8 +154,11 @@ func TestPostgresSignedDesiredCurrentView(t *testing.T) {
 	if _, err := db.ExecContext(ctx, "UPDATE agent_desired_revisions SET membership_sequence=4 WHERE node_id=$1", desiredNode); err == nil {
 		t.Fatal("immutable signed revision accepted UPDATE")
 	}
-	if _, err := db.ExecContext(ctx, "DELETE FROM agent_desired_revisions WHERE node_id=$1", otherDesiredNode); err == nil {
-		t.Fatal("immutable signed revision accepted DELETE")
+	// Delete an unreferenced revision so a missing immutability trigger
+	// cannot be masked by the head's foreign-key constraint.
+	change("INSERT INTO agent_desired_revisions(node_id,control_plane_epoch,structural_sequence,membership_sequence,envelope) VALUES($1,$2,4,3,$3)", otherDesiredNode, desiredEpoch, []byte("unheaded revision"))
+	if _, err := db.ExecContext(ctx, "DELETE FROM agent_desired_revisions WHERE node_id=$1 AND structural_sequence=4", otherDesiredNode); err == nil {
+		t.Fatal("unheaded signed revision accepted DELETE")
 	}
 
 	// A distinct actual revision can move the head forward. But its stored
@@ -170,7 +173,11 @@ func TestPostgresSignedDesiredCurrentView(t *testing.T) {
 	if _, err := db.ExecContext(ctx, "UPDATE agent_desired_heads SET structural_sequence=2 WHERE node_id=$1", desiredNode); err == nil {
 		t.Fatal("head sequence rolled back")
 	}
-	if _, err := db.ExecContext(ctx, "UPDATE agent_desired_heads SET control_plane_epoch=$2 WHERE node_id=$1", desiredNode, "32486a70-22d9-4ec4-97bd-21881762f6d0"); err == nil {
+	// Supply a matching foreign-key target for the alternate epoch: only
+	// the recovery-approval guard should make this UPDATE fail.
+	alternateEpoch := "32486a70-22d9-4ec4-97bd-21881762f6d0"
+	change("INSERT INTO agent_desired_revisions(node_id,control_plane_epoch,structural_sequence,membership_sequence,envelope) VALUES($1,$2,3,3,$3)", desiredNode, alternateEpoch, wire)
+	if _, err := db.ExecContext(ctx, "UPDATE agent_desired_heads SET control_plane_epoch=$2 WHERE node_id=$1", desiredNode, alternateEpoch); err == nil {
 		t.Fatal("epoch changed without recovery approval")
 	}
 	if _, err := db.ExecContext(ctx, "DELETE FROM agent_desired_heads WHERE node_id=$1", desiredNode); err == nil {
