@@ -95,3 +95,32 @@ delivery, fully qualified legacy-to-v2 migration, or secure step-up
 verification service is deployed. Existing `SQLStore.Lookup` still needs
 scope/status revalidation when a node is suspended *after* grant issuance.
 Those missing pieces block actual production enrollment.
+
+## Redemption-time authorization and certificate admission (non-deploying)
+
+`enrollment.NewApprovedSQLStore(db)` is the **required production
+TokenStore** for any future public enrollment issuer. Unlike the old raw
+`SQLStore` ledger used in SQLite/postgres isolation tests, it refuses
+bearers without an audited `agent_grant_issues` record and current approval.
+It checks that the organization is active, the legacy node is still pending
+enrollment, the UUID binding is approved, the issuer remains a scoped owner,
+the independent approver remains a scoped owner, and the issuing session
+has not expired. The grant must be unconsumed and within its database-clock
+expiration window.
+
+The initial lookup is not final authorization. `Commit` **rechecks the
+same policy under PostgreSQL row locks**, atomically consumes the token,
+registers the certificate serial/key fingerprint, and rechecks expiration
+before returning. Approval or quarantine changes racing issuance are
+serialized with that commit; if approval is revoked after issuance, `Active`
+immediately rejects the certificate because it checks the current binding,
+organization and legacy node status in addition to the serial/key ledger.
+Previously admitted nodes may be `active` or `draining`, whereas
+`quarantined` or revoked nodes fail closed.
+
+The original `NewSQLStore` remains a **low-level test/fixture ledger** for
+backward-compatible transaction tests; wiring it to a public enrollment
+listener would bypass these authorization checks. There is still **no
+deployed gateway**, so this adapter is a mandatory future wiring contract,
+not proof of production enforcement. Neither a trusted approval/step-up
+writer nor revocation propagation across multiple live gateways is present.

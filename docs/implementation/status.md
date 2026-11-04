@@ -513,3 +513,26 @@ the legacy columns required by this library, and does not certify complete
 migration of the Next.js prototype database. No control-plane listener,
 host agent apply, or release gate is enabled. Check final PR-head CI before
 calling this integration verified.
+
+## Redemption-time approval revalidation (4 November 2026)
+
+A proposed `ApprovedSQLStore` wraps the previously unaudited generic
+certificate ledger with a PostgreSQL approval gate. It only accepts
+single-use grants that have a matching persisted issuance audit, a live
+legacy node UUID binding, an active organization, current issuing and
+independent-approver scopes, and an unexpired issuer session. `Lookup`
+runs the preliminary check; `Commit` revalidates under row locks, consumes
+the token and registers the certificate atomically. Active certificate
+admission also checks the current organization, approved binding and
+legacy node state so a quarantined node is not admitted merely because its
+certificate has not expired.
+
+The regression test first failed against the unprotected SQLStore on a
+real PostgreSQL 17 test service: revoking the binding between lookup and
+commit still produced a certificate. A corrected, fail-closed adapter and
+additional negative tests now require *final-head CI verification*.
+No public endpoint is wired to this adapter yet, and the unapproved raw
+SQLStore remains available only for backward-compatible ledger fixtures.
+This is **not** a deployed issuer, PKI rollover, secure operator approval
+writer, or distributed revocation acceptance test. All production
+acceptance gates remain BLOCKED.

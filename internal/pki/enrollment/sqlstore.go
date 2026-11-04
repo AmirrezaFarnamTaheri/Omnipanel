@@ -8,9 +8,11 @@ import (
 	"time"
 )
 
-// SQLStore is the durable token/certificate ledger used by an independently
-// authenticated control-plane issuer. Schema migration is deliberately
-// separate from constructor and must run before enrolling nodes.
+// SQLStore is a LOW-LEVEL transaction ledger retained for isolated tests.
+// It does NOT revalidate organization/node approval at token redemption and
+// must never be wired directly into a deployed enrollment listener. Instead,
+// construct ApprovedSQLStore for certificate issuance and admission.
+// Schema migration remains separate from construction.
 // Queries use $n parameters compatible with PostgreSQL and SQLite lab tests.
 type SQLStore struct{ db *sql.DB }
 

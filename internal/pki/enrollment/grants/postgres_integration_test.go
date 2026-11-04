@@ -242,7 +242,7 @@ WHERE g.node_id=$1`, nodeID).Scan(&dbDigest, &adminID); err != nil {
 		if success.Load() != 1 || conflicts.Load() != 11 || failures.Load() != 0 {
 			t.Fatalf("grant serialization failed: success=%d conflict=%d error=%d", success.Load(), conflicts.Load(), failures.Load())
 		}
-		if count("agent_grant_issues") != 3 || count("agent_grant_audit") != 3 {
+		if count("agent_grant_issues") != 2 || count("agent_grant_audit") != 2 {
 			t.Fatal("missing/extra atomic audits")
 		}
 		if _, err := db.ExecContext(ctx, `UPDATE agent_grant_audit SET action='other'`); err == nil {
@@ -315,6 +315,14 @@ WHERE g.node_id=$1`, nodeID).Scan(&dbDigest, &adminID); err != nil {
 		denied("revoked second approval")
 		change("UPDATE agent_grant_admin_scopes SET can_approve=true WHERE admin_id=12")
 
+		change("UPDATE admins SET role='operator' WHERE id=12")
+		denied("demoted approver")
+		change("UPDATE admins SET role='owner' WHERE id=12")
+
+		change("UPDATE admin_sessions SET expires_at=clock_timestamp() - interval '1 minute' WHERE id=21")
+		denied("expired issuance session")
+		change("UPDATE admin_sessions SET expires_at=clock_timestamp() + interval '1 hour' WHERE id=21")
+
 		if err := store.Commit(ctx, digest, nodeID, "90001", key, notBefore, notAfter, time.Now().UTC()); err != nil {
 			t.Fatalf("authorized commit refused: %v", err)
 		}
@@ -339,6 +347,12 @@ WHERE g.node_id=$1`, nodeID).Scan(&dbDigest, &adminID); err != nil {
 			t.Fatal("revoked binding certificate remained active")
 		}
 		change("UPDATE agent_grant_node_bindings SET state='approved' WHERE node_id=$1", nodeID)
+		change("UPDATE agent_grant_organizations SET state='suspended' WHERE organization_id=$1", organizationID)
+		approved, err = store.Active(ctx, nodeID, "90001", key, time.Now().UTC())
+		if err != nil || approved {
+			t.Fatal("certificate stayed authorized in suspended organization")
+		}
+		change("UPDATE agent_grant_organizations SET state='active' WHERE organization_id=$1", organizationID)
 	})
 
 	t.Run("database outage never returns uncommitted bearer", func(t *testing.T) {
