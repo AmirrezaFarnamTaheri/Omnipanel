@@ -15,6 +15,17 @@ const (
 	testEpoch = "ea2429da-7540-4e40-ae70-38fd3f19794b"
 )
 
+// Go's testing.TempDir can create a 0755 child under the runner's umask.
+// A node journal must live in an explicitly owner-only directory.
+func privateTestDir(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "node-private")
+	if err := os.Mkdir(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
 func testRevision() manifest.Verified {
 	return manifest.Verified{
 		Decision: manifest.ApplyRevision,
@@ -31,7 +42,7 @@ func testRevision() manifest.Verified {
 }
 
 func TestWALJournalRecoversVerifiedIntentWithoutClaimingDeployment(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "agent.sqlite")
+	path := filepath.Join(privateTestDir(t), "agent.sqlite")
 	ctx := context.Background()
 	s, err := Open(path, testNode, testEpoch)
 	if err != nil {
@@ -75,7 +86,7 @@ func TestWALJournalRecoversVerifiedIntentWithoutClaimingDeployment(t *testing.T)
 }
 
 func TestJournalRejectsConflictingOrUnverifiedRevisions(t *testing.T) {
-	s, err := Open(filepath.Join(t.TempDir(), "agent.sqlite"), testNode, testEpoch)
+	s, err := Open(filepath.Join(privateTestDir(t), "agent.sqlite"), testNode, testEpoch)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +123,7 @@ func TestJournalRejectsConflictingOrUnverifiedRevisions(t *testing.T) {
 }
 
 func TestJournalProtectsNodeScopeAndRefusesSymlinks(t *testing.T) {
-	dir := t.TempDir()
+	dir := privateTestDir(t)
 	path := filepath.Join(dir, "state.sqlite")
 	s, err := Open(path, testNode, testEpoch)
 	if err != nil {
