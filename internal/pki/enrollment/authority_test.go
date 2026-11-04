@@ -326,9 +326,9 @@ func TestAuthenticatePeerAcceptsVerifiedIssuerChain(t *testing.T) {
 		t.Fatal(err)
 	}
 	peer := tls.ConnectionState{
-		Version: tls.VersionTLS13,
+		Version:          tls.VersionTLS13,
 		PeerCertificates: []*x509.Certificate{leaf, ca},
-		VerifiedChains: chains,
+		VerifiedChains:   chains,
 	}
 	node, err := AuthenticatePeer(context.Background(), peer, store, testTrustDomain, at)
 	if err != nil || node != testNodeA {
