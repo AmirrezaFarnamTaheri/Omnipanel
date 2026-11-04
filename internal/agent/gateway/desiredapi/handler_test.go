@@ -18,6 +18,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -32,17 +33,26 @@ const (
 )
 
 type fixtureLedger struct {
+	mu sync.Mutex
 	active bool
 	err error
 	calls int
 }
 
 func (l *fixtureLedger) Active(_ context.Context, node, serial string, _ [32]byte, _ time.Time) (bool, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	l.calls++
 	if node != desiredNode || serial != "2" {
 		return false, errors.New("incorrect certificate identity")
 	}
 	return l.active, l.err
+}
+
+func (l *fixtureLedger) SetActive(active bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.active = active
 }
 
 type fixtureSource struct {
@@ -175,7 +185,7 @@ func TestDesiredHandlerAuthenticatesCertificateAndVerifiesEnvelopeBefore200Or204
 
 func TestDesiredHandlerRejectsRevokedOrUnverifiedPeersBeforeReadingState(t *testing.T) {
 	h, ledger, src, peer := fixtureHandler(t)
-	ledger.active = false
+	ledger.SetActive(false)
 	for _, tc := range []struct {
 		name string
 		peer *tls.ConnectionState
