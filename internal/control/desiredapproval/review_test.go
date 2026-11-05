@@ -9,7 +9,9 @@ import (
 
 func TestReviewerPreviewRefusesMissingOrUnverifiedSession(t *testing.T) {
 	svc, err := NewService(new(sql.DB), testVerifier())
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, req := range []ReviewRequest{
 		{},
 		{SessionToken: "invalid", ProposalID: testProposal},
