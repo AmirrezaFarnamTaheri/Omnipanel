@@ -149,6 +149,16 @@ VALUES($1,31,$2,'approved',12,$3)`, []any{testNode, testOrg, now.Add(-time.Minut
 	if err != nil || receipt.ProposalID != testProposal || receipt.EnvelopeSHA256 != expected {
 		t.Fatalf("separately authenticated proposer failed: %+v %v", receipt, err)
 	}
+	// Reviewer obtains independently authenticated, signed bytes before
+	// confirming the exact digest, not a proposer-supplied approval flag.
+	preview, err := svc.Review(ctx, ReviewRequest{SessionToken: reviewerToken, ProposalID: testProposal})
+	if err != nil || !bytes.Equal(preview.Envelope, wire) ||
+		preview.EnvelopeSHA256 != expected || preview.NodeID != testNode {
+		t.Fatalf("trusted reviewer could not inspect immutable signed intent: %+v %v", preview, err)
+	}
+	if _, err := svc.Review(ctx, ReviewRequest{SessionToken: proposerToken, ProposalID: testProposal}); !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("proposer read proposal as a second independent reviewer: %v", err)
+	}
 	approveReq := ApprovalRequest{SessionToken: reviewerToken, ProposalID: testProposal, ExpectedSHA256: expected}
 	self := approveReq
 	self.SessionToken = proposerToken
