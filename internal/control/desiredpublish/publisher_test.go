@@ -19,8 +19,8 @@ import (
 )
 
 const (
-	fixtureNode = "62c478bb-47c3-4dc6-a363-a2fbde813810"
-	fixtureEpoch = "ea2429da-7540-4e40-ae70-38fd3f19794b"
+	fixtureNode   = "62c478bb-47c3-4dc6-a363-a2fbde813810"
+	fixtureEpoch  = "ea2429da-7540-4e40-ae70-38fd3f19794b"
 	fixtureDomain = "omnipanel:desired-state:ed25519-jcs-v1\n"
 )
 
@@ -32,14 +32,14 @@ func fixtureSignedPublication(t *testing.T, seq, membership uint64) ([]byte, man
 	m := manifest.Manifest{
 		SchemaVersion: "2.0", NodeID: fixtureNode, ControlPlaneEpoch: fixtureEpoch,
 		StructuralSequence: seq, MembershipSequence: membership,
-		IssuedAt: now.Add(-time.Minute).Format(time.RFC3339),
-		ExpiresAt: now.Add(10*time.Minute).Format(time.RFC3339),
+		IssuedAt:             now.Add(-time.Minute).Format(time.RFC3339),
+		ExpiresAt:            now.Add(10 * time.Minute).Format(time.RFC3339),
 		RequiredCapabilities: []string{"singbox-reality-vision"},
 		Components: []manifest.Component{{
 			ID: "reality", Driver: "singbox", RuntimeVersion: "1.14.4+omni.2",
 			ArtifactDigest: digest, ConfigurationDigest: strings.Repeat("b", 64),
 			ConfigurationRef: "reality-config", DependsOn: []string{},
-			Listeners: []manifest.Listener{{Address: "0.0.0.0", Port: 443, Transport: "tcp"}},
+			Listeners:  []manifest.Listener{{Address: "0.0.0.0", Port: 443, Transport: "tcp"}},
 			Disruption: "listener_restart",
 		}},
 		BaseEgressPolicy: "deny-protected-v1",
@@ -61,14 +61,14 @@ func fixtureSignedPublication(t *testing.T, seq, membership uint64) ([]byte, man
 	wire, err := json.Marshal(manifest.Envelope{
 		SignatureVersion: "ed25519-jcs-v1", SignerID: "publisher-fixture",
 		ContentDigest: hex.EncodeToString(hash[:]),
-		Signature: base64.RawURLEncoding.EncodeToString(sig), Manifest: m,
+		Signature:     base64.RawURLEncoding.EncodeToString(sig), Manifest: m,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	v := manifest.Verifier{
-		AuthorizedEpoch: fixtureEpoch,
-		TrustedSigners: map[string]ed25519.PublicKey{"publisher-fixture": key.Public().(ed25519.PublicKey)},
+		AuthorizedEpoch:     fixtureEpoch,
+		TrustedSigners:      map[string]ed25519.PublicKey{"publisher-fixture": key.Public().(ed25519.PublicKey)},
 		AllowedCapabilities: map[string]bool{"singbox-reality-vision": true},
 		QualifiedBuilds: map[string]manifest.Build{"singbox": {
 			Driver: "singbox", Version: "1.14.4+omni.2", ArtifactDigest: digest,
@@ -108,7 +108,7 @@ func TestPublisherRejectsMissingProtectedTrustAndPreapprovals(t *testing.T) {
 	}
 	for _, tc := range []struct {
 		name, approvalID, node string
-		wire []byte
+		wire                   []byte
 	}{
 		{"invalid UUID", "unapproved", fixtureNode, wire},
 		{"invalid node", "7a514a8c-422a-4d0a-bc41-ea144c52911e", "not-a-node", wire},
