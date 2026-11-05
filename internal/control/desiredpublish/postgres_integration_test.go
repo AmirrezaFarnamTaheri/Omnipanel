@@ -282,6 +282,30 @@ EXECUTE FUNCTION refuse_publication_audit_test()`)
 		t.Fatal("successful retry lacked audit/outbox pair")
 	}
 
+	// A bare preapproval row is NOT evidence of a separately authenticated
+	// second operator. It must never permit publication without its immutable
+	// proposal/decision chain, even for a correctly signed next revision.
+	wire4, _ := fixtureSignedPublication(t, 4, 2)
+	digest4 := sha256.Sum256(wire4)
+	const bare = "f090a8e3-12fd-48d5-8dc4-0ab999a3da15"
+	_, err = db.ExecContext(ctx, `INSERT INTO agent_desired_publish_approvals
+(approval_id,organization_id,node_id,control_plane_epoch,structural_sequence,membership_sequence,
+envelope_sha256,issuer_admin_id,approver_admin_id,created_at,expires_at)
+VALUES($1::uuid,$2::uuid,$3::uuid,$4::uuid,4,2,$5,11,12,$6,$7)`,
+		bare, fixtureOrganization, fixtureNode, fixtureEpoch, digest4[:], now.Add(-time.Minute), now.Add(10*time.Minute))
+	if err != nil { t.Fatal(err) }
+	if _, err := publisher.PublishSigned(ctx, bare, fixtureNode, wire4); !errors.Is(err, ErrUnauthorizedPublication) {
+		t.Fatalf("approval row without immutable two-person provenance was accepted: %v", err)
+	}
+	const fourth = "f090a8e3-12fd-48d5-8dc4-0ab999a3da16"
+	approval(fourth, 4, 2, wire4, now.Add(10*time.Minute))
+	if _, err := db.ExecContext(ctx, "DELETE FROM admin_sessions WHERE id=22"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := publisher.PublishSigned(ctx, fourth, fixtureNode, wire4); !errors.Is(err, ErrUnauthorizedPublication) {
+		t.Fatalf("logged-out approver's old decision remained redeemable: %v", err)
+	}
+
 	for _, query := range []string{
 		"DELETE FROM agent_desired_publish_audit",
 		"UPDATE agent_desired_publish_audit SET membership_sequence=0",
