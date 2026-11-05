@@ -73,6 +73,9 @@ func New(db *sql.DB, verifier manifest.Verifier) (*Publisher, error) {
 	return &Publisher{db: db, verifier: copied}, nil
 }
 
+// Approval must originate from the immutable dual-operator decision, bound
+// to both original live session credential hashes and trusted TOTP factors.
+// An unreviewed row in the approval table alone is never enough.
 // The approval is matched against the EXACT signed bytes, protected epoch,
 // node, structural sequence and membership cursor. Locks serialize publishers
 // for the same binding and guard against concurrent node/org revocation.
@@ -85,6 +88,31 @@ JOIN agent_grant_organizations org ON org.organization_id=b.organization_id
 JOIN nodes n ON n.id=b.legacy_node_id
 JOIN admins issuer ON issuer.id=a.issuer_admin_id
 JOIN admins approver ON approver.id=a.approver_admin_id
+JOIN agent_desired_publish_decisions decision
+ ON decision.approval_id=a.approval_id
+ AND decision.approver_admin_id=a.approver_admin_id
+ AND decision.reviewed_sha256=a.envelope_sha256
+JOIN agent_desired_publish_proposals proposal
+ ON proposal.proposal_id=decision.proposal_id
+ AND proposal.organization_id=a.organization_id
+ AND proposal.node_id=a.node_id
+ AND proposal.control_plane_epoch=a.control_plane_epoch
+ AND proposal.structural_sequence=a.structural_sequence
+ AND proposal.membership_sequence=a.membership_sequence
+ AND proposal.envelope_sha256=a.envelope_sha256
+ AND proposal.proposer_admin_id=a.issuer_admin_id
+JOIN admin_sessions proposer_session
+ ON proposer_session.id=proposal.proposer_session_id
+ AND proposer_session.token_hash=proposal.proposer_session_hash
+ AND proposer_session.admin_id=a.issuer_admin_id
+JOIN agent_grant_stepups proposer_factor
+ ON proposer_factor.session_id=proposer_session.id
+JOIN admin_sessions approver_session
+ ON approver_session.id=decision.approver_session_id
+ AND approver_session.token_hash=decision.approver_session_hash
+ AND approver_session.admin_id=a.approver_admin_id
+JOIN agent_grant_stepups approver_factor
+ ON approver_factor.session_id=approver_session.id
 JOIN agent_desired_publish_permissions proposer_perm
  ON proposer_perm.admin_id=issuer.id AND proposer_perm.organization_id=a.organization_id
 JOIN agent_desired_publish_permissions approver_perm
@@ -100,8 +128,31 @@ WHERE a.approval_id=$1::uuid AND a.node_id=$2::uuid
  AND issuer.role='owner' AND issuer.totp_enabled AND proposer_perm.can_propose
  AND approver.role='owner' AND approver.totp_enabled AND approver_perm.can_approve
  AND a.issuer_admin_id <> a.approver_admin_id
+ AND proposal.created_at <= clock_timestamp() AND proposal.expires_at > clock_timestamp()
+ AND decision.approved_at <= clock_timestamp()
+ AND proposer_session.created_at <= clock_timestamp()
+ AND proposer_session.last_seen_at <= clock_timestamp()
+ AND proposer_session.created_at > clock_timestamp() - interval '12 hours'
+ AND proposer_session.last_seen_at > clock_timestamp() - interval '2 hours'
+ AND proposer_session.expires_at > clock_timestamp()
+ AND proposer_factor.method='totp' AND proposer_factor.verified_source='trusted'
+ AND proposer_factor.verified_counter=proposal.proposer_stepup_counter
+ AND proposer_factor.verified_at <= clock_timestamp()
+ AND proposer_factor.verified_at > clock_timestamp() - interval '5 minutes'
+ AND proposer_factor.expires_at > clock_timestamp()
+ AND approver_session.created_at <= clock_timestamp()
+ AND approver_session.last_seen_at <= clock_timestamp()
+ AND approver_session.created_at > clock_timestamp() - interval '12 hours'
+ AND approver_session.last_seen_at > clock_timestamp() - interval '2 hours'
+ AND approver_session.expires_at > clock_timestamp()
+ AND approver_factor.method='totp' AND approver_factor.verified_source='trusted'
+ AND approver_factor.verified_counter=decision.approver_stepup_counter
+ AND approver_factor.verified_at <= clock_timestamp()
+ AND approver_factor.verified_at > clock_timestamp() - interval '5 minutes'
+ AND approver_factor.expires_at > clock_timestamp()
 FOR UPDATE OF a,b
-FOR SHARE OF org,n,issuer,approver,proposer_perm,approver_perm`
+FOR SHARE OF org,n,issuer,approver,proposer_perm,approver_perm,decision,proposal,
+ proposer_session,approver_session,proposer_factor,approver_factor`
 
 // PublishSigned is a fail-closed, no-key-custody, transactional publisher.
 // The pending approval must have been inserted by a separately protected,
