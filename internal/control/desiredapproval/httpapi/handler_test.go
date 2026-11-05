@@ -160,6 +160,16 @@ func TestHTTPBoundaryMustRejectUnsafeRequestsBeforeSideEffects(t *testing.T) {
 	if f.proposals != 0 {
 		t.Fatalf("unsafe requests reached approval service %d times", f.proposals)
 	}
+	// A token issued to one live owner cannot authorize a second owner's
+	// session, even when both are admitted by the online session checker.
+	other := request("POST", ProposalPath, body)
+	other.Header.Set("Authorization", "Bearer "+strings.Repeat("B", 42)+"A")
+	other.Header.Set("X-Omni-CSRF", csrf)
+	otherResult := httptest.NewRecorder()
+	h.ServeHTTP(otherResult, other)
+	if otherResult.Code != http.StatusForbidden || f.proposals != 0 {
+		t.Fatalf("csrf token crossed authenticated sessions: status=%d calls=%d", otherResult.Code, f.proposals)
+	}
 	good := request("POST", ProposalPath, body)
 	good.Header.Set("X-Omni-CSRF", csrf)
 	w := httptest.NewRecorder()
