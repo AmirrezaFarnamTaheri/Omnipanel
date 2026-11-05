@@ -813,3 +813,38 @@ and delivery acknowledgements, deployable Go publisher/gateway/agent,
 native apply with watchdog-confirm rollback, authoritative accounting,
 external provider/reference-client security tests and PITR drills. These
 require independent evidence; all production gates remain BLOCKED.
+
+## Session-bound dual-operator publication review (5 November 2026)
+
+Added migration `0010_agent_desired_dual_approval.sql` for immutable signed
+publication proposals and immutable second-administrator decision records.
+`internal/control/desiredapproval` now offers non-HTTP `Propose`, `Review`
+and `Approve` boundaries. A proposal is signed intent checked against
+independently pinned trusted signer/epoch/build data, tied to a live owner
+session's credential hash and recent **trusted** TOTP counter, to an approved
+node/organization, and to an exact envelope SHA-256. A different live owner
+with an independent session/TOTP proof must inspect that exact envelope and
+confirm its digest. Reviewer approval atomically creates the scoped,
+short-lived one-time approval and immutable decision provenance.
+
+The publisher now requires proposal and decision rows matching all signed
+metadata and both original live session credential hashes and verified
+counters. A bare approval cannot authorize a publication; session logout or
+session-ID reuse cannot revive unused authorization. The published revision,
+head, audit and outbox remain a separate transaction from proposal review.
+
+New PostgreSQL integration coverage applies the ordered migration chain
+0001-0010 in an isolated disposable schema and tests authenticated review,
+self-approval refusal, digest mismatch, revoked publication permission,
+suspended organization, untrusted step-up, injected decision failure with
+rollback/retry, immutable records and session logout. The publisher integration
+tests now require this provenance and explicitly refuse a bare approval and
+a logged-out reviewer.
+
+**Qualification note:** The latest head's Go formatting/race/vet, real
+PostgreSQL migration and local runtime CI must pass; at writing these jobs
+are not confirmed green. This work does not provide a production TOTP secret
+opener, protected signer, independently deployed CSRF/origin-safe admin API,
+separate production database roles, outbox acknowledgements, privileged node
+apply/rollback, provider acceptance or disaster recovery. All production
+`gate-*` requirements remain BLOCKED.
