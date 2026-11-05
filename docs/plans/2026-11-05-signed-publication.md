@@ -28,6 +28,25 @@ Migration `0010_agent_desired_dual_approval.sql` adds append-only `agent_desired
 
 **Important remaining limits:** A proposed intent is still only as trustworthy as its configured signer/qualified builds. A live HTTP service must independently enforce login origin, CSRF, safe display of exact reviewed intent, request replay controls and separate runtime database roles. `StepUpService` still needs an externally protected production TOTP secret opener and key custody. Production deployment, real human-session integration, role grants and end-to-end conformance are NOT yet verified.
 
+## Bounded administrator HTTP adapter (5 November continuation)
+
+`internal/control/desiredapproval/httpapi` is now an isolated Go adapter for the library's authenticated `Propose`, `Review` and `Approve` operations. **It is not a deployed admin API or an identity provider.** The three operations and a CSRF token endpoint are deliberately isolated from the node enrollment/desired-state endpoints:
+
+| Method | Path | Response / boundary |
+| --- | --- | --- |
+| `GET` | `/v2/admin/desired/csrf` | Short-lived HMAC token bound to the existing bearer session and configured HTTPS origin; live owner session required |
+| `POST` | `/v2/admin/desired/proposals` | Server-generated random proposal UUID, exact signed envelope, organization/node IDs and bounded 60–600-second intent lifetime; returns a receipt |
+| `GET` | `/v2/admin/desired/proposals/{uuid}` | Privately returns the signed envelope (base64-encoded JSON `[]byte`), immutable digest and exact target metadata after independent reviewer authorization |
+| `POST` | `/v2/admin/desired/proposals/{uuid}/approval` | Reviewer must submit the exact lowercase 64-hex digest of the inspected signed envelope; underlying library enforces independent owner/TOTP and durable decision |
+
+Every request requires direct TLS 1.3, exact configured HTTPS `Origin` and `Host`, a canonical 32-byte URL-safe bearer token in one Authorization header, no cookies, and online session validation. Cross-site Fetch Metadata is denied. Mutations additionally require a single `X-Omni-CSRF` header with a constant-time-checked, five-minute-window, session+origin-scoped HMAC. No CORS credential grants are emitted. Responses set `Cache-Control: private, no-store`, `Referrer-Policy: no-referrer`, `nosniff` and restrictive CSP.
+
+Request JSON is bounded and rejects duplicate top-level keys, unknown fields, trailing JSON and unsupported content encodings. Backend authorization errors are mapped to generic problem responses; no bearer, CSRF key, signed content or database error is reflected. A separate `SQLSessionChecker` checks the live owner and TOTP-enabled login by **hashed** bearer in PostgreSQL, failing closed on DB errors. It does not bypass the approval library's independent TOTP verification.
+
+**Operational and security limits:** deploy the adapter only behind a directly authenticated TLS 1.3 server with separately provisioned 256-bit or stronger CSRF secret; the operator UI must securely hold bearer and CSRF tokens in memory (never URL, logs or persistent browser storage). Real login, logout propagation, protected TOTP secret opener, session cookie policy, shared abuse limiter, audit correlation, permission-separated DB credentials, deployment health/observability and operator UI review of the exact signed intent remain unimplemented. A CSRF token never authorizes a publication by itself.
+
+Unit tests locally exercised the HTTP adapter under race detection and `go vet` against an isolated shape-compatible `desiredapproval` stub, with an initial failing test before the adapter was implemented. GitHub blob SHA comparisons confirmed the committed files are byte-identical to those locally tested files. Full repository Go, PostgreSQL and deployed-browser tests remain **required**, not inferred from the isolated test harness.
+
 ## Database privilege boundary
 
 | Component | Intended privileges |
