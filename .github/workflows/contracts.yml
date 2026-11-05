@@ -1,6 +1,9 @@
 name: Foundation verification (not production qualification)
 on:
   push:
+    # PR branches run through pull_request only; push is for default-branch CI.
+    branches:
+      - main
   pull_request:
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
