@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+
+# Next.js build output
+.next/
+out/
+build/
+dist/
+
+# TypeScript
+tsconfig.tsbuildinfo
+
+# Environment / local dev
+.env
+.env.local
+.env.*.local
+
+# OmniPanel local state
+.data/
+*.log
+
+# OS
+.DS_Store
+
+# npm/yarn
+yarn-error.log
+npm-debug.log*
+
+# Go
+*.exe
+*.test
+/Go.work
+/vendor/
+/go/control-plane/go.sum
+/go/agent/go.sum
+/**.data/agent-state.sqlite
+
+# OmniPanel agent local state
+.data/agent-state.sqlite

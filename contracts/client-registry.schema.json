@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.omnipanel.invalid/v2/client-registry.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "clients"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "2.0"
+    },
+    "clients": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "application",
+          "version",
+          "os",
+          "embeddedCore",
+          "format",
+          "capabilityIds",
+          "supportedFields",
+          "failoverBehavior",
+          "dnsRoutingBehavior",
+          "importRefreshBehavior",
+          "testedAt",
+          "evidenceIds",
+          "status"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+          },
+          "application": {
+            "type": "string",
+            "minLength": 1
+          },
+          "version": {
+            "type": "string",
+            "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?$"
+          },
+          "os": {
+            "type": "string",
+            "minLength": 1
+          },
+          "embeddedCore": {
+            "type": "string",
+            "minLength": 1
+          },
+          "format": {
+            "enum": [
+              "singbox",
+              "mihomo",
+              "xray",
+              "uri"
+            ]
+          },
+          "capabilityIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+            },
+            "minItems": 1,
+            "uniqueItems": true
+          },
+          "supportedFields": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "failoverBehavior": {
+            "type": "string",
+            "minLength": 1
+          },
+          "dnsRoutingBehavior": {
+            "type": "string",
+            "minLength": 1
+          },
+          "importRefreshBehavior": {
+            "type": "string",
+            "minLength": 1
+          },
+          "testedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "evidenceIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "minItems": 1,
+            "uniqueItems": true
+          },
+          "status": {
+            "enum": [
+              "verified",
+              "failed",
+              "unsupported"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

@@ -2,13 +2,14 @@
 
 import { useActionState, useState, type ReactNode } from "react";
 import type { ActionState } from "@/lib/action-helpers";
-import { btnCls, btnDanger, btnGhost } from "@/components/ui";
+import { Button } from "@/components/ui";
 
 type Props = {
   action: (prev: ActionState, fd: FormData) => Promise<ActionState>;
   children?: ReactNode;
   submit: string;
-  variant?: "primary" | "ghost" | "danger";
+  variant?: "default" | "outline" | "destructive" | "ghost";
+  size?: "default" | "sm" | "lg" | "icon";
   className?: string;
 };
 
@@ -22,12 +23,12 @@ function SecretBox({ label, value, hint }: { label: string; value: string; hint?
       <div className="mt-2 flex items-center gap-3">
         <button
           type="button"
-          className={btnGhost}
+          className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 text-indigo-600 hover:bg-slate-100 hover:text-indigo-700 h-10 w-10"
           onClick={() => {
             navigator.clipboard?.writeText(value).then(() => setCopied(true));
           }}
         >
-          {copied ? "Copied" : "Copy"}
+          {copied ? "✓" : "⎘"}
         </button>
         <span className="text-xs text-amber-800">Store it now. It cannot be shown again.</span>
       </div>
@@ -35,16 +36,15 @@ function SecretBox({ label, value, hint }: { label: string; value: string; hint?
   );
 }
 
-export function ActionForm({ action, children, submit, variant = "primary", className = "" }: Props) {
+export function ActionForm({ action, children, submit, variant = "default", size, className = "" }: Props) {
   const [state, formAction, pending] = useActionState(action, {} as ActionState);
-  const cls = variant === "danger" ? btnDanger : variant === "ghost" ? btnGhost : btnCls;
   return (
     <form action={formAction} className={className}>
       {children}
       <div className="mt-3 flex flex-wrap items-center gap-3">
-        <button type="submit" disabled={pending} className={cls}>
+        <Button variant={variant} size={size} disabled={pending}>
           {pending ? "Working…" : submit}
-        </button>
+        </Button>
         {state.error && (
           <p role="alert" className="text-sm font-medium text-rose-700">
             {state.error}

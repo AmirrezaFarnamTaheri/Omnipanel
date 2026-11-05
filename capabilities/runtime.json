@@ -1,0 +1,62 @@
+{
+  "schemaVersion": "2.0",
+  "runtimes": [
+    {
+      "id": "singbox-reality-vision",
+      "runtime": "singbox",
+      "protocol": "vless-reality-vision",
+      "version": null,
+      "artifactDigest": null,
+      "platform": "linux/amd64",
+      "status": "candidate",
+      "requiredClaims": [
+        "client_import",
+        "connectivity_l3",
+        "credential_revocation",
+        "accounting",
+        "outbound_reconciliation",
+        "last_good_recovery",
+        "version_rejection",
+        "impairment_diagnosis"
+      ]
+    },
+    {
+      "id": "singbox-hysteria2",
+      "runtime": "singbox",
+      "protocol": "hysteria2",
+      "version": null,
+      "artifactDigest": null,
+      "platform": "linux/amd64",
+      "status": "candidate",
+      "requiredClaims": [
+        "client_import",
+        "connectivity_l3",
+        "credential_revocation",
+        "accounting",
+        "outbound_reconciliation",
+        "last_good_recovery",
+        "version_rejection",
+        "impairment_diagnosis"
+      ]
+    },
+    {
+      "id": "standalone-hysteria2",
+      "runtime": "hysteria2",
+      "protocol": "hysteria2",
+      "version": null,
+      "artifactDigest": null,
+      "platform": "linux/amd64",
+      "status": "candidate",
+      "requiredClaims": [
+        "client_import",
+        "connectivity_l3",
+        "credential_revocation",
+        "accounting",
+        "outbound_reconciliation",
+        "last_good_recovery",
+        "version_rejection",
+        "impairment_diagnosis"
+      ]
+    }
+  ]
+}

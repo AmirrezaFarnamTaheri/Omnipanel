@@ -1,8 +1,9 @@
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { endpointPrincipals, inboundHealth, inbounds, nodes, plans, subscriptionTokens, users } from "@/db/schema";
-import { CLIENT_REGISTRY, findCapability, isHardQuotaCapable, loadEvidence, type ClientFormat } from "@/lib/capabilities";
+import { CLIENT_REGISTRY, clientAdmissionReason, findCapability, isAdmissible, isHardQuotaCapable, loadEvidence, type ClientFormat } from "@/lib/capabilities";
 import { decryptSecret, sha256 } from "@/lib/crypto";
+import { validateInboundCompatibility } from "@/lib/protocol-compatibility";
 
 /** Canonical intermediate representation of one access path. */
 export type AccessPath = {
@@ -13,6 +14,7 @@ export type AccessPath = {
   port: number;
   protocol: "vless-reality-vision" | "hysteria2";
   transport: "tcp" | "udp";
+  runtime: "singbox" | "xray" | "hysteria2";
   credential: string;
   sni: string;
   tlsModel: "reality" | "tls-self-managed";
@@ -52,80 +54,94 @@ export async function findUserByToken(token: string) {
 }
 
 /** Builds the IR plus a per-endpoint explanation of why each path is included or excluded. */
-export async function buildIR(userId: number, client: ClientFormat | null = null): Promise<IR> {
-  const [u] = await db.select().from(users).where(eq(users.id, userId));
-  const [plan] = await db.select().from(plans).where(eq(plans.id, u.planId));
-  const ev = await loadEvidence();
-  const rows = await db
-    .select({ ib: inbounds, node: nodes, h: inboundHealth.state })
+export async function buildIR(userId: number, clientFormat: ClientFormat | null = null): Promise<IR> {
+  const [user] = await db.select().from(users).where(eq(users.id, userId));
+  const [plan] = await db.select().from(plans).where(eq(plans.id, user.planId));
+  const evidence = await loadEvidence();
+  const inboundRows = await db
+    .select({ inbound: inbounds, node: nodes, healthState: inboundHealth.state })
     .from(inbounds)
     .innerJoin(nodes, eq(nodes.id, inbounds.nodeId))
     .leftJoin(inboundHealth, eq(inboundHealth.inboundId, inbounds.id))
     .orderBy(asc(inbounds.id));
-  const principals = await db
+  const activeEndpointPrincipals = await db
     .select()
     .from(endpointPrincipals)
     .where(and(eq(endpointPrincipals.userId, userId), eq(endpointPrincipals.state, "active")));
-  const clientDef = client ? CLIENT_REGISTRY.find((c) => c.format === client) : null;
+  const clientDefinition = clientFormat
+    ? (CLIENT_REGISTRY.find((candidate) => candidate.format === clientFormat) ?? null)
+    : null;
 
   const paths: AccessPath[] = [];
   const excluded: Exclusion[] = [];
-  for (const { ib, node, h } of rows) {
-    const exclude = (reason: string) => excluded.push({ inboundId: ib.id, name: `${node.name} / ${ib.name}`, reason });
-    const cap = findCapability(ib.runtime, ib.protocol);
-    if (!ib.enabled) exclude("Endpoint administratively disabled");
-    else if (!cap) exclude("Unsupported runtime/protocol (not in capability registry)");
+
+  for (const { inbound, node, healthState } of inboundRows) {
+    const exclude = (reason: string) => excluded.push({
+      inboundId: inbound.id,
+      name: `${node.name} / ${inbound.name}`,
+      reason,
+    });
+    const runtimeCapability = findCapability(inbound.runtime, inbound.protocol);
+    const compatibility = validateInboundCompatibility({
+      runtime: inbound.runtime,
+      protocol: inbound.protocol,
+      transport: inbound.transport,
+      serverName: inbound.sni,
+      params: inbound.params,
+    });
+    const clientReason = clientAdmissionReason(clientDefinition, inbound.protocol);
+
+    if (!inbound.enabled) exclude("Endpoint administratively disabled");
+    else if (!runtimeCapability) exclude("Unsupported runtime/protocol (not in capability registry)");
+    else if (!compatibility.supported) exclude(`Incompatible runtime configuration: ${compatibility.reason}`);
+    else if (!isAdmissible(runtimeCapability, evidence)) exclude("Runtime build has no production qualification; lab evidence required");
     else if (node.status === "quarantined") exclude("Node quarantined for security");
     else if (node.status === "draining") exclude("Node draining");
     else if (node.status === "pending_enrollment") exclude("Node not enrolled yet");
-    else if (h === "confirmed_unreachable") exclude("Sustained failure confirmed by independent vantages");
-    else if (clientDef && !(clientDef.protocols as readonly string[]).includes(ib.protocol)) {
-      exclude(`Client format ${clientDef.label} does not support ${ib.protocol}`);
-    } else {
-      const p = principals.find((x) => x.inboundId === ib.id);
-      if (!p) exclude("No credential provisioned for this user on this endpoint");
-      else {
+    else if (healthState === "confirmed_unreachable") exclude("Sustained failure confirmed by independent vantages");
+    else if (clientReason) exclude(clientReason);
+    else {
+      const endpointPrincipal = activeEndpointPrincipals.find((principal) => principal.inboundId === inbound.id);
+      if (!endpointPrincipal) {
+        exclude("No credential provisioned for this user on this endpoint");
+      } else {
         paths.push({
-          inboundId: ib.id,
-          tag: `${node.name}-${ib.name}`.replace(/[^a-zA-Z0-9_.-]+/g, "-"),
+          inboundId: inbound.id,
+          tag: `${node.name}-${inbound.name}`.replace(/[^a-zA-Z0-9_.-]+/g, "-"),
           nodeName: node.name,
           server: node.publicAddress,
-          port: ib.port,
-          protocol: ib.protocol as AccessPath["protocol"],
-          transport: ib.transport as AccessPath["transport"],
-          credential: decryptSecret(p.credentialEnc),
-          sni: ib.sni,
-          tlsModel: ib.protocol === "vless-reality-vision" ? "reality" : "tls-self-managed",
+          port: inbound.port,
+          protocol: inbound.protocol as AccessPath["protocol"],
+          transport: inbound.transport as AccessPath["transport"],
+          runtime: inbound.runtime as AccessPath["runtime"],
+          credential: decryptSecret(endpointPrincipal.credentialEnc),
+          sni: inbound.sni,
+          tlsModel: inbound.protocol === "vless-reality-vision" ? "reality" : "tls-self-managed",
           reality:
-            ib.protocol === "vless-reality-vision"
+            inbound.protocol === "vless-reality-vision"
               ? {
-                  publicKey: ib.params.realityPublicKey,
-                  shortId: ib.params.shortId,
-                  fingerprint: ib.params.fingerprint ?? "chrome",
-                  flow: ib.params.flow ?? "xtls-rprx-vision",
+                  publicKey: inbound.params.realityPublicKey,
+                  shortId: inbound.params.shortId,
+                  fingerprint: inbound.params.fingerprint ?? "chrome",
+                  flow: inbound.params.flow ?? "xtls-rprx-vision",
                 }
               : undefined,
           route: "direct",
-          enforceability: cap && isHardQuotaCapable(cap, ev) ? "hard" : "metered",
+          enforceability: isHardQuotaCapable(runtimeCapability, evidence) ? "hard" : "metered",
           revision: node.structuralSeq,
-          health: h ?? "healthy",
+          health: healthState ?? "unknown",
         });
       }
     }
   }
-  const diagnostics: string[] = [];
-  for (const p of paths) {
-    if (p.protocol === "vless-reality-vision" && (!p.reality?.publicKey || !p.reality.shortId)) {
-      diagnostics.push(`${p.tag}: Reality public key / short id missing; refusing to emit a weakened endpoint`);
-    }
-  }
+
   return {
-    user: { id: u.id, name: u.name, status: u.status },
+    user: { id: user.id, name: user.name, status: user.status },
     paths,
     excluded,
-    diagnostics,
+    diagnostics: [],
     quotaBytes: plan?.quotaBytes ?? null,
-    expiresAt: u.expiresAt,
+    expiresAt: user.expiresAt,
   };
 }
 
@@ -174,6 +190,60 @@ export function emitSingbox(ir: IR): string {
   );
 }
 
+/** Xray JSON inbound config for M2 Xray runtime nodes. */
+export function emitXray(ir: IR): string {
+  const inbounds: unknown[] = ir.paths.map((p) => {
+    const base: Record<string, unknown> = {
+      tag: p.tag,
+      listen: "0.0.0.0",
+      port: p.port,
+      protocol: "vless",
+      settings: {
+        clients: [{ id: p.credential, flow: p.reality!.flow }],
+        decryption: "none",
+      },
+      streamSettings: {
+        network: p.transport,
+        security: "reality",
+        realitySettings: {
+          show: false,
+          dest: `${p.sni}:443`,
+          xver: 0,
+          serverNames: [p.sni],
+          privateKey: "", // filled by control plane from node secrets
+          shortIds: [p.reality!.shortId],
+        },
+      },
+    };
+    if (p.transport === "tcp") {
+      base.streamSettings = { ...(base.streamSettings as Record<string, unknown>), tcpSettings: { header: { type: "none" } } };
+    }
+    return base;
+  });
+
+  const outbounds: unknown[] = [
+    { tag: "direct", protocol: "freedom", settings: {} },
+    { tag: "block", protocol: "blackhole", settings: {} },
+  ];
+
+  return JSON.stringify(
+    {
+      log: { loglevel: "warning" },
+      inbounds,
+      outbounds,
+      routing: {
+        rules: [
+          { type: "field", inboundTag: [...ir.paths.map((p) => p.tag)], outboundTag: "proxy" },
+          { ip: ["geoip:private"], outboundTag: "block" },
+        ],
+      },
+      dns: { servers: ["https://dns.google/dns-query"] },
+    },
+    null,
+    2,
+  );
+}
+
 const q = (s: string | number) => JSON.stringify(s); // JSON strings are valid YAML scalars
 
 export function emitMihomo(ir: IR): string {
@@ -214,9 +284,21 @@ export function emitUris(ir: IR): string {
 
 export function compile(ir: IR, format: ClientFormat): { body: string; contentType: string } {
   if (ir.diagnostics.length) throw new CompileError(ir.diagnostics);
+  const client = CLIENT_REGISTRY.find((candidate) => candidate.format === format);
+  if (!client) throw new CompileError([`Unsupported subscription format: ${format}`]);
+  const unsupported = ir.paths.filter(
+    (path) => !(client.protocols as readonly string[]).includes(path.protocol),
+  );
+  if (unsupported.length) {
+    throw new CompileError(
+      unsupported.map((path) => `${path.tag}: ${client.label} does not support ${path.protocol}`),
+    );
+  }
   switch (format) {
     case "singbox":
       return { body: emitSingbox(ir), contentType: "application/json; charset=utf-8" };
+    case "xray":
+      return { body: emitXray(ir), contentType: "application/json; charset=utf-8" };
     case "mihomo":
       return { body: emitMihomo(ir), contentType: "text/yaml; charset=utf-8" };
     default:

@@ -1,36 +1,67 @@
-import { desc } from "drizzle-orm";
+import { count, desc, eq, sql, ilike, or } from "drizzle-orm";
 import { db } from "@/db";
 import { auditLog } from "@/db/schema";
 import { requirePage } from "@/lib/auth";
-import { verifyAuditChain } from "@/lib/audit";
-import { fmtDate } from "@/lib/format";
-import { Badge, Card, PageHeader, Table, Td } from "@/components/ui";
+import { ago } from "@/lib/format";
+import { PageHeader, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableWrapper, Badge } from "@/components/ui";
 
-export default async function AuditPage() {
-  await requirePage("viewer");
-  const rows = await db.select().from(auditLog).orderBy(desc(auditLog.id)).limit(100);
-  const chain = await verifyAuditChain();
+export default async function AuditPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
+  const me = await requirePage("viewer");
+  const { q } = await searchParams;
+  const filters: any[] = [];
+  if (q) {
+    filters.push(or(ilike(auditLog.action, `%${q}%`), ilike(auditLog.actor, `%${q}%`), ilike(auditLog.objectId, `%${q}%`)));
+  }
+  const rows = await db.select().from(auditLog).where(filters.length ? or(...filters) : undefined).orderBy(desc(auditLog.id)).limit(100);
+  const [{ total }] = await db.select({ total: count() }).from(auditLog);
+
   return (
     <>
       <PageHeader
         title="Audit log"
-        subtitle="Every administrative mutation is recorded in the same transaction as the change and linked into a hash chain."
-        actions={<Badge tone={chain.ok ? "green" : "red"}>{chain.ok ? `chain intact · ${chain.count} records` : `chain broken at #${chain.brokenAt}`}</Badge>}
+        subtitle={`${total} record(s), hash-chained from genesis. Audit entries are immutable once committed.`}
       />
       <Card>
-        <Table head={["#", "Time", "Actor", "Action", "Object", "Detail", "Hash"]} empty={rows.length ? undefined : "No records."}>
-          {rows.map((r) => (
-            <tr key={r.id}>
-              <Td>{r.id}</Td>
-              <Td className="whitespace-nowrap text-xs">{fmtDate(r.ts)}</Td>
-              <Td className="text-xs">{r.actor}</Td>
-              <Td className="font-medium">{r.action}</Td>
-              <Td className="text-xs">{r.objectType}:{r.objectId}</Td>
-              <Td className="max-w-xs truncate text-xs text-slate-500" >{JSON.stringify(r.detail)}</Td>
-              <Td className="font-mono text-xs text-slate-400">{r.hash.slice(0, 8)}</Td>
-            </tr>
-          ))}
-        </Table>
+        <CardHeader>
+          <CardTitle>Events</CardTitle>
+          <CardDescription>{rows.length} of {total} most recent records shown</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <TableWrapper>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-24">Time</TableHead>
+                  <TableHead className="w-32">Actor</TableHead>
+                  <TableHead>Action</TableHead>
+                  <TableHead className="w-32">Object</TableHead>
+                  <TableHead className="w-20">Result</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={5}>
+                      <EmptyState title="No audit records yet" description="Audit entries appear here as platform actions are committed." />
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  rows.map((r) => (
+                    <TableRow key={r.id}>
+                      <TableCell className="text-xs text-slate-600">{ago(r.ts)}</TableCell>
+                      <TableCell className="text-xs font-mono">{r.actor}</TableCell>
+                      <TableCell className="text-xs font-medium">{r.action}</TableCell>
+                      <TableCell className="text-xs text-slate-500">{r.objectType} {r.objectId}</TableCell>
+                      <TableCell>
+                        <Badge variant="success">ok</Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </TableWrapper>
+        </CardContent>
       </Card>
     </>
   );

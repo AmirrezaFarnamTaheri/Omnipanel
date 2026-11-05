@@ -1,0 +1,197 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.omnipanel.invalid/v2/desired-state.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "signatureVersion",
+    "signerId",
+    "contentDigest",
+    "signature",
+    "manifest"
+  ],
+  "properties": {
+    "signatureVersion": {
+      "const": "ed25519-jcs-v1"
+    },
+    "signerId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+    },
+    "contentDigest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "signature": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{86}$"
+    },
+    "manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "controlPlaneEpoch",
+        "nodeId",
+        "structuralSequence",
+        "membershipSequence",
+        "issuedAt",
+        "expiresAt",
+        "requiredCapabilities",
+        "components",
+        "baseEgressPolicy"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "2.0"
+        },
+        "controlPlaneEpoch": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "nodeId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "structuralSequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "membershipSequence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "issuedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "requiredCapabilities": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+          },
+          "minItems": 1,
+          "uniqueItems": true,
+          "maxItems": 64
+        },
+        "components": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "driver",
+              "runtimeVersion",
+              "artifactDigest",
+              "configurationDigest",
+              "configurationRef",
+              "dependsOn",
+              "listeners",
+              "disruption"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+              },
+              "driver": {
+                "enum": [
+                  "singbox",
+                  "hysteria2",
+                  "xray"
+                ]
+              },
+              "runtimeVersion": {
+                "type": "string",
+                "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?$"
+              },
+              "artifactDigest": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "configurationDigest": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "configurationRef": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+              },
+              "dependsOn": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+                },
+                "uniqueItems": true,
+                "maxItems": 64
+              },
+              "listeners": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "address",
+                    "port",
+                    "transport",
+                    "ipv6Only"
+                  ],
+                  "properties": {
+                    "address": {
+                      "type": "string",
+                      "anyOf": [
+                        {
+                          "format": "ipv4"
+                        },
+                        {
+                          "format": "ipv6"
+                        }
+                      ]
+                    },
+                    "port": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 65535
+                    },
+                    "transport": {
+                      "enum": [
+                        "tcp",
+                        "udp"
+                      ]
+                    },
+                    "ipv6Only": {
+                      "type": "boolean"
+                    }
+                  }
+                },
+                "maxItems": 64
+              },
+              "disruption": {
+                "enum": [
+                  "hot",
+                  "reload",
+                  "listener_restart",
+                  "network"
+                ]
+              }
+            }
+          },
+          "minItems": 1,
+          "maxItems": 64
+        },
+        "baseEgressPolicy": {
+          "const": "deny-protected-v1"
+        }
+      }
+    }
+  }
+}
