@@ -13,7 +13,7 @@ The `internal/control/desiredpublish` Go package consumes already-signed desired
 
 The publisher verifies the Ed25519 signature and exact runtime qualification under a separately provisioned trusted epoch, with immutable copies of trusted signer keys and capability maps. It does not expose its own signer or private key. It locks the approval and approved node binding, checks live organization/node/admin capability state, reads the current head, requires the **next** structural revision in the same epoch and nondecreasing membership cursor, and commits approval consumption, immutable revision, monotonic head, audit and outbox through **one transaction**. A failed step rolls all changes back.
 
-An approval row is **not proof of a human approval ceremony** by itself. It must only be created by a separately secured, authenticated, audited and independently reviewed approval writer with dual-operator approval and protected credentials. That service remains UNIMPLEMENTED. This library is not exposed on an HTTP route.
+An approval row is **not proof of a human approval ceremony** by itself. It must only be created by a separately secured, authenticated, audited and independently reviewed approval writer with dual-operator approval and protected credentials. The session-bound two-stage approval library and a guarded non-deployed HTTP adapter exist, but a production identity provider, independently protected TOTP opener, operator UI, process deployment and verified database roles remain UNIMPLEMENTED. The publisher library is not exposed on an HTTP route.
 
 ## Two-stage independently authenticated approval writer (migration 0010)
 
@@ -24,9 +24,9 @@ An approval row is **not proof of a human approval ceremony** by itself. It must
 3. **Approve:** require the second session plus explicit confirmation of that digest; atomically insert a one-use scoped approval and immutable decision record. The approval expires no later than the original proposal, with a maximum additional five-minute window. A failed decision insert rolls back the approval.
 4. **Publish:** the publisher's existing single transaction now rejects a bare approval row; it requires the matching immutable proposal and decision, exact hashes and sequences, and both original live session credential hashes and independently verified TOTP counters before committing revision, head, audit and outbox. Logout or session ID recycling cannot resurrect a pending authorization.
 
-Migration `0010_agent_desired_dual_approval.sql` adds append-only `agent_desired_publish_proposals` and `agent_desired_publish_decisions`. Approval writers have no signer private key; publishers have no operator session token input or authority to approve their own work. Proposing and reviewing operations remain library functions, not public endpoints.
+Migration `0010_agent_desired_dual_approval.sql` adds append-only `agent_desired_publish_proposals` and `agent_desired_publish_decisions`. Approval writers have no signer private key; publishers have no operator session token input or authority to approve their own work. Proposing and reviewing remain protected library operations with a bounded, non-deployed HTTP adapter; there is no publicly deployed administration endpoint.
 
-**Important remaining limits:** A proposed intent is still only as trustworthy as its configured signer/qualified builds. A live HTTP service must independently enforce login origin, CSRF, safe display of exact reviewed intent, request replay controls and separate runtime database roles. `StepUpService` still needs an externally protected production TOTP secret opener and key custody. Production deployment, real human-session integration, role grants and end-to-end conformance are NOT yet verified.
+**Important remaining limits:** A proposed intent is still only as trustworthy as its configured signer/qualified builds. The HTTP adapter enforces TLS 1.3, same-origin and HMAC-CSRF at its own boundary; deployment must still integrate real login, safe display of exact reviewed intent, shared abuse controls and separately provisioned runtime database roles. `StepUpService` still needs an externally protected production TOTP secret opener and key custody. Production deployment, real human-session integration, role grants and end-to-end conformance are NOT yet verified.
 
 ## Bounded administrator HTTP adapter (5 November continuation)
 
@@ -52,7 +52,8 @@ Unit tests locally exercised the HTTP adapter under race detection and `go vet` 
 | Component | Intended privileges |
 |---|---|
 | Node gateway | `SELECT` on `agent_desired_current` only, separate read-only PostgreSQL identity |
-| Proposer service (future deployed role) | Authentication joins on live sessions/TOTP and publication permissions; bounded `INSERT` on immutable proposals only |\n| Reviewer service (future deployed role) | Read immutable proposals plus live sessions/step-ups; `INSERT` scoped approvals and immutable decisions, never sign or publish |
+| Proposer service (future deployed role) | Authentication joins on live sessions/TOTP and publication permissions; bounded `INSERT` on immutable proposals only |
+| Reviewer service (future deployed role) | Read immutable proposals plus live sessions/step-ups; `INSERT` scoped approvals and immutable decisions, never sign or publish |
 | Publisher (future service role) | Bounded `SELECT` on live session/step-up, proposal and decision provenance; `UPDATE(consumed_at)` on approved row; `INSERT` revisions/audit/outbox, `INSERT/UPDATE` monotonic head, necessary sequence privileges |
 | Outbox delivery worker (future) | Read queued immutable outbox facts and write separate delivery acknowledgements; no revision/head mutation |
 | Migration owner | DDL only; never used for live application traffic |
