@@ -3,6 +3,9 @@ name: Local Sing-box runtime smoke (not M0 acceptance)
 on:
   workflow_dispatch:
   push:
+    # PR branches run through pull_request only; push is for default-branch CI.
+    branches:
+      - main
     paths:
       - "lab/runtime/**"
       - "Makefile"
