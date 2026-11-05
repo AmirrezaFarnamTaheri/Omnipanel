@@ -244,4 +244,34 @@ func TestSessionOutagesAndExpiredCSRFDoNotAuthorize(t *testing.T) {
 	}
 }
 
+func TestReviewAndCSRFEndpointsRejectUnboundedGETBodies(t *testing.T) {
+	for _, endpoint := range []string{CSRFPath, ProposalPath + "/" + proposalID} {
+		for _, tc := range []struct {
+			name string
+			set  func(*http.Request)
+		}{
+			{"known nonempty", func(r *http.Request) {}},
+			{"chunked unknown length", func(r *http.Request) {
+				r.ContentLength = -1
+				r.TransferEncoding = []string{"chunked"}
+			}},
+			{"unknown length", func(r *http.Request) { r.ContentLength = -1 }},
+		} {
+			t.Run(endpoint+"/"+tc.name, func(t *testing.T) {
+				h, f, _ := makeHandler(t)
+				q := request(http.MethodGet, endpoint, "unexpected request content")
+				tc.set(q)
+				w := httptest.NewRecorder()
+				h.ServeHTTP(w, q)
+				if w.Code != http.StatusBadRequest {
+					t.Fatalf("GET with unexpected body was accepted: status=%d", w.Code)
+				}
+				if f.reviews != 0 || f.proposals != 0 || f.approvals != 0 {
+					t.Fatal("unexpected GET body reached protected administrator service")
+				}
+			})
+		}
+	}
+}
+
 func ioBody(s string) io.ReadCloser { return io.NopCloser(strings.NewReader(s)) }
