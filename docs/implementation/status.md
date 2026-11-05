@@ -877,3 +877,29 @@ The bodyless GET fix is committed but the current SHA's full Foundation,
 PostgreSQL and local-runtime CI runs have failed before executing steps.
 Neither code presence nor offline unit tests qualifies the production gates;
 all `gate-*` remain BLOCKED.
+
+## PostgreSQL authenticated-role identity and membership hardening (5 November 2026)
+
+The `internal/control/adminruntime.VerifyPostgresRole` startup guard now
+compares both `current_user` and `session_user` with the explicitly
+configured dedicated account, requires `rolcanlogin`, rejects direct
+superuser/CREATEDB/CREATEROLE/REPLICATION/BYPASSRLS privileges, and
+refuses any `pg_catalog.pg_auth_members` membership. An unprivileged
+effective role is not sufficient when the authenticated login can
+`SET ROLE` or inherit stronger permissions. Catalog names are
+schema-qualified.
+
+Regression tests first reproduced acceptance of a membership-bearing
+account, a privileged authenticated login with a restricted effective role,
+and an account with `NOLOGIN` on the old implementation. On the new
+implementation, the exact two committed Go blobs were verified in a local
+Go 1.23 test module by `git hash-object` and the focused suite passed
+`go test -race -count=1 ./...`, `go vet ./...`, and `gofmt`.
+
+**Limit:** These tests use a fake `database/sql` connector. A PostgreSQL
+role may still hold direct grants on tables or functions, public-schema
+object creation, or unsafe search-path settings without role membership.
+Deployment must provision and audit table, schema, function and sequence
+GRANTs and run live PostgreSQL permission/denial tests with all three
+separately provisioned accounts. CI for the current head remains
+unqualified; all production gates stay BLOCKED.
