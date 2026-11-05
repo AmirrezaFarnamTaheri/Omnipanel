@@ -6,13 +6,17 @@ import (
 	"database/sql/driver"
 	"errors"
 	"io"
+	"strings"
 	"testing"
 )
 
 type roleConnector struct {
-	values    []driver.Value
-	fail      error
-	statement string
+	values        []driver.Value
+	fail          error
+	statement     string
+	hasMembership bool
+	sessionUser   string
+	noLogin       bool
 }
 
 func (c *roleConnector) Connect(context.Context) (driver.Conn, error) { return &roleConn{c}, nil }
@@ -32,7 +36,19 @@ func (c *roleConn) QueryContext(_ context.Context, sql string, _ []driver.NamedV
 	if c.c.fail != nil {
 		return nil, c.c.fail
 	}
-	return &roleRows{values: c.c.values}, nil
+	values := append([]driver.Value(nil), c.c.values...)
+	if strings.Contains(sql, "session_user") {
+		sessionUser := c.c.sessionUser
+		if sessionUser == "" {
+			sessionUser = "omni_session"
+		}
+		canLogin := !c.c.noLogin
+		values = append([]driver.Value{values[0], sessionUser, canLogin}, values[1:]...)
+	}
+	if strings.Contains(sql, "pg_auth_members") {
+		values = append(values, c.c.hasMembership)
+	}
+	return &roleRows{values: values}, nil
 }
 
 type roleRows struct {
@@ -40,8 +56,14 @@ type roleRows struct {
 	done   bool
 }
 
-func (*roleRows) Columns() []string {
-	return []string{"current_user", "rolsuper", "rolcreatedb", "rolcreaterole", "rolreplication", "rolbypassrls"}
+func (r *roleRows) Columns() []string {
+	cols := []string{"current_user", "rolsuper", "rolcreatedb", "rolcreaterole", "rolreplication", "rolbypassrls"}
+	if len(r.values) == 7 {
+		cols = append(cols, "has_role_membership")
+	} else if len(r.values) == 9 {
+		cols = []string{"current_user", "session_user", "rolcanlogin", "rolsuper", "rolcreatedb", "rolcreaterole", "rolreplication", "rolbypassrls", "has_role_membership"}
+	}
+	return cols
 }
 func (*roleRows) Close() error { return nil }
 func (r *roleRows) Next(dst []driver.Value) error {
@@ -90,5 +112,42 @@ func TestRoleGuardRequiresActualNonprivilegedSeparateUser(t *testing.T) {
 	defer db.Close()
 	if !errors.Is(VerifyPostgresRole(ctx, db, "omni_session"), context.Canceled) {
 		t.Fatal("cancelled role verification admitted")
+	}
+}
+
+func TestRoleGuardRejectsInheritedMembership(t *testing.T) {
+	c := &roleConnector{
+		values:        []driver.Value{"omni_session", false, false, false, false, false},
+		hasMembership: true,
+	}
+	db := sql.OpenDB(c)
+	defer db.Close()
+	if err := VerifyPostgresRole(context.Background(), db, "omni_session"); err == nil {
+		t.Fatal("role with membership to another PostgreSQL role was accepted")
+	}
+	if !strings.Contains(c.statement, "pg_auth_members") {
+		t.Fatal("role guard skipped PostgreSQL's role membership catalog")
+	}
+}
+
+// A login with elevated session_user must not pass by changing its effective role.
+func TestRoleGuardRejectsSessionUserDowngradeAndNoLoginRole(t *testing.T) {
+	cases := []struct {
+		name        string
+		sessionUser string
+		noLogin     bool
+	}{
+		{"superuser login with SET ROLE", "postgres", false},
+		{"NOLOGIN effective role", "omni_session", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := &roleConnector{values: []driver.Value{"omni_session", false, false, false, false, false}, sessionUser: tc.sessionUser, noLogin: tc.noLogin}
+			db := sql.OpenDB(c)
+			defer db.Close()
+			if err := VerifyPostgresRole(context.Background(), db, "omni_session"); err == nil {
+				t.Fatal("privileged authenticated session or NOLOGIN effective role was accepted")
+			}
+		})
 	}
 }
