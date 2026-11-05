@@ -97,9 +97,6 @@ jobs:
       - name: Authenticate independent administrator sessions and trusted dual-TOTP approval
         run: go test -race -count=1 -v -tags=postgres_integration ./internal/control/desiredapproval -run '^TestPostgresDualOperatorSignedApproval$'
       - name: Verify three bounded admin DB roles with live PostgreSQL ACL denials
-        run: go test -race -count=1 -v -tags=postgres_integration ./internal/control/adminruntime -run '^TestPostgresAdministratorRoleGrants
-
-      # This CI database is disposable; it is not a PITR, failover or key-restore drill.
-
+        run: go test -race -count=1 -v -tags=postgres_integration ./internal/control/adminruntime -run '^TestPostgresAdministratorRoleGrants$'
 
       # This CI database is disposable; it is not a PITR, failover or key-restore drill.
