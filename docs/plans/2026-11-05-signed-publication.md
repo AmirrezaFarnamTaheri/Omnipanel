@@ -47,6 +47,18 @@ Request JSON is bounded and rejects duplicate top-level keys, unknown fields, tr
 
 Unit tests locally exercised the HTTP adapter under race detection and `go vet` against an isolated shape-compatible `desiredapproval` stub, with an initial failing test before the adapter was implemented. GitHub blob SHA comparisons confirmed the committed files are byte-identical to those locally tested files. Full repository Go, PostgreSQL and deployed-browser tests remain **required**, not inferred from the isolated test harness.
 
+## Loopback administrator runtime and credential loading (5 November 2026)
+
+A separately deployable, deliberately **loopback-only** `cmd/omnipanel-admin` process now wires the protected `desiredapproval/httpapi` adapter to the existing proposal and reviewer services. It **does not sign manifests**, issue administrator logins, verify TOTP secrets itself, or expose node-control endpoints.
+
+Startup loads an owner-only JSON configuration and protected files for the TLS key, HMAC-CSRF secret, signer/qualified-build/epoch trust, and three distinct PostgreSQL DSNs. `internal/control/adminruntime` enforces absolute regular-file paths without final-component symlink traversal, owner-only secret permissions, strict duplicate/unknown-key JSON, a current hostname-matched certificate, a minimum 256-bit CSRF key, exact external signer public keys and runtime qualification. The service requires a non-root operating-system account, an explicit loopback bind, TLS 1.3, bounded HTTP read/write/header deadlines, and a shutdown handler.
+
+PostgreSQL DSNs must use dedicated, different application usernames with `sslmode=verify-full` and an explicit parseable PEM trust root. Only the known `sslmode` and `sslrootcert` URI parameters are accepted, preventing uncontrolled `options`, `sslcert`, `sslkey`, or search-path overrides. Each connection is authenticated and checked at startup against `current_user` and PostgreSQL role privilege flags by `VerifyPostgresRole`, rejecting superuser, CREATE ROLE, CREATE DATABASE, replication and row-level-security bypass privileges. Dedicated pools are used for login-session checking, proposal creation and reviewer/approval operations.
+
+**Evidence:** the runtime configuration and entrypoint were tested with `go test -race -count=1 ./...`, `go vet ./...`, and Go formatting in an isolated module using interface-compatible stubs for existing manifest and approval services. A test first reproduced an unsafe PostgreSQL DSN accepting extra connection options, then verified that a strict parameter allowlist rejected them. Committed Git blobs were SHA-checked against those local files. These tests **do not** establish that the full repository, real PostgreSQL GRANTs, TLS integration or deployment passes. The final PR-head GitHub Actions workflows are the next acceptance checks.
+
+**Still required before deployment:** audited PostgreSQL table/column GRANTs and hardened search paths, protected provisioning and rotation for all credentials, external TOTP verification/key custody, independent signing-key service, real operator UI and session/logout workflow, shared rate limiting and network/access policies, process packaging, metrics, external security review, incident/restore drills and native agent apply/rollback. Do not treat this executable as production-qualified.
+
 ## Database privilege boundary
 
 | Component | Intended privileges |
