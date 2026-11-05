@@ -26,58 +26,8 @@ var (
 	ErrInvalidInput  = errors.New("invalid publication approval input")
 	ErrUnauthorized  = errors.New("publication administrator authorization denied")
 	ErrConflict      = errors.New("publication has already been reviewed")
-	idPattern        = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}// Package desiredapproval provides a non-HTTP, two-stage administrator
-// authorization boundary for already-signed node configuration publications.
-// It neither signs manifests nor creates administrator sessions or TOTP
-// attestations. Callers must separately enforce CSRF/origin and safe UX.
-package desiredapproval
-
-import (
-	"bytes"
-	"context"
-	"crypto/ed25519"
-	"crypto/rand"
-	"crypto/sha256"
-	"database/sql"
-	"encoding/base64"
-	"encoding/hex"
-	"errors"
-	"fmt"
-	"regexp"
-	"time"
-
-	"github.com/AmirrezaFarnamTaheri/Omnipanel/internal/manifest"
-)
-
-var (
-	ErrConfiguration = errors.New("invalid publication approval configuration")
-)
-	digestPattern    = regexp.MustCompile(`^[0-9a-f]{64}// Package desiredapproval provides a non-HTTP, two-stage administrator
-// authorization boundary for already-signed node configuration publications.
-// It neither signs manifests nor creates administrator sessions or TOTP
-// attestations. Callers must separately enforce CSRF/origin and safe UX.
-package desiredapproval
-
-import (
-	"bytes"
-	"context"
-	"crypto/ed25519"
-	"crypto/rand"
-	"crypto/sha256"
-	"database/sql"
-	"encoding/base64"
-	"encoding/hex"
-	"errors"
-	"fmt"
-	"regexp"
-	"time"
-
-	"github.com/AmirrezaFarnamTaheri/Omnipanel/internal/manifest"
-)
-
-var (
-	ErrConfiguration = errors.New("invalid publication approval configuration")
-)
+	idPattern        = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+	digestPattern    = regexp.MustCompile(`^[0-9a-f]{64}$`)
 )
 
 const (
