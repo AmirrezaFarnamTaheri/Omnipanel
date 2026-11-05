@@ -104,7 +104,7 @@ VALUES (21,11,$1,$3,$3,$4),(22,12,$2,$3,$3,$4)`,
 			[]any{hex.EncodeToString(proposerHash[:]), hex.EncodeToString(reviewerHash[:]), now, now.Add(time.Hour)}},
 		{`INSERT INTO agent_grant_stepups(session_id,method,verified_at,expires_at,verified_counter,verified_source)
 VALUES (21,'totp',$1,$2,41,'trusted'),(22,'totp',$1,$2,42,'trusted')`,
-			[]any{now, now.Add(5*time.Minute)}},
+			[]any{now, now.Add(5 * time.Minute)}},
 		{`INSERT INTO nodes(id,name,public_address,provider,status)
 VALUES (31,'publisher-node','192.0.2.31','fixture','pending_enrollment')`, nil},
 		{"INSERT INTO agent_grant_organizations(organization_id,state) VALUES($1,'active')", []any{fixtureOrganization}},
@@ -304,7 +304,9 @@ EXECUTE FUNCTION refuse_publication_audit_test()`)
 envelope_sha256,issuer_admin_id,approver_admin_id,created_at,expires_at)
 VALUES($1::uuid,$2::uuid,$3::uuid,$4::uuid,4,2,$5,11,12,$6,$7)`,
 		bare, fixtureOrganization, fixtureNode, fixtureEpoch, digest4[:], now.Add(-time.Minute), now.Add(10*time.Minute))
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := publisher.PublishSigned(ctx, bare, fixtureNode, wire4); !errors.Is(err, ErrUnauthorizedPublication) {
 		t.Fatalf("approval row without immutable two-person provenance was accepted: %v", err)
 	}
