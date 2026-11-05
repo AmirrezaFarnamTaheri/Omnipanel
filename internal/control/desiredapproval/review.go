@@ -15,22 +15,22 @@ import (
 // and an immutable proposal identifier, never a claimed administrator role.
 type ReviewRequest struct {
 	SessionToken string
-	ProposalID string
+	ProposalID   string
 }
 
 // Reviewable is the exact signed intent displayed to a second administrator.
 // The reviewer must separately confirm EnvelopeSHA256 in Approve. This record
 // carries neither private signing material nor credential plaintext.
 type Reviewable struct {
-	ProposalID string
-	OrganizationID string
-	NodeID string
-	Epoch string
+	ProposalID         string
+	OrganizationID     string
+	NodeID             string
+	Epoch              string
 	StructuralSequence uint64
 	MembershipSequence uint64
-	EnvelopeSHA256 string
-	Envelope []byte
-	ExpiresAt time.Time
+	EnvelopeSHA256     string
+	Envelope           []byte
+	ExpiresAt          time.Time
 }
 
 // Review performs the same live, step-up-backed reviewer authorization as
@@ -116,8 +116,8 @@ func (s *Service) Review(ctx context.Context, input ReviewRequest) (Reviewable, 
 		ProposalID: input.ProposalID, OrganizationID: org, NodeID: node,
 		Epoch: epoch, StructuralSequence: uint64(structural),
 		MembershipSequence: uint64(membership),
-		EnvelopeSHA256: hex.EncodeToString(sha[:]),
-		Envelope: append([]byte(nil), wire...),
-		ExpiresAt: expires,
+		EnvelopeSHA256:     hex.EncodeToString(sha[:]),
+		Envelope:           append([]byte(nil), wire...),
+		ExpiresAt:          expires,
 	}, nil
 }
