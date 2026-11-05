@@ -13,6 +13,8 @@ on:
       - 'db/migrations/0007_agent_grant_verified_stepup.sql'
       - 'db/migrations/0008_agent_signed_desired.sql'
       - 'db/migrations/0009_agent_signed_publication.sql'
+      - 'db/migrations/0010_agent_desired_dual_approval.sql'
+      - 'internal/control/desiredapproval/**'
       - 'internal/control/desiredpublish/**'
       - 'internal/agent/gateway/desiredapi/**'
       - 'go.mod'
@@ -30,6 +32,8 @@ on:
       - 'db/migrations/0007_agent_grant_verified_stepup.sql'
       - 'db/migrations/0008_agent_signed_desired.sql'
       - 'db/migrations/0009_agent_signed_publication.sql'
+      - 'db/migrations/0010_agent_desired_dual_approval.sql'
+      - 'internal/control/desiredapproval/**'
       - 'internal/control/desiredpublish/**'
       - 'internal/agent/gateway/desiredapi/**'
       - 'go.mod'
@@ -84,4 +88,6 @@ jobs:
 
       - name: Exercise independently preapproved signed publication transactions
         run: go test -race -count=1 -v -tags=postgres_integration ./internal/control/desiredpublish -run '^TestPostgresApprovedSignedPublication$'
+      - name: Authenticate independent administrator sessions and trusted dual-TOTP approval
+        run: go test -race -count=1 -v -tags=postgres_integration ./internal/control/desiredapproval -run '^TestPostgresDualOperatorSignedApproval$'
       # This CI database is disposable; it is not a PITR, failover or key-restore drill.
