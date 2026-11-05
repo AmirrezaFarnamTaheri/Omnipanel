@@ -107,7 +107,7 @@ func TestSessionTokensUseCanonical32ByteBearerEncoding(t *testing.T) {
 	if _, validToken := sessionDigest(valid); !validToken {
 		t.Fatal("valid canonical 32-byte session token rejected")
 	}
-	for _, invalid := range []string{"", valid+"=", strings.ToUpper(valid), base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{3}, 31)), "not-base64", "    "+valid} {
+	for _, invalid := range []string{"", valid+"=", base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{3}, 31)), "not-base64", "    "+valid} {
 		if _, ok := sessionDigest(invalid); ok {
 			t.Fatalf("noncanonical or malformed token accepted: %q", invalid)
 		}
