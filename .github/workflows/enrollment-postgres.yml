@@ -2,9 +2,6 @@ name: Enrollment PostgreSQL contract (not production qualification)
 
 on:
   push:
-    # PR branches run through pull_request only; push is for default-branch CI.
-    branches:
-      - main
     paths:
       - 'internal/pki/enrollment/**'
       - 'db/migrations/0001_initial.sql'
