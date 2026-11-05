@@ -15,6 +15,9 @@ on:
       - 'db/migrations/0009_agent_signed_publication.sql'
       - 'db/migrations/0010_agent_desired_dual_approval.sql'
       - 'internal/control/desiredapproval/**'
+      - 'internal/control/adminruntime/**'
+      - 'cmd/omnipanel-admin/**'
+      - 'db/security/**'
       - 'internal/control/desiredpublish/**'
       - 'internal/agent/gateway/desiredapi/**'
       - 'go.mod'
@@ -34,6 +37,9 @@ on:
       - 'db/migrations/0009_agent_signed_publication.sql'
       - 'db/migrations/0010_agent_desired_dual_approval.sql'
       - 'internal/control/desiredapproval/**'
+      - 'internal/control/adminruntime/**'
+      - 'cmd/omnipanel-admin/**'
+      - 'db/security/**'
       - 'internal/control/desiredpublish/**'
       - 'internal/agent/gateway/desiredapi/**'
       - 'go.mod'
@@ -90,4 +96,7 @@ jobs:
         run: go test -race -count=1 -v -tags=postgres_integration ./internal/control/desiredpublish -run '^TestPostgresApprovedSignedPublication$'
       - name: Authenticate independent administrator sessions and trusted dual-TOTP approval
         run: go test -race -count=1 -v -tags=postgres_integration ./internal/control/desiredapproval -run '^TestPostgresDualOperatorSignedApproval$'
+      - name: Verify three bounded admin DB roles with live PostgreSQL ACL denials
+        run: go test -race -count=1 -v -tags=postgres_integration ./internal/control/adminruntime -run '^TestPostgresAdministratorRoleGrants
+
       # This CI database is disposable; it is not a PITR, failover or key-restore drill.

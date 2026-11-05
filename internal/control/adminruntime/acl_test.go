@@ -156,6 +156,19 @@ func TestSessionACLRequiresSameGlobalRowLockGuard(t *testing.T) {
 	}
 }
 
+func TestACLRequiresProtectedLockColumnGrants(t *testing.T) {
+	for _, role := range []string{"propose", "review"} {
+		for _, key := range []string{"admin_lock_update", "session_lock_update", "stepup_lock_update"} {
+			if !requiredACL(role)[key] {
+				t.Fatalf("%s missing essential lock grant %s", role, key)
+			}
+		}
+	}
+	if !requiredACL("review")["proposal_lock_update"] || requiredACL("propose")["proposal_lock_update"] || requiredACL("session")["admin_lock_update"] {
+		t.Fatal("row-lock UPDATE privileges leaked across roles")
+	}
+}
+
 func TestACLRequiresCanonicalPurposeIdentity(t *testing.T) {
 	for _, role := range []string{"session", "propose", "review"} {
 		if !requiredACL(role)["role_purpose_identity"] {
