@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -74,6 +75,7 @@ func TestPostgresApprovedSignedPublication(t *testing.T) {
 		"0004_agent_enrollment_rate_limits.sql", "0005_agent_admin_grants.sql",
 		"0006_agent_grant_logout_revocation.sql", "0007_agent_grant_verified_stepup.sql",
 		"0008_agent_signed_desired.sql", "0009_agent_signed_publication.sql",
+		"0010_agent_desired_dual_approval.sql",
 	} {
 		data, err := os.ReadFile(filepath.Join("..", "..", "..", "db", "migrations", name))
 		if err != nil {
@@ -84,6 +86,12 @@ func TestPostgresApprovedSignedPublication(t *testing.T) {
 		}
 	}
 	now := time.Now().UTC().Truncate(time.Second)
+	// The original session token hashes, not only administrator IDs, must
+	// survive in immutable decision provenance. No plaintext token is stored.
+	proposerToken := base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{0xa3}, 32))
+	reviewerToken := base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{0xb7}, 32))
+	proposerHash := sha256.Sum256([]byte(proposerToken))
+	reviewerHash := sha256.Sum256([]byte(reviewerToken))
 	for _, seed := range []struct {
 		query string
 		args []any
@@ -91,6 +99,12 @@ func TestPostgresApprovedSignedPublication(t *testing.T) {
 		{`INSERT INTO admins(id,email,password_hash,role,totp_enabled,created_at) VALUES
 (11,'pub-issuer@test.invalid','none','owner',true,$1),
 (12,'pub-approver@test.invalid','none','owner',true,$1)`, []any{now.Add(-time.Hour)}},
+		{`INSERT INTO admin_sessions(id,admin_id,token_hash,created_at,last_seen_at,expires_at)
+VALUES (21,11,$1,$3,$3,$4),(22,12,$2,$3,$3,$4)`,
+			[]any{hex.EncodeToString(proposerHash[:]), hex.EncodeToString(reviewerHash[:]), now, now.Add(time.Hour)}},
+		{`INSERT INTO agent_grant_stepups(session_id,method,verified_at,expires_at,verified_counter,verified_source)
+VALUES (21,'totp',$1,$2,41,'trusted'),(22,'totp',$1,$2,42,'trusted')`,
+			[]any{now, now.Add(5*time.Minute)}},
 		{`INSERT INTO nodes(id,name,public_address,provider,status)
 VALUES (31,'publisher-node','192.0.2.31','fixture','pending_enrollment')`, nil},
 		{"INSERT INTO agent_grant_organizations(organization_id,state) VALUES($1,'active')", []any{fixtureOrganization}},
@@ -123,6 +137,28 @@ envelope_sha256,issuer_admin_id,approver_admin_id,created_at,expires_at)
 VALUES($1::uuid,$2::uuid,$3::uuid,$4::uuid,$5,$6,$7,11,12,$8,$9)`,
 			id, fixtureOrganization, fixtureNode, fixtureEpoch,
 			int64(seq), int64(membership), digest[:], now.Add(-time.Minute), expiry)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// These are test-only provenanced rows: the approval writer is
+		// tested independently in desiredapproval's PostgreSQL suite.
+		// A publisher must refuse any bare approval without both proofs.
+		_, err = db.ExecContext(ctx, `INSERT INTO agent_desired_publish_proposals
+(proposal_id,organization_id,node_id,control_plane_epoch,structural_sequence,
+membership_sequence,envelope_sha256,envelope,proposer_admin_id,proposer_session_id,
+proposer_session_hash,proposer_stepup_counter,created_at,expires_at)
+VALUES($1::uuid,$2::uuid,$3::uuid,$4::uuid,$5,$6,$7,$8,11,21,$9,41,$10,$11)`,
+			id, fixtureOrganization, fixtureNode, fixtureEpoch,
+			int64(seq), int64(membership), digest[:], wire,
+			hex.EncodeToString(proposerHash[:]), now.Add(-time.Minute), expiry)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = db.ExecContext(ctx, `INSERT INTO agent_desired_publish_decisions
+(proposal_id,approval_id,approver_admin_id,approver_session_id,
+approver_session_hash,approver_stepup_counter,reviewed_sha256,approved_at)
+VALUES($1::uuid,$1::uuid,12,22,$2,42,$3,$4)`,
+			id, hex.EncodeToString(reviewerHash[:]), digest[:], now.Add(-time.Minute))
 		if err != nil {
 			t.Fatal(err)
 		}
