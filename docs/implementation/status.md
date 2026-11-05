@@ -848,3 +848,32 @@ opener, protected signer, independently deployed CSRF/origin-safe admin API,
 separate production database roles, outbox acknowledgements, privileged node
 apply/rollback, provider acceptance or disaster recovery. All production
 `gate-*` requirements remain BLOCKED.
+
+## Guarded administrator transport and database-role verification (5 November 2026)
+
+The existing `internal/control/desiredapproval/httpapi` adapter now refuses
+unknown-length as well as declared nonempty request bodies on its bodyless
+CSRF-token and signed-review GET routes. The regression test
+`TestReviewAndCSRFEndpointsRejectUnboundedGETBodies` covers fixed-length,
+chunked/unknown-length, and unknown-length requests, and requires rejection
+before the underlying signed approval service is called.
+
+Added the standalone, **not yet deployed** `internal/control/adminruntime`
+PostgreSQL role guard. `VerifyPostgresRole` queries the server's actual
+`current_user` and `pg_roles` privilege flags; it refuses mismatched
+identity, superuser, role creation, database creation, replication and
+row-security bypass. A real database failure or cancelled context fails
+closed. The added regression tests reproduced a missing implementation
+and were subsequently run successfully with `go test -race -count=1 ./...`
+and `go vet ./...` in a local minimal package using a fake SQL driver.
+The Go formatting workflow now explicitly checks this new package.
+
+**Boundary and qualification:** The role guard is a library and is **not yet
+wired into an independently deployed admin service**. A PostgreSQL role can
+still hold table or inherited privileges; this primitive does not replace
+audited GRANTs, restricted search paths, migrations, separate connections,
+protected TOTP/CSRF/signing key custody, or end-to-end authorization tests.
+The bodyless GET fix is committed but the current SHA's full Foundation,
+PostgreSQL and local-runtime CI runs have failed before executing steps.
+Neither code presence nor offline unit tests qualifies the production gates;
+all `gate-*` remain BLOCKED.
