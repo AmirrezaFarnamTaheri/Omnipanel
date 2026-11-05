@@ -219,7 +219,7 @@ func readFile(path string, max int, secret bool) ([]byte, error) {
 	if !strings.HasPrefix(path, "/") || max <= 0 {
 		return nil, errors.New("absolute, bounded file path required")
 	}
-	fd, err := syscall.Open(path, syscall.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0)
+	fd, err := openNoSymlink(path)
 	if err != nil {
 		return nil, err
 	}
@@ -322,4 +322,41 @@ func rejectDuplicates(data []byte) error {
 		return errors.New("unexpected trailing JSON")
 	}
 	return nil
+}
+
+// openNoSymlink walks every path component relative to an already-opened
+// directory. O_NOFOLLOW on the leaf alone does not protect parent directories.
+// Reject ambiguous paths rather than resolving them through ambient symlinks.
+func openNoSymlink(path string) (int, error) {
+	if !strings.HasPrefix(path, "/") {
+		return -1, errors.New("absolute path required")
+	}
+	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
+	if len(parts) == 0 {
+		return -1, errors.New("missing file")
+	}
+	dirFD, err := syscall.Open("/", syscall.O_RDONLY|syscall.O_DIRECTORY|syscall.O_CLOEXEC, 0)
+	if err != nil {
+		return -1, err
+	}
+	defer func() { _ = syscall.Close(dirFD) }()
+	for i, part := range parts {
+		if part == "" || part == "." || part == ".." {
+			return -1, errors.New("non-canonical file path")
+		}
+		flags := syscall.O_RDONLY | syscall.O_NOFOLLOW | syscall.O_CLOEXEC
+		if i < len(parts)-1 {
+			flags |= syscall.O_DIRECTORY
+		}
+		next, err := syscall.Openat(dirFD, part, flags, 0)
+		if err != nil {
+			return -1, err
+		}
+		if i == len(parts)-1 {
+			return next, nil
+		}
+		_ = syscall.Close(dirFD)
+		dirFD = next
+	}
+	return -1, errors.New("missing file")
 }

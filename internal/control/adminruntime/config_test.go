@@ -223,3 +223,29 @@ func TestRejectDatabaseConnectionStringParameterInjection(t *testing.T) {
 		})
 	}
 }
+
+func TestRejectParentSymlinkForProtectedConfigFiles(t *testing.T) {
+	configFile, cfg := validFixture(t)
+	linkedDirectory := filepath.Join(t.TempDir(), "linked-credentials")
+	if err := os.Symlink(filepath.Dir(cfg.CSRFKeyFile), linkedDirectory); err != nil {
+		t.Fatal(err)
+	}
+	cfg.CSRFKeyFile = filepath.Join(linkedDirectory, filepath.Base(cfg.CSRFKeyFile))
+	if err := os.WriteFile(configFile, mustJSON(t, cfg), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(configFile); err == nil {
+		t.Fatal("secret path traversing a parent symlink was accepted")
+	}
+}
+
+func TestRejectNonCanonicalProtectedFilePath(t *testing.T) {
+	configFile, cfg := validFixture(t)
+	cfg.CSRFKeyFile = filepath.Dir(cfg.CSRFKeyFile) + "/./" + filepath.Base(cfg.CSRFKeyFile)
+	if err := os.WriteFile(configFile, mustJSON(t, cfg), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(configFile); err == nil {
+		t.Fatal("ambiguous dot component accepted in protected secret path")
+	}
+}
