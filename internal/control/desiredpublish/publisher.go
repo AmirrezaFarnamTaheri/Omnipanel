@@ -154,6 +154,43 @@ FOR UPDATE OF a,b
 FOR SHARE OF org,n,issuer,approver,proposer_perm,approver_perm,decision,proposal,
  proposer_session,approver_session,proposer_factor,approver_factor`
 
+// Row locks stop privilege mutations, but wall-clock expiration can still
+// happen during a long database stall. Revalidate original session/TOTP and
+// approval deadlines after ALL intent and audit writes, before commit.
+const finalPublicationWindow = `SELECT EXISTS(
+ SELECT 1 FROM agent_desired_publish_approvals a
+ JOIN agent_desired_publish_decisions d ON d.approval_id=a.approval_id
+ JOIN agent_desired_publish_proposals p ON p.proposal_id=d.proposal_id
+ JOIN admin_sessions ps ON ps.id=p.proposer_session_id
+  AND ps.admin_id=a.issuer_admin_id AND ps.token_hash=p.proposer_session_hash
+ JOIN admin_sessions rs ON rs.id=d.approver_session_id
+  AND rs.admin_id=a.approver_admin_id AND rs.token_hash=d.approver_session_hash
+ JOIN agent_grant_stepups pf ON pf.session_id=ps.id
+ JOIN agent_grant_stepups rf ON rf.session_id=rs.id
+ WHERE a.approval_id=$1::uuid AND a.consumed_at IS NOT NULL
+  AND a.expires_at > clock_timestamp() AND p.expires_at > clock_timestamp()
+  AND ps.created_at <= clock_timestamp()
+  AND ps.last_seen_at <= clock_timestamp()
+  AND ps.created_at > clock_timestamp() - interval '12 hours'
+  AND ps.last_seen_at > clock_timestamp() - interval '2 hours'
+  AND ps.expires_at > clock_timestamp()
+  AND pf.method='totp' AND pf.verified_source='trusted'
+  AND pf.verified_counter=p.proposer_stepup_counter
+  AND pf.verified_at <= clock_timestamp()
+  AND pf.verified_at > clock_timestamp() - interval '5 minutes'
+  AND pf.expires_at > clock_timestamp()
+  AND rs.created_at <= clock_timestamp()
+  AND rs.last_seen_at <= clock_timestamp()
+  AND rs.created_at > clock_timestamp() - interval '12 hours'
+  AND rs.last_seen_at > clock_timestamp() - interval '2 hours'
+  AND rs.expires_at > clock_timestamp()
+  AND rf.method='totp' AND rf.verified_source='trusted'
+  AND rf.verified_counter=d.approver_stepup_counter
+  AND rf.verified_at <= clock_timestamp()
+  AND rf.verified_at > clock_timestamp() - interval '5 minutes'
+  AND rf.expires_at > clock_timestamp()
+)`
+
 // PublishSigned is a fail-closed, no-key-custody, transactional publisher.
 // The pending approval must have been inserted by a separately protected,
 // audited approval writer. Failed inserts/updates or audit/outbox writes roll
@@ -263,6 +300,13 @@ VALUES($1::uuid,$2::uuid,$3::uuid,$4,$5,$6,$7,$8) RETURNING audit_id`,
 		auditID, nodeID, int64(m.StructuralSequence))
 	if err != nil {
 		return Receipt{}, fmt.Errorf("enqueue signed publication intent: %w", err)
+	}
+	var authorizationStillFresh bool
+	if err := tx.QueryRowContext(ctx, finalPublicationWindow, approvalID).Scan(&authorizationStillFresh); err != nil {
+		return Receipt{}, fmt.Errorf("revalidate signed publication expiry: %w", err)
+	}
+	if !authorizationStillFresh {
+		return Receipt{}, ErrUnauthorizedPublication
 	}
 	if err := ctx.Err(); err != nil {
 		return Receipt{}, err
