@@ -126,7 +126,9 @@ VALUES (21,'totp',$1,$2,41,'trusted'),(22,'totp',$1,$2,42,'trusted')`,
 VALUES (31,'desired-approval-node','192.0.2.31','fixture','active')`, nil},
 		{"INSERT INTO agent_grant_organizations(organization_id,state) VALUES($1,'active')", []any{testOrg}},
 		{`INSERT INTO agent_desired_publish_permissions(admin_id,organization_id,can_propose,can_approve)
-VALUES (11,$1,true,false),(12,$1,false,true)`, []any{testOrg}},
+-- Proposer deliberately also has reviewer scope: identity separation,
+-- not just a missing permission bit, must reject self-review/self-approval.
+VALUES (11,$1,true,true),(12,$1,false,true)`, []any{testOrg}},
 		{`INSERT INTO agent_grant_node_bindings(node_id,legacy_node_id,organization_id,state,approved_by,approved_at)
 VALUES($1,31,$2,'approved',12,$3)`, []any{testNode, testOrg, now.Add(-time.Minute)}},
 	}
