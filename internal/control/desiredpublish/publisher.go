@@ -16,9 +16,9 @@ import (
 )
 
 var (
-	ErrConfiguration = errors.New("invalid signed publication configuration")
+	ErrConfiguration           = errors.New("invalid signed publication configuration")
 	ErrUnauthorizedPublication = errors.New("signed publication is not independently approved")
-	ErrSequenceConflict = errors.New("signed publication is not next in trusted epoch")
+	ErrSequenceConflict        = errors.New("signed publication is not next in trusted epoch")
 )
 
 const maxSignedEnvelopeBytes = 1 << 20
@@ -28,9 +28,9 @@ var uuidPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a
 // Receipt proves a committed audit/outbox transaction, not a running node
 // configuration or a delivered outbox notification.
 type Receipt struct {
-	AuditID int64
-	NodeID string
-	Epoch string
+	AuditID            int64
+	NodeID             string
+	Epoch              string
 	StructuralSequence uint64
 	MembershipSequence uint64
 }
@@ -39,7 +39,7 @@ type Receipt struct {
 // consumes existing two-person approvals. This does NOT issue approvals,
 // recover epochs, or create signing keys.
 type Publisher struct {
-	db *sql.DB
+	db       *sql.DB
 	verifier manifest.Verifier
 }
 
