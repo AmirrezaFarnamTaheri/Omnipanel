@@ -94,7 +94,7 @@ func TestPostgresApprovedSignedPublication(t *testing.T) {
 	reviewerHash := sha256.Sum256([]byte(reviewerToken))
 	for _, seed := range []struct {
 		query string
-		args []any
+		args  []any
 	}{
 		{`INSERT INTO admins(id,email,password_hash,role,totp_enabled,created_at) VALUES
 (11,'pub-issuer@test.invalid','none','owner',true,$1),
@@ -207,9 +207,12 @@ VALUES($1::uuid,$1::uuid,12,22,$2,42,$3,$4)`,
 			defer wg.Done()
 			_, err := publisher.PublishSigned(ctx, id, fixtureNode, wire2)
 			switch {
-			case err == nil: success.Add(1)
-			case errors.Is(err, ErrSequenceConflict): conflicts.Add(1)
-			default: failed.Add(1)
+			case err == nil:
+				success.Add(1)
+			case errors.Is(err, ErrSequenceConflict):
+				conflicts.Add(1)
+			default:
+				failed.Add(1)
 			}
 		}(id)
 	}
@@ -257,11 +260,15 @@ VALUES($1::uuid,$1::uuid,12,22,$2,42,$3,$4)`,
 	// The transaction must roll everything back, allowing a safe retry.
 	_, err = db.ExecContext(ctx, `CREATE FUNCTION refuse_publication_audit_test()
 RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'audit test failure'; END; $$`)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	_, err = db.ExecContext(ctx, `CREATE TRIGGER refuse_publication_audit_test
 BEFORE INSERT ON agent_desired_publish_audit FOR EACH ROW
 EXECUTE FUNCTION refuse_publication_audit_test()`)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	if receipt, err := publisher.PublishSigned(ctx, third, fixtureNode, wire3); err == nil || receipt.AuditID != 0 {
 		t.Fatal("unaudited signed revision escaped the transaction")
 	}
@@ -273,8 +280,12 @@ EXECUTE FUNCTION refuse_publication_audit_test()`)
 	if err := db.QueryRowContext(ctx, "SELECT consumed_at FROM agent_desired_publish_approvals WHERE approval_id=$1", third).Scan(&consumed); err != nil || consumed.Valid {
 		t.Fatalf("failed publication consumed its authorization: %v %v", consumed, err)
 	}
-	if _, err := db.ExecContext(ctx, "DROP TRIGGER refuse_publication_audit_test ON agent_desired_publish_audit"); err != nil { t.Fatal(err) }
-	if _, err := db.ExecContext(ctx, "DROP FUNCTION refuse_publication_audit_test()"); err != nil { t.Fatal(err) }
+	if _, err := db.ExecContext(ctx, "DROP TRIGGER refuse_publication_audit_test ON agent_desired_publish_audit"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, "DROP FUNCTION refuse_publication_audit_test()"); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := publisher.PublishSigned(ctx, third, fixtureNode, wire3); err != nil {
 		t.Fatalf("approval could not be safely retried after audit rollback: %v", err)
 	}
