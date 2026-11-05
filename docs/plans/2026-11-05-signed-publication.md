@@ -59,6 +59,16 @@ PostgreSQL DSNs must use dedicated, different application usernames with `sslmod
 
 **Still required before deployment:** audited PostgreSQL table/column GRANTs and hardened search paths, protected provisioning and rotation for all credentials, external TOTP verification/key custody, independent signing-key service, real operator UI and session/logout workflow, shared rate limiting and network/access policies, process packaging, metrics, external security review, incident/restore drills and native agent apply/rollback. Do not treat this executable as production-qualified.
 
+## Loopback administrator runtime foundation (5 November 2026)
+
+The `cmd/omnipanel-admin` command adds an **undeployed** loopback-only TLS 1.3 process embedding `desiredapproval/httpapi`. Its `internal/control/adminruntime` bootstrap requires process-owned private configuration and keys, exact origin/server certificate verification, independently pinned Ed25519 signer/epoch/build trust, and three distinct PostgreSQL pools for live sessions, proposers and reviewers.
+
+Database connections require `sslmode=verify-full`, a readable PEM certificate trust root, and an allowlist of just `sslmode` and `sslrootcert` connection options. Each live principal is checked against the configured database username; superuser, CREATEDB, CREATEROLE, REPLICATION and BYPASSRLS are refused. Startup as root is refused. Sensitive files must be bounded regular files without symlink traversal, owned by the process and protected from group/other access.
+
+The service applies TLS, request and shutdown timeouts and has no manifest signing key or publication route. **Local isolated validation** with shape-compatible stubs ran `go test -race -count=1 ./...` and `go vet ./...` successfully for the new configuration and entrypoint packages. The PostgreSQL DSN option regression first failed before the allowlist fix, then passed. Git blobs were verified against the local files. This is **not** a verified full-repository, live database or deployed browser acceptance test.
+
+Production role grants, protected TOTP custody, operator UI/session integration, independent signing service, outbox dispatcher, node apply/rollback, quotas and metering, external interoperability, credential rotation and PITR/key/epoch recovery remain **BLOCKED**. Do not infer production readiness from bootstrap code or local tests.
+
 ## Database privilege boundary
 
 | Component | Intended privileges |
