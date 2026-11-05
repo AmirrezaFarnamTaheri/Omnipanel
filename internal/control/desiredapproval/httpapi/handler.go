@@ -254,7 +254,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			problem(w, http.StatusMethodNotAllowed)
 			return
 		}
-		if r.ContentLength > 0 {
+		if r.ContentLength != 0 {
 			problem(w, http.StatusBadRequest)
 			return
 		}
@@ -308,7 +308,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		problem(w, http.StatusMethodNotAllowed)
 		return
 	}
-	if r.ContentLength > 0 {
+	if r.ContentLength != 0 {
 		problem(w, http.StatusBadRequest)
 		return
 	}
