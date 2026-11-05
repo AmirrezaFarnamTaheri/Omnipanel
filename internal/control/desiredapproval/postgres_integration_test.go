@@ -31,32 +31,40 @@ func signedApprovalFixture(t *testing.T, now time.Time) ([]byte, manifest.Verifi
 	m := manifest.Manifest{
 		SchemaVersion: "2.0", ControlPlaneEpoch: testEpoch, NodeID: testNode,
 		StructuralSequence: 1, MembershipSequence: 1,
-		IssuedAt: now.Add(-time.Minute).Format(time.RFC3339),
-		ExpiresAt: now.Add(10*time.Minute).Format(time.RFC3339),
+		IssuedAt:             now.Add(-time.Minute).Format(time.RFC3339),
+		ExpiresAt:            now.Add(10 * time.Minute).Format(time.RFC3339),
 		RequiredCapabilities: []string{"singbox-reality-vision"},
 		Components: []manifest.Component{{
 			ID: "reality", Driver: "singbox", RuntimeVersion: "1.14.4+omni.2",
 			ArtifactDigest: artifact, ConfigurationDigest: strings.Repeat("b", 64),
 			ConfigurationRef: "reality-config", DependsOn: []string{},
-			Listeners: []manifest.Listener{{Address: "0.0.0.0", Port: 443, Transport: "tcp"}},
+			Listeners:  []manifest.Listener{{Address: "0.0.0.0", Port: 443, Transport: "tcp"}},
 			Disruption: "listener_restart",
 		}}, BaseEgressPolicy: "deny-protected-v1",
 	}
 	raw, err := json.Marshal(m)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	var obj any
-	if err := json.Unmarshal(raw, &obj); err != nil { t.Fatal(err) }
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		t.Fatal(err)
+	}
 	canonical, err := json.Marshal(obj)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	digest := sha256.Sum256(canonical)
 	signature := ed25519.Sign(key, append([]byte("omnipanel:desired-state:ed25519-jcs-v1\n"), canonical...))
 	wire, err := json.Marshal(manifest.Envelope{
 		SignatureVersion: "ed25519-jcs-v1", SignerID: "trusted-test",
 		ContentDigest: hex.EncodeToString(digest[:]),
-		Signature: base64.RawURLEncoding.EncodeToString(signature),
-		Manifest: m,
+		Signature:     base64.RawURLEncoding.EncodeToString(signature),
+		Manifest:      m,
 	})
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	verifier := testVerifier()
 	verifier.TrustedSigners = map[string]ed25519.PublicKey{"trusted-test": key.Public().(ed25519.PublicKey)}
 	verifier.Now = func() time.Time { return now }
@@ -71,13 +79,21 @@ func TestPostgresDualOperatorSignedApproval(t *testing.T) {
 	}
 	ctx := context.Background()
 	admin, err := sql.Open("postgres", dsn)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(func() { _ = admin.Close() })
-	if err := admin.PingContext(ctx); err != nil { t.Fatal(err) }
+	if err := admin.PingContext(ctx); err != nil {
+		t.Fatal(err)
+	}
 	var salt [8]byte
-	if _, err := rand.Read(salt[:]); err != nil { t.Fatal(err) }
+	if _, err := rand.Read(salt[:]); err != nil {
+		t.Fatal(err)
+	}
 	schema := "approval_chain_" + hex.EncodeToString(salt[:])
-	if _, err := admin.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil { t.Fatal(err) }
+	if _, err := admin.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(func() {
 		if _, err := admin.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE"); err != nil {
 			t.Errorf("drop isolated schema: %v", err)
@@ -87,7 +103,9 @@ func TestPostgresDualOperatorSignedApproval(t *testing.T) {
 	query.Set("options", "-csearch_path="+schema)
 	u.RawQuery = query.Encode()
 	db, err := sql.Open("postgres", u.String())
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(func() { _ = db.Close() })
 	db.SetMaxOpenConns(8)
 	var actual string
@@ -102,7 +120,9 @@ func TestPostgresDualOperatorSignedApproval(t *testing.T) {
 		"0010_agent_desired_dual_approval.sql",
 	} {
 		migration, err := os.ReadFile(filepath.Join("..", "..", "..", "db", "migrations", name))
-		if err != nil { t.Fatal(err) }
+		if err != nil {
+			t.Fatal(err)
+		}
 		if _, err := db.ExecContext(ctx, string(migration)); err != nil {
 			t.Fatalf("migration %s failed: %v", name, err)
 		}
@@ -112,7 +132,10 @@ func TestPostgresDualOperatorSignedApproval(t *testing.T) {
 	reviewerToken := base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{0xb7}, 32))
 	proposerHash := sha256.Sum256([]byte(proposerToken))
 	reviewerHash := sha256.Sum256([]byte(reviewerToken))
-	fixtures := []struct { query string; args []any }{
+	fixtures := []struct {
+		query string
+		args  []any
+	}{
 		{`INSERT INTO admins(id,email,password_hash,role,totp_enabled,created_at)
 VALUES (11,'desired-proposer@test.invalid','none','owner',true,$1),
        (12,'desired-reviewer@test.invalid','none','owner',true,$1)`, []any{now.Add(-time.Hour)}},
@@ -121,7 +144,7 @@ VALUES (21,11,$1,$3,$3,$4),(22,12,$2,$3,$3,$4)`,
 			[]any{hex.EncodeToString(proposerHash[:]), hex.EncodeToString(reviewerHash[:]), now, now.Add(time.Hour)}},
 		{`INSERT INTO agent_grant_stepups(session_id,method,verified_at,expires_at,verified_counter,verified_source)
 VALUES (21,'totp',$1,$2,41,'trusted'),(22,'totp',$1,$2,42,'trusted')`,
-			[]any{now, now.Add(5*time.Minute)}},
+			[]any{now, now.Add(5 * time.Minute)}},
 		{`INSERT INTO nodes(id,name,public_address,provider,status)
 VALUES (31,'desired-approval-node','192.0.2.31','fixture','active')`, nil},
 		{"INSERT INTO agent_grant_organizations(organization_id,state) VALUES($1,'active')", []any{testOrg}},
@@ -139,13 +162,15 @@ VALUES($1,31,$2,'approved',12,$3)`, []any{testNode, testOrg, now.Add(-time.Minut
 	}
 	wire, verifier := signedApprovalFixture(t, now)
 	svc, err := NewService(db, verifier)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	hash := sha256.Sum256(wire)
 	expected := hex.EncodeToString(hash[:])
 	proposal := ProposalRequest{
 		SessionToken: proposerToken, ProposalID: testProposal,
 		OrganizationID: testOrg, NodeID: testNode,
-		Envelope: wire, Lifetime: 5*time.Minute,
+		Envelope: wire, Lifetime: 5 * time.Minute,
 	}
 	receipt, err := svc.Propose(ctx, proposal)
 	if err != nil || receipt.ProposalID != testProposal || receipt.EnvelopeSHA256 != expected {
@@ -174,7 +199,9 @@ VALUES($1,31,$2,'approved',12,$3)`, []any{testNode, testOrg, now.Add(-time.Minut
 	}
 	revoke := func(query string, args ...any) {
 		t.Helper()
-		if _, err := db.ExecContext(ctx, query, args...); err != nil { t.Fatal(err) }
+		if _, err := db.ExecContext(ctx, query, args...); err != nil {
+			t.Fatal(err)
+		}
 	}
 	revoke("UPDATE agent_desired_publish_permissions SET can_approve=false WHERE admin_id=12")
 	if _, err := svc.Approve(ctx, approveReq); !errors.Is(err, ErrUnauthorized) {
@@ -234,7 +261,9 @@ FOR EACH ROW EXECUTE FUNCTION reject_desired_decision_test()`)
 	// that old proposal's TOTP attestation.
 	second := proposal
 	second.ProposalID = "e090a8e3-12fd-48d5-8dc4-0ab999a3da11"
-	if _, err := svc.Propose(ctx, second); err != nil { t.Fatal(err) }
+	if _, err := svc.Propose(ctx, second); err != nil {
+		t.Fatal(err)
+	}
 	revoke("DELETE FROM admin_sessions WHERE id=21")
 	if _, err := svc.Approve(ctx, ApprovalRequest{
 		SessionToken: reviewerToken, ProposalID: second.ProposalID, ExpectedSHA256: expected,
