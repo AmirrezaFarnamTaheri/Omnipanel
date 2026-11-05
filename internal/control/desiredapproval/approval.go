@@ -202,6 +202,44 @@ func (s *Service) verify(node string, wire []byte) (manifest.Verified, error) {
 	return out, nil
 }
 
+// Even while auth rows are locked, clock-based session/TOTP authorization
+// can expire. A database-clocked recheck immediately before commit prevents
+// an authorization admitted before an unexpected storage stall from escaping.
+const stillFreshSessionSQL = `SELECT EXISTS(
+ SELECT 1 FROM admin_sessions s
+ JOIN admins a ON a.id=s.admin_id
+ JOIN agent_desired_publish_permissions perm
+  ON perm.admin_id=a.id AND perm.organization_id=$2::uuid
+ JOIN agent_grant_stepups su ON su.session_id=s.id
+ WHERE s.token_hash=$1 AND a.id=$3 AND s.id=$4
+  AND a.role='owner' AND a.totp_enabled
+  AND (CASE WHEN $6::boolean THEN perm.can_propose ELSE perm.can_approve END)
+  AND s.created_at <= clock_timestamp()
+  AND s.last_seen_at <= clock_timestamp()
+  AND s.created_at > clock_timestamp() - interval '12 hours'
+  AND s.last_seen_at > clock_timestamp() - interval '2 hours'
+  AND s.expires_at > clock_timestamp()
+  AND su.method='totp' AND su.verified_source='trusted'
+  AND su.verified_counter=$5
+  AND su.verified_at <= clock_timestamp()
+  AND su.verified_at > clock_timestamp() - interval '5 minutes'
+  AND su.expires_at > clock_timestamp()
+) AND $7 > clock_timestamp()`
+
+func stillFreshSession(ctx context.Context, tx *sql.Tx, hash, org string,
+	actor session, proposer bool, deadline time.Time) error {
+	var valid bool
+	err := tx.QueryRowContext(ctx, stillFreshSessionSQL,
+		hash, org, actor.adminID, actor.sessionID, actor.counter, proposer, deadline).Scan(&valid)
+	if err != nil {
+		return fmt.Errorf("revalidate expiring administrator authority: %w", err)
+	}
+	if !valid {
+		return ErrUnauthorized
+	}
+	return nil
+}
+
 // Propose records the exact signed bytes and the first administrator's
 // session-bound trusted TOTP proof. The proposal itself grants no right to
 // publish; another live administrator must review and approve it.
@@ -261,6 +299,9 @@ VALUES($1::uuid,$2::uuid,$3::uuid,$4::uuid,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
 	}
 	if !expires.After(current) {
 		return ProposalReceipt{}, ErrUnauthorized
+	}
+	if err := stillFreshSession(ctx, tx, hash, input.OrganizationID, actor, true, expires); err != nil {
+		return ProposalReceipt{}, err
 	}
 	if err := ctx.Err(); err != nil {
 		return ProposalReceipt{}, err
@@ -420,6 +461,14 @@ VALUES($1::uuid,$2::uuid,$3,$4,$5,$6,$7,$8)`,
 	}
 	if !expires.After(stillCurrent) {
 		return ApprovalReceipt{}, ErrUnauthorized
+	}
+	if err := stillFreshSession(ctx, tx, proposerHash, org, session{
+		adminID: proposerAdmin, sessionID: proposerSession, counter: proposerCounter,
+	}, true, expires); err != nil {
+		return ApprovalReceipt{}, err
+	}
+	if err := stillFreshSession(ctx, tx, sessionHash, org, reviewer, false, expires); err != nil {
+		return ApprovalReceipt{}, err
 	}
 	if err := ctx.Err(); err != nil {
 		return ApprovalReceipt{}, err
