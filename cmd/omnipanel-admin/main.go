@@ -64,7 +64,13 @@ func makeVerifier(t adminruntime.Trust) manifest.Verifier {
 	return v
 }
 
-func openRole(ctx context.Context, uri string, username string) (*sql.DB, error) {
+func openRole(ctx context.Context, uri string, username string, purpose string) (*sql.DB, error) {
+	if purpose != "session" && purpose != "propose" && purpose != "review" {
+		return nil, errors.New("invalid administrator database purpose")
+	}
+	if username != adminruntime.ExpectedPrincipal(purpose) {
+		return nil, errors.New("canonical administrator database identity required for requested purpose")
+	}
 	db, err := sql.Open("postgres", uri)
 	if err != nil {
 		return nil, errors.New("cannot construct PostgreSQL role pool")
@@ -81,6 +87,10 @@ func openRole(ctx context.Context, uri string, username string) (*sql.DB, error)
 	if err := adminruntime.VerifyPostgresRole(check, db, username); err != nil {
 		db.Close()
 		return nil, errors.New("PostgreSQL runtime identity failed least-privilege guard")
+	}
+	if err := adminruntime.VerifyPostgresACL(check, db, purpose); err != nil {
+		db.Close()
+		return nil, errors.New("PostgreSQL runtime privileges failed ACL preflight")
 	}
 	return db, nil
 }
@@ -101,7 +111,7 @@ func run(ctx context.Context, configPath string) error {
 	}()
 	for _, role := range []string{"session", "propose", "review"} {
 		uri := cfg.DSNs[role]
-		db, err := openRole(ctx, uri.String(), uri.User.Username())
+		db, err := openRole(ctx, uri.String(), uri.User.Username(), role)
 		if err != nil {
 			return fmt.Errorf("%s role startup blocked: %w", role, err)
 		}

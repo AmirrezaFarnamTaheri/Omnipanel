@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/ed25519"
 	"encoding/base64"
 	"github.com/AmirrezaFarnamTaheri/Omnipanel/internal/control/adminruntime"
@@ -28,5 +29,19 @@ func TestVerifierTrustMustComeFromProtectedConfiguration(t *testing.T) {
 	trust.Builds["singbox"] = adminruntime.Build{}
 	if !got.AllowedCapabilities["singbox-reality-vision"] || got.QualifiedBuilds["singbox"].Version != "1.14.4+omni.2" {
 		t.Fatal("trusted verification data aliased mutable config")
+	}
+}
+
+func TestUnknownDatabasePurposeRejectedBeforeOpeningConnection(t *testing.T) {
+	_, err := openRole(context.Background(), "postgres://invalid", "omni_session", "publisher")
+	if err == nil || !strings.Contains(err.Error(), "invalid administrator database purpose") {
+		t.Fatalf("unsafe runtime database role intent was not rejected: %v", err)
+	}
+}
+
+func TestRuntimeRejectsNoncanonicalPurposeDatabaseUsername(t *testing.T) {
+	_, err := openRole(context.Background(), "postgres://invalid", "omni_session", "session")
+	if err == nil || !strings.Contains(err.Error(), "canonical administrator database identity") {
+		t.Fatalf("unprotected database username was not rejected: %v", err)
 	}
 }
