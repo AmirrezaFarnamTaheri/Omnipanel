@@ -15,21 +15,21 @@ import (
 )
 
 const (
-	testNode = "62c478bb-47c3-4dc6-a363-a2fbde813810"
-	testOrg = "4b0895aa-1701-4c6d-8b31-91d642c23e1c"
-	testEpoch = "ea2429da-7540-4e40-ae70-38fd3f19794b"
+	testNode     = "62c478bb-47c3-4dc6-a363-a2fbde813810"
+	testOrg      = "4b0895aa-1701-4c6d-8b31-91d642c23e1c"
+	testEpoch    = "ea2429da-7540-4e40-ae70-38fd3f19794b"
 	testProposal = "f090a8e3-12fd-48d5-8dc4-0ab999a3da10"
 )
 
 func testVerifier() manifest.Verifier {
 	return manifest.Verifier{
-		AuthorizedEpoch: testEpoch,
-		TrustedSigners: map[string]ed25519.PublicKey{"trusted-test": bytes.Repeat([]byte{0x09}, ed25519.PublicKeySize)},
+		AuthorizedEpoch:     testEpoch,
+		TrustedSigners:      map[string]ed25519.PublicKey{"trusted-test": bytes.Repeat([]byte{0x09}, ed25519.PublicKeySize)},
 		AllowedCapabilities: map[string]bool{"singbox-reality-vision": true},
 		QualifiedBuilds: map[string]manifest.Build{"singbox": {
 			Driver: "singbox", Version: "1.14.4+omni.2",
 			ArtifactDigest: strings.Repeat("a", 64),
-			Capabilities: []string{"singbox-reality-vision"},
+			Capabilities:   []string{"singbox-reality-vision"},
 		}},
 		MaxClockSkew: time.Second,
 	}
@@ -107,7 +107,7 @@ func TestSessionTokensUseCanonical32ByteBearerEncoding(t *testing.T) {
 	if _, validToken := sessionDigest(valid); !validToken {
 		t.Fatal("valid canonical 32-byte session token rejected")
 	}
-	for _, invalid := range []string{"", valid+"=", base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{3}, 31)), "not-base64", "    "+valid} {
+	for _, invalid := range []string{"", valid + "=", base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{3}, 31)), "not-base64", "    " + valid} {
 		if _, ok := sessionDigest(invalid); ok {
 			t.Fatalf("noncanonical or malformed token accepted: %q", invalid)
 		}
