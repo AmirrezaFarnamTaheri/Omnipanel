@@ -23,22 +23,72 @@ import (
 
 var (
 	ErrConfiguration = errors.New("invalid publication approval configuration")
-	ErrInvalidInput = errors.New("invalid publication approval input")
-	ErrUnauthorized = errors.New("publication administrator authorization denied")
-	ErrConflict = errors.New("publication has already been reviewed")
-	idPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
-	digestPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	ErrInvalidInput  = errors.New("invalid publication approval input")
+	ErrUnauthorized  = errors.New("publication administrator authorization denied")
+	ErrConflict      = errors.New("publication has already been reviewed")
+	idPattern        = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}// Package desiredapproval provides a non-HTTP, two-stage administrator
+// authorization boundary for already-signed node configuration publications.
+// It neither signs manifests nor creates administrator sessions or TOTP
+// attestations. Callers must separately enforce CSRF/origin and safe UX.
+package desiredapproval
+
+import (
+	"bytes"
+	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"crypto/sha256"
+	"database/sql"
+	"encoding/base64"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"regexp"
+	"time"
+
+	"github.com/AmirrezaFarnamTaheri/Omnipanel/internal/manifest"
+)
+
+var (
+	ErrConfiguration = errors.New("invalid publication approval configuration")
+)
+	digestPattern    = regexp.MustCompile(`^[0-9a-f]{64}// Package desiredapproval provides a non-HTTP, two-stage administrator
+// authorization boundary for already-signed node configuration publications.
+// It neither signs manifests nor creates administrator sessions or TOTP
+// attestations. Callers must separately enforce CSRF/origin and safe UX.
+package desiredapproval
+
+import (
+	"bytes"
+	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"crypto/sha256"
+	"database/sql"
+	"encoding/base64"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"regexp"
+	"time"
+
+	"github.com/AmirrezaFarnamTaheri/Omnipanel/internal/manifest"
+)
+
+var (
+	ErrConfiguration = errors.New("invalid publication approval configuration")
+)
 )
 
 const (
-	maxEnvelope = 1 << 20
+	maxEnvelope         = 1 << 20
 	minProposalLifetime = time.Minute
 	maxProposalLifetime = 10 * time.Minute
-	approvedLifetime = 5 * time.Minute
+	approvedLifetime    = 5 * time.Minute
 )
 
 type Service struct {
-	db *sql.DB
+	db       *sql.DB
 	verifier manifest.Verifier
 }
 
@@ -73,35 +123,35 @@ func NewService(db *sql.DB, verifier manifest.Verifier) (*Service, error) {
 }
 
 type ProposalRequest struct {
-	SessionToken string
-	ProposalID string
+	SessionToken   string
+	ProposalID     string
 	OrganizationID string
-	NodeID string
-	Envelope []byte
-	Lifetime time.Duration
+	NodeID         string
+	Envelope       []byte
+	Lifetime       time.Duration
 }
 
 type ProposalReceipt struct {
-	ProposalID string
-	NodeID string
+	ProposalID     string
+	NodeID         string
 	EnvelopeSHA256 string
-	ExpiresAt time.Time
+	ExpiresAt      time.Time
 }
 
 type ApprovalRequest struct {
 	SessionToken string
-	ProposalID string
+	ProposalID   string
 	// Must be the 64-byte lowercase hex digest displayed by a separate
 	// authenticated review of the immutable signed proposal's exact bytes.
 	ExpectedSHA256 string
 }
 
 type ApprovalReceipt struct {
-	ProposalID string
-	ApprovalID string
-	NodeID string
+	ProposalID     string
+	ApprovalID     string
+	NodeID         string
 	EnvelopeSHA256 string
-	ExpiresAt time.Time
+	ExpiresAt      time.Time
 }
 
 func sessionDigest(token string) (string, bool) {
@@ -128,9 +178,9 @@ func newUUID() (string, error) {
 }
 
 type session struct {
-	adminID int64
+	adminID   int64
 	sessionID int64
-	counter int64
+	counter   int64
 }
 
 // sessionProof obtains administrator identity solely from a LIVE session
