@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { sql, eq } from "drizzle-orm";
+import { Layers } from "lucide-react";
 import { db } from "@/db";
 import { plans, users } from "@/db/schema";
 import { requirePage } from "@/lib/auth";
@@ -15,7 +16,9 @@ import {
   CardTitle,
   EmptyState,
   Field,
+  Input,
   PageHeader,
+  Select,
   Table,
   TableBody,
   TableCell,
@@ -36,14 +39,17 @@ export default async function PlansPage() {
   const idem = randomUUID();
 
   return (
-    <>
+    <div className="space-y-6">
       <PageHeader
-        title="Plans"
+        title="Plans & Quota Enforcement"
         subtitle="Enforcement classes state what the platform can actually guarantee. Hard quotas are only available once a runtime has verified lab evidence."
       />
-      <Card className="mb-6">
+      <Card>
         <CardHeader>
-          <CardTitle>Plans</CardTitle>
+          <div className="flex items-center gap-2">
+            <Layers className="h-4 w-4 text-indigo-600" />
+            <CardTitle>Plans</CardTitle>
+          </div>
           <CardDescription>{rows.length} plan(s) defined</CardDescription>
         </CardHeader>
         <CardContent>
@@ -64,33 +70,47 @@ export default async function PlansPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Plan</TableHead>
-                      <TableHead className="w-24">Quota</TableHead>
-                      <TableHead className="w-24">Enforcement</TableHead>
-                      <TableHead className="w-16">Users</TableHead>
+                      <TableHead className="w-36 text-right">Quota</TableHead>
+                      <TableHead className="w-32">Enforcement</TableHead>
+                      <TableHead className="w-24 text-right">Users</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {rows.map(({ p, n }) => (
                       <TableRow key={p.id}>
-                        <TableCell className="font-medium">{p.name}</TableCell>
-                        <TableCell>{p.quotaBytes ? fmtBytes(p.quotaBytes) : "unlimited"}</TableCell>
+                        <TableCell className="font-semibold text-slate-900">{p.name}</TableCell>
+                        <TableCell className="text-right font-mono tabular-nums">
+                          {p.quotaBytes ? fmtBytes(p.quotaBytes) : "unlimited"}
+                        </TableCell>
                         <TableCell>
                           <Badge
-                            variant={p.enforcement === "hard" ? "destructive" : p.enforcement === "metered" ? "warning" : "secondary"}
+                            variant={
+                              p.enforcement === "hard"
+                                ? "destructive"
+                                : p.enforcement === "metered"
+                                  ? "warning"
+                                  : "secondary"
+                            }
                           >
                             {p.enforcement}
                           </Badge>
                         </TableCell>
-                        <TableCell>{n}</TableCell>
+                        <TableCell className="text-right font-mono tabular-nums">{n}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
               </TableWrapper>
-              <ul className="mt-6 space-y-1 text-xs text-slate-500">
-                <li><strong>hard</strong>: strict byte budget within a verified overshoot bound.</li>
-                <li><strong>metered</strong>: traffic is measured; new sessions are denied after the measured limit with a delay bounded by collection interval.</li>
-                <li><strong>unmetered</strong>: measured for visibility only.</li>
+              <ul className="mt-6 space-y-1.5 rounded-lg border border-slate-200 bg-slate-50/70 p-3.5 text-xs text-slate-600">
+                <li>
+                  <strong className="text-slate-900">hard</strong>: strict byte budget within a verified overshoot bound (gated until lab evidence is reviewed).
+                </li>
+                <li>
+                  <strong className="text-slate-900">metered</strong>: traffic is measured via monotonic generation checkpoints; new sessions are denied after the measured limit.
+                </li>
+                <li>
+                  <strong className="text-slate-900">unmetered</strong>: measured for visibility only.
+                </li>
               </ul>
             </>
           )}
@@ -100,29 +120,30 @@ export default async function PlansPage() {
         <Card>
           <CardHeader>
             <CardTitle>Create plan</CardTitle>
+            <CardDescription>Define a quota tier and enforcement level.</CardDescription>
           </CardHeader>
           <CardContent>
             <ActionForm action={createPlanAction} submit="Create plan">
               <input type="hidden" name="idemKey" value={idem} />
               <div className="grid gap-4 md:grid-cols-3">
                 <Field label="Name">
-                  <input name="name" required className="w-full" />
+                  <Input name="name" required placeholder="Enterprise 500 GB" />
                 </Field>
                 <Field label="Monthly quota (GB)">
-                  <input name="quotaGb" type="number" step="any" min="0" className="w-full" />
+                  <Input name="quotaGb" type="number" step="any" min="0" placeholder="500" className="font-mono" />
                 </Field>
                 <Field label="Enforcement">
-                  <select name="enforcement" className="w-full">
+                  <Select name="enforcement">
                     <option value="metered">metered</option>
                     <option value="hard">hard (requires verified evidence)</option>
                     <option value="unmetered">unmetered</option>
-                  </select>
+                  </Select>
                 </Field>
               </div>
             </ActionForm>
           </CardContent>
         </Card>
       )}
-    </>
+    </div>
   );
 }

@@ -1,28 +1,34 @@
-import { eq, lte, and, sql } from "drizzle-orm";
+import { eq, lte, and, asc } from "drizzle-orm";
 import { db } from "@/db";
 import { outboxJobs, users } from "@/db/schema";
 import { evaluateUserPolicy } from "@/lib/users";
 
-/** Durable worker: claims jobs with SKIP LOCKED so concurrent drainers never double-process. */
+/** Durable worker: claims pending jobs in transaction order so drainers process deterministically. */
 export async function drainOutbox(limit = 100) {
   let processed = 0;
   for (let i = 0; i < limit; i++) {
     const done = await db.transaction(async (tx) => {
-      const rows = await tx.execute<{ id: number; kind: string; payload: Record<string, unknown>; attempts: number }>(
-        sql`select id, kind, payload, attempts from outbox_jobs
-            where status = 'pending' and run_after <= now()
-            order by id limit 1 for update skip locked`,
-      );
-      // drizzle runs raw `sql` templates in rowMode "array", so rows come back as
-      // positional arrays [id, kind, payload, attempts], not keyed objects.
-      const job = rows.rows[0] as unknown as [number, string, Record<string, unknown>, number];
+      const [job] = await tx
+        .select({
+          id: outboxJobs.id,
+          kind: outboxJobs.kind,
+          payload: outboxJobs.payload,
+          attempts: outboxJobs.attempts,
+        })
+        .from(outboxJobs)
+        .where(and(eq(outboxJobs.status, "pending"), lte(outboxJobs.runAfter, new Date())))
+        .orderBy(asc(outboxJobs.id))
+        .limit(1);
       if (!job) return false;
-      const [jobId, jobKind, jobPayload, jobAttempts] = job;
+      const { id: jobId, kind: jobKind, payload: jobPayload, attempts: jobAttempts } = job;
       try {
         if (jobKind === "quota.evaluate") {
           await evaluateUserPolicy(tx, Number(jobPayload.userId));
         }
-        await tx.update(outboxJobs).set({ status: "done", doneAt: new Date(), attempts: jobAttempts + 1 }).where(eq(outboxJobs.id, jobId));
+        await tx
+          .update(outboxJobs)
+          .set({ status: "done", doneAt: new Date(), attempts: jobAttempts + 1 })
+          .where(eq(outboxJobs.id, jobId));
       } catch (e) {
         await tx
           .update(outboxJobs)

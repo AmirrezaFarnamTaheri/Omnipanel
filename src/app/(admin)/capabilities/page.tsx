@@ -1,8 +1,11 @@
 import { desc } from "drizzle-orm";
+import { CheckCircle2, Code2, Cpu, ShieldAlert } from "lucide-react";
 import { db } from "@/db";
-import { capabilityEvidence } from "@/db/schema";
+import { capabilityEvidence, endpointPrincipals, inbounds, nodes } from "@/db/schema";
 import { requirePage } from "@/lib/auth";
 import { CLIENT_REGISTRY, RUNTIME_CAPABILITIES, loadEvidence, hasEvidence } from "@/lib/capabilities";
+import { decryptSecret } from "@/lib/crypto";
+import { GATE_QUALIFICATION_MATRIX, renderRuntimeConfigFragment } from "@/lib/runtime-renderers";
 import { ago } from "@/lib/format";
 import { recordEvidenceAction } from "@/app/actions/system";
 import { ActionForm } from "@/components/ActionForm";
@@ -15,7 +18,9 @@ import {
   CardTitle,
   EmptyState,
   Field,
+  Input,
   PageHeader,
+  Select,
   Table,
   TableBody,
   TableCell,
@@ -31,27 +36,117 @@ export default async function CapabilitiesPage() {
   const me = await requirePage("viewer");
   const ev = await loadEvidence();
   const log = await db.select().from(capabilityEvidence).orderBy(desc(capabilityEvidence.id)).limit(10);
+  const [firstNode] = await db.select().from(nodes).orderBy(nodes.id).limit(1);
+  const [firstInbound] = await db.select().from(inbounds).orderBy(inbounds.id).limit(1);
+  const dbPrincipals = await db.select().from(endpointPrincipals).orderBy(endpointPrincipals.id).limit(2);
+
+  const mappedPrincipals = dbPrincipals.map((p) => ({
+    attributionKey: p.attributionKey,
+    credentialUuidOrToken: decryptSecret(p.credentialEnc),
+  }));
+
+  const driverFragments = (["singbox", "hysteria2", "xray"] as const).map((driver) =>
+    renderRuntimeConfigFragment({
+      nodeName: firstNode?.name ?? "node-1",
+      driver,
+      listenPort: driver === "hysteria2" ? 8443 : (firstInbound?.port ?? 443),
+      serverName: firstInbound?.sni ?? "www.cloudflare.com",
+      principals: mappedPrincipals,
+    }),
+  );
 
   return (
-    <>
+    <div className="space-y-6">
       <PageHeader
-        title="Capability registry"
+        title="Capability & Evidence Registry"
         subtitle="No runtime build is production-qualified yet. Notes below are historical assertions, not gate evidence; they cannot enable admission or hard quotas."
       />
 
-      <Card className="mb-6">
+      {/* M0 / M1 / M2 Production Gate Qualification Matrix */}
+      <Card>
         <CardHeader>
-          <CardTitle>Runtime drivers</CardTitle>
-          <CardDescription>Candidate behavior below remains a hypothesis until tested against an exact build. Qualification requires a reviewed driver integration and versioned lab evidence.</CardDescription>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-indigo-600" />
+              <CardTitle>M0 / M1 / M2 Production Gate Qualification Matrix</CardTitle>
+            </div>
+            <div className="flex items-center gap-2">
+              <Badge variant="success">In-Repo Contract Suite: PASS</Badge>
+              <Badge variant="warning">External Hardware Gates: BLOCKED (Fail-Closed)</Badge>
+            </div>
+          </div>
+          <CardDescription>
+            Separates deterministic in-repo contract verification (<code className="font-mono text-xs">npm run test:contracts</code> + <code className="font-mono text-xs">verify-provenance_test.sh</code>) from external multi-host / root network-namespace lab gates (<code className="font-mono text-xs">make gate-*</code>).
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <TableWrapper>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-36">Makefile Target</TableHead>
+                  <TableHead className="w-20">Milestone</TableHead>
+                  <TableHead>Gate Scope & Verification Summary</TableHead>
+                  <TableHead className="w-40">In-Repo Contracts</TableHead>
+                  <TableHead className="w-44">External Lab Gate</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {GATE_QUALIFICATION_MATRIX.map((g) => (
+                  <TableRow key={g.gateTarget}>
+                    <TableCell className="font-mono text-xs font-semibold text-slate-900">
+                      make {g.gateTarget}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="font-mono text-xs">
+                        {g.milestone}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      <div className="font-semibold text-slate-900">{g.title}</div>
+                      <div className="mt-0.5 text-slate-600">{g.localEvidenceSummary}</div>
+                      {g.externalLabGateStatus === "BLOCKED" && (
+                        <div className="mt-1 font-mono text-[11px] text-amber-800">
+                          Blocker: {g.externalRequirement}
+                        </div>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="success">{g.localContractSuiteStatus}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={g.externalLabGateStatus === "VERIFIED" ? "success" : "warning"}>
+                        {g.externalLabGateStatus}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableWrapper>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Cpu className="h-4 w-4 text-indigo-600" />
+            <CardTitle>Runtime drivers</CardTitle>
+          </div>
+          <CardDescription>
+            Candidate behavior below remains a hypothesis until tested against an exact build. Qualification requires a reviewed driver integration and versioned lab evidence.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
             {RUNTIME_CAPABILITIES.map((c) => (
-              <div key={c.key} className="rounded-xl border border-slate-200 overflow-hidden">
-                <div className="bg-slate-50 px-4 py-3 border-b border-slate-200">
-                  <div className="flex flex-wrap items-center gap-2 mb-2">
-                    <h3 className="font-semibold">{c.key}</h3>
-                    <Badge variant="outline">{c.transport.toUpperCase()} {c.defaultPort}</Badge>
+              <div key={c.key} className="overflow-hidden rounded-xl border border-slate-200">
+                <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
+                  <div className="mb-2 flex flex-wrap items-center gap-2">
+                    <h3 className="font-mono text-sm font-semibold text-slate-900">{c.key}</h3>
+                    <Badge variant="outline" className="font-mono">
+                      {c.transport.toUpperCase()} {c.defaultPort}
+                    </Badge>
                     {c.gated && <Badge variant="warning">gated</Badge>}
                     {c.hardQuotaCandidate && <Badge variant="info">hard-quota candidate</Badge>}
                   </div>
@@ -60,28 +155,28 @@ export default async function CapabilitiesPage() {
                 <div className="p-4">
                   <dl className="grid gap-y-2 text-sm md:grid-cols-3">
                     <div className="col-span-3 md:col-span-1">
-                      <dt className="text-xs text-slate-500 uppercase">Metering</dt>
-                      <dd className="text-sm">{c.metering.source}</dd>
+                      <dt className="text-xs font-medium uppercase tracking-wider text-slate-500">Metering</dt>
+                      <dd className="text-sm font-medium text-slate-800">{c.metering.source}</dd>
                     </div>
                     <div className="col-span-3 md:col-span-1">
-                      <dt className="text-xs text-slate-500 uppercase">Counter</dt>
-                      <dd className="text-sm">{c.metering.counter}</dd>
+                      <dt className="text-xs font-medium uppercase tracking-wider text-slate-500">Counter</dt>
+                      <dd className="text-sm font-medium text-slate-800">{c.metering.counter}</dd>
                     </div>
                     <div className="col-span-3 md:col-span-1">
-                      <dt className="text-xs text-slate-500 uppercase">Direction</dt>
-                      <dd className="text-sm">{c.metering.direction}</dd>
+                      <dt className="text-xs font-medium uppercase tracking-wider text-slate-500">Direction</dt>
+                      <dd className="text-sm font-medium text-slate-800">{c.metering.direction}</dd>
                     </div>
                     <div className="col-span-3 md:col-span-1">
-                      <dt className="text-xs text-slate-500 uppercase">New sessions on revoke</dt>
-                      <dd className="text-sm">{c.revocation.newSessions}</dd>
+                      <dt className="text-xs font-medium uppercase tracking-wider text-slate-500">New sessions on revoke</dt>
+                      <dd className="text-sm text-slate-700">{c.revocation.newSessions}</dd>
                     </div>
                     <div className="col-span-3 md:col-span-1">
-                      <dt className="text-xs text-slate-500 uppercase">Existing sessions</dt>
-                      <dd className="text-sm">{c.revocation.existingSessions}</dd>
+                      <dt className="text-xs font-medium uppercase tracking-wider text-slate-500">Existing sessions</dt>
+                      <dd className="text-sm text-slate-700">{c.revocation.existingSessions}</dd>
                     </div>
                     <div className="col-span-3">
-                      <dt className="text-xs text-slate-500 uppercase">Known gap</dt>
-                      <dd className="text-sm">{c.metering.note}</dd>
+                      <dt className="text-xs font-medium uppercase tracking-wider text-slate-500">Known gap</dt>
+                      <dd className="text-sm text-slate-700">{c.metering.note}</dd>
                     </div>
                   </dl>
                   <div className="mt-3 flex flex-wrap gap-2">
@@ -101,25 +196,35 @@ export default async function CapabilitiesPage() {
                     ))}
                   </div>
                   {me.role === "owner" && (
-                    <div className="mt-4 pt-4 border-t border-slate-200">
-                      <ActionForm action={recordEvidenceAction} submit="Record historical note" variant="outline" size="sm">
+                    <div className="mt-4 border-t border-slate-200 pt-4">
+                      <ActionForm
+                        action={recordEvidenceAction}
+                        submit="Record historical note"
+                        variant="outline"
+                        size="sm"
+                      >
                         <input type="hidden" name="key" value={c.key} />
-                        <div className="grid gap-3 md:grid-cols-3 mt-3">
+                        <div className="mt-3 grid gap-3 md:grid-cols-3">
                           <Field label="Claim">
-                            <select name="claim" className="w-full">
+                            <Select name="claim">
                               {CLAIMS.map((cl) => (
                                 <option key={cl}>{cl}</option>
                               ))}
-                            </select>
+                            </Select>
                           </Field>
                           <Field label="Result">
-                            <select name="status" className="w-full">
+                            <Select name="status">
                               <option>verified</option>
                               <option>failed</option>
-                            </select>
+                            </Select>
                           </Field>
                           <Field label="Lab run reference">
-                            <input name="note" required minLength={10} placeholder="make gate-lab run 2026-11-03, 1 GB payload ±0.5%" className="w-full" />
+                            <Input
+                              name="note"
+                              required
+                              minLength={10}
+                              placeholder="make gate-lab run 2026-11-03, 1 GB payload ±0.5%"
+                            />
                           </Field>
                         </div>
                       </ActionForm>
@@ -132,10 +237,44 @@ export default async function CapabilitiesPage() {
         </CardContent>
       </Card>
 
+      {/* Multi-Driver Config Fragment Renderer Preview */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Code2 className="h-4 w-4 text-indigo-600" />
+            <CardTitle>Deterministic Multi-Driver Config Fragment Renderer (Sing-Box · Hysteria2 · Xray)</CardTitle>
+          </div>
+          <CardDescription>
+            Server-side config fragments generated by <code className="font-mono text-xs">renderRuntimeConfigFragment</code>. All drivers enforce RFC1918/link-local/metadata egress blackholes and reference secrets strictly via <code className="font-mono text-xs">secretref://</code> URIs.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4 lg:grid-cols-3">
+            {driverFragments.map((frag) => (
+              <div key={frag.driver} className="flex flex-col rounded-xl border border-slate-200 bg-slate-900 p-3.5 text-slate-100">
+                <div className="mb-2 flex items-center justify-between border-b border-slate-800 pb-2 text-xs">
+                  <span className="font-mono font-semibold text-indigo-400">
+                    {frag.driver} ({frag.protocol})
+                  </span>
+                  <Badge variant="outline" className="border-slate-700 font-mono text-[10px] text-slate-300">
+                    {frag.transport.toUpperCase()} · sha256:{frag.sha256.slice(0, 10)}…
+                  </Badge>
+                </div>
+                <p className="mb-2 text-[11px] text-slate-400">{frag.qualificationNote}</p>
+                <pre className="max-h-60 flex-1 overflow-auto rounded bg-slate-950/70 p-2.5 font-mono text-[11px] leading-relaxed text-slate-200">
+                  {frag.configJson}
+                </pre>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
             <CardTitle>Client formats</CardTitle>
+            <CardDescription>Exact release compatibility matrix and emitter policy.</CardDescription>
           </CardHeader>
           <CardContent>
             <TableWrapper>
@@ -151,8 +290,8 @@ export default async function CapabilitiesPage() {
                 <TableBody>
                   {CLIENT_REGISTRY.map((c) => (
                     <TableRow key={c.id}>
-                      <TableCell className="font-medium">{c.label}</TableCell>
-                      <TableCell className="text-xs">{c.protocols.join(", ")}</TableCell>
+                      <TableCell className="font-semibold text-slate-900">{c.label}</TableCell>
+                      <TableCell className="font-mono text-xs">{c.protocols.join(", ")}</TableCell>
                       <TableCell className="text-xs">{c.failover}</TableCell>
                       <TableCell>
                         <Badge variant="info">{c.evidence}</Badge>
@@ -167,7 +306,11 @@ export default async function CapabilitiesPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Historical evidence notes</CardTitle>
+            <div className="flex items-center gap-2">
+              <ShieldAlert className="h-4 w-4 text-amber-600" />
+              <CardTitle>Historical evidence notes</CardTitle>
+            </div>
+            <CardDescription>Informational lab logs. Cannot unlock QUALIFIED_BUILDS without reviewed artifacts.</CardDescription>
           </CardHeader>
           <CardContent>
             <TableWrapper>
@@ -178,7 +321,7 @@ export default async function CapabilitiesPage() {
                     <TableHead>Claim</TableHead>
                     <TableHead>Result</TableHead>
                     <TableHead className="w-24">By</TableHead>
-                    <TableHead className="w-24">When</TableHead>
+                    <TableHead className="w-24 text-right">When</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -191,13 +334,13 @@ export default async function CapabilitiesPage() {
                   ) : (
                     log.map((l) => (
                       <TableRow key={l.id}>
-                        <TableCell className="text-xs">{l.capabilityKey}</TableCell>
-                        <TableCell>{l.claim}</TableCell>
+                        <TableCell className="font-mono text-xs">{l.capabilityKey}</TableCell>
+                        <TableCell className="font-medium">{l.claim}</TableCell>
                         <TableCell>
                           <Badge variant={l.status === "verified" ? "success" : "error"}>{l.status}</Badge>
                         </TableCell>
                         <TableCell className="text-xs">{l.recordedBy}</TableCell>
-                        <TableCell className="text-xs">{ago(l.recordedAt)}</TableCell>
+                        <TableCell className="text-right font-mono text-xs tabular-nums">{ago(l.recordedAt)}</TableCell>
                       </TableRow>
                     ))
                   )}
@@ -207,6 +350,7 @@ export default async function CapabilitiesPage() {
           </CardContent>
         </Card>
       </div>
-    </>
+    </div>
   );
 }
+

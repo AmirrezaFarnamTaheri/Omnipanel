@@ -270,3 +270,91 @@ export async function listUsers(ids?: number[]) {
     .orderBy(users.id);
   return ids ? q.where(inArray(users.id, ids)) : q;
 }
+
+export type BulkUserOperationKind =
+  | "extend_expiry_30d"
+  | "resume_suspended"
+  | "assign_plan"
+  | "rotate_all_tokens";
+
+export async function bulkSubscriberOperation(
+  actor: Actor,
+  input: {
+    operation: BulkUserOperationKind;
+    planId?: number;
+  },
+): Promise<{ affectedCount: number; operation: BulkUserOperationKind }> {
+  return db.transaction(async (tx) => {
+    const allUsers = await tx.select().from(users).orderBy(users.id);
+    if (allUsers.length === 0) {
+      return { affectedCount: 0, operation: input.operation };
+    }
+
+    let affectedCount = 0;
+    const now = new Date();
+
+    if (input.operation === "extend_expiry_30d") {
+      for (const u of allUsers) {
+        const baseMs = u.expiresAt && u.expiresAt.getTime() > now.getTime() ? u.expiresAt.getTime() : now.getTime();
+        const nextExpires = new Date(baseMs + 30 * 86400_000);
+        await tx
+          .update(users)
+          .set({
+            expiresAt: nextExpires,
+            version: sql`${users.version} + 1`,
+            updatedAt: now,
+          })
+          .where(eq(users.id, u.id));
+        if (u.status === "expired") {
+          await setUserStatus(tx, actor, u.id, "active", null);
+        }
+        affectedCount += 1;
+      }
+    } else if (input.operation === "resume_suspended") {
+      for (const u of allUsers) {
+        if (u.status !== "active") {
+          await setUserStatus(tx, actor, u.id, "active", null);
+          affectedCount += 1;
+        }
+      }
+    } else if (input.operation === "assign_plan") {
+      if (!input.planId) throw invalid("Plan ID is required for bulk plan assignment");
+      await assertPlanAdmissible(tx, input.planId);
+      for (const u of allUsers) {
+        if (u.planId !== input.planId) {
+          await tx
+            .update(users)
+            .set({
+              planId: input.planId,
+              version: sql`${users.version} + 1`,
+              updatedAt: now,
+            })
+            .where(eq(users.id, u.id));
+          await tx.insert(outboxJobs).values({ kind: "quota.evaluate", payload: { userId: u.id } });
+          affectedCount += 1;
+        }
+      }
+    } else if (input.operation === "rotate_all_tokens") {
+      for (const u of allUsers) {
+        const token = `omni_${randomToken(32)}`;
+        await tx
+          .update(subscriptionTokens)
+          .set({ revokedAt: now })
+          .where(and(eq(subscriptionTokens.userId, u.id), sql`revoked_at is null`));
+        await tx
+          .insert(subscriptionTokens)
+          .values({ userId: u.id, tokenHash: sha256(token), prefix: token.slice(0, 9) });
+        affectedCount += 1;
+      }
+    }
+
+    await audit(tx, actor, "user.bulk_lifecycle", "user", "batch", {
+      operation: input.operation,
+      affectedCount,
+      planId: input.planId ?? null,
+    });
+
+    return { affectedCount, operation: input.operation };
+  });
+}
+

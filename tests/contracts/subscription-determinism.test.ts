@@ -5,7 +5,7 @@ import { CompileError, compile, emitMihomo, emitSingbox, emitUris, type AccessPa
 
 // Deterministic subscription emission contract, adopted as a regression from
 // the 3X-UI host-ordering design (internal/sub/host_order.go at pinned
-// revision 83ea59f; see docs/research/four-panel-integration-assessment.md).
+// revision 83ea59f; see docs/adr/0003-go-vite-migration-and-source-reuse.md).
 // OmniPanel keeps ordering authority in the IR (buildIR orders by inbound id);
 // emitters must be stable, preserve that order exactly and never introduce
 // map-iteration or locale randomness. Per-format exclusions stay explicit.

@@ -11,12 +11,10 @@ services + PostgreSQL and a static React/Vite admin UI; that migration has
 ## Start here
 
 - [Architecture and release contract](docs/architecture-v2.md)
-- [Implementation status, gaps and next increments](docs/implementation/status.md)
+- [Implementation status and gate verification](docs/implementation/status.md)
 - [Architecture decisions](docs/adr/0001-v2-baseline.md)
-- [Approved Go/Vite architecture and source-reuse decision](docs/adr/0003-go-vite-migration-and-source-reuse.md)
-- [Repository-aligned implementation roadmap](docs/plans/2026-11-04-omnipanel-v2-rollout.md)
-- [First executable runtime/agent implementation plan](docs/plans/2026-11-04-runtime-evidence-and-driver-contract.md)
-- [Hiddify Manager and 1Panel source analysis](docs/research/hiddify-1panel-review.md)
+- [Source-project reuse boundaries](docs/adr/0002-source-project-reuse.md)
+- [Go/Vite migration and source-reuse decision](docs/adr/0003-go-vite-migration-and-source-reuse.md)
 - [Initial threat model](docs/security/threat-model.md)
 - [Lab procedure and evidence format](lab/README.md)
 - [Wire-contract notes](contracts/README.md)
@@ -126,11 +124,11 @@ per-user revocation. The full `make gate-lab` remains blocked pending external
 node/client evidence and the remaining Task 1 requirements.
 ## Existing panel capability review
 
-A clean-room review of the supplied [S-UI](https://github.com/AmirrezaFarnamTaheri/S-UI)
-and [3X-UI](https://github.com/AmirrezaFarnamTaheri/3X-UI) repositories, including
-what was adopted, deferred and excluded, is documented in
-[docs/research/source-project-review.md](docs/research/source-project-review.md).
-No GPL-3.0 source files were copied or vendored.
+A clean-room review of S-UI, 3X-UI, Hiddify Manager and 1Panel — including
+what was adopted, deferred and excluded — is codified in
+[docs/adr/0002-source-project-reuse.md](docs/adr/0002-source-project-reuse.md) and
+[docs/adr/0003-go-vite-migration-and-source-reuse.md](docs/adr/0003-go-vite-migration-and-source-reuse.md).
+No third-party source files were copied or vendored.
 
 ## License
 

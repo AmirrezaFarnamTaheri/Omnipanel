@@ -47,9 +47,11 @@ printf 'runtime binary fixture\n' > "$artifact"
 printf 'signed artifact bundle fixture\n' > "$artifact_bundle"
 printf 'signed metadata bundle fixture\n' > "$metadata_bundle"
 artifact_digest="$(sha256sum "$artifact" | awk '{print $1}')"
-jq -n \
-  --arg digest "$artifact_digest" \
-  '{
+
+node -e '
+  const fs = require("node:fs");
+  const [outPath, digest] = process.argv.slice(1);
+  fs.writeFileSync(outPath, JSON.stringify({
     runtime: "sing-box",
     version: "1.14.4+omni.2",
     sourceRepository: "SagerNet/sing-box",
@@ -58,14 +60,15 @@ jq -n \
     sourceSignatureStatus: "github-api-verified",
     goVersion: "go version go1.26.10 linux/amd64",
     buildTags: "with_v2ray_api,with_utls,badlinkname,tfogo_checklinkname0",
-    artifactSha256: $digest
-  }' > "$metadata"
+    artifactSha256: digest,
+  }, null, 2) + "\n");
+' "$metadata" "$artifact_digest"
 
 # Builder, signed test metadata and runtime runner must agree on the exact
 # custom build ID. This detects drift before any privileged namespace work.
 build_version="$(awk -F '"' '/^readonly runtime_version=/{ print $2; exit }' "$script_dir/build-sing-box.sh")"
 runner_version="$(awk -F '"' '/^runtime_version=/{ print $2; exit }' "$script_dir/run-local-reality.sh")"
-fixture_version="$(jq --exit-status --raw-output '.version' "$metadata")"
+fixture_version="$(node -e 'const fs = require("node:fs"); process.stdout.write(JSON.parse(fs.readFileSync(process.argv[1], "utf8")).version);' "$metadata")"
 if [[ -z "$build_version" || "$build_version" != "$runner_version" || "$runner_version" != "$fixture_version" ]]; then
   echo "FAIL: version mismatch between pinned builder, metadata, and runtime runner" >&2
   exit 1
@@ -91,15 +94,15 @@ printf 'tampered runtime\n' >> "$artifact"
 assert_failure "artifact digest mismatch" "$verifier" "$artifact" "$metadata" "$artifact_bundle" "$metadata_bundle"
 printf 'runtime binary fixture\n' > "$artifact"
 
-jq '.version = "latest"' "$metadata" > "$temp_dir/invalid-metadata.json"
+node -e 'const fs = require("node:fs"); const d = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); d.version = "latest"; fs.writeFileSync(process.argv[2], JSON.stringify(d));' "$metadata" "$temp_dir/invalid-metadata.json"
 assert_failure "unapproved runtime version" "$verifier" "$artifact" "$temp_dir/invalid-metadata.json" "$artifact_bundle" "$metadata_bundle"
 
 # Regression: runtime startup previously failed because a signed custom build
 # declared only the V2Ray statistics API and lacked required Reality/uTLS.
-jq '.buildTags = "with_v2ray_api,badlinkname,tfogo_checklinkname0"' "$metadata" > "$temp_dir/missing-utls.json"
+node -e 'const fs = require("node:fs"); const d = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); d.buildTags = "with_v2ray_api,badlinkname,tfogo_checklinkname0"; fs.writeFileSync(process.argv[2], JSON.stringify(d));' "$metadata" "$temp_dir/missing-utls.json"
 assert_failure "missing required Reality uTLS build tag" "$verifier" "$artifact" "$temp_dir/missing-utls.json" "$artifact_bundle" "$metadata_bundle"
 
-jq '.buildTags = "with_utls,badlinkname,tfogo_checklinkname0"' "$metadata" > "$temp_dir/missing-stats.json"
+node -e 'const fs = require("node:fs"); const d = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); d.buildTags = "with_utls,badlinkname,tfogo_checklinkname0"; fs.writeFileSync(process.argv[2], JSON.stringify(d));' "$metadata" "$temp_dir/missing-stats.json"
 assert_failure "missing required per-user stats build tag" "$verifier" "$artifact" "$temp_dir/missing-stats.json" "$artifact_bundle" "$metadata_bundle"
 
 assert_failure "missing artifact bundle" "$verifier" "$artifact" "$metadata" "$temp_dir/missing.bundle" "$metadata_bundle"

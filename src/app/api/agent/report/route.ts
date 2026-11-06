@@ -5,6 +5,7 @@ import { authenticateAgent } from "@/lib/nodes";
 import { handle, invalid, json, ProblemError } from "@/lib/problem";
 import { rateLimit } from "@/lib/ratelimit";
 import { recordObservation } from "@/lib/health";
+import { recordNodeResourceTelemetry } from "@/lib/governance-store";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +22,15 @@ type Body = {
   agentVersion?: string;
   components?: Array<{ name: string; state: string; detail?: string }>;
   probes?: Array<{ inboundId: number; vantage?: string; level: "L0" | "L1" | "L2" | "L3"; ok: boolean; latencyMs?: number; detail?: string }>;
+  resourceSnapshot?: {
+    generation: number;
+    sampledAt: string;
+    cpuPercent: number;
+    memoryTotalBytes: number;
+    memoryUsedBytes: number;
+    filesystems: Array<{ id: string; totalBytes: number; usedBytes: number }>;
+    network: Array<{ interface: string; receivedBytes: number; sentBytes: number }>;
+  };
 };
 
 export const POST = handle(async (req) => {
@@ -74,5 +84,17 @@ export const POST = handle(async (req) => {
       });
     }
   });
+  if (b.resourceSnapshot) {
+    await recordNodeResourceTelemetry(`agent:${node.name}`, node.id, {
+      nodeId: node.name,
+      generation: b.resourceSnapshot.generation,
+      sampledAt: new Date(b.resourceSnapshot.sampledAt),
+      cpuPercent: b.resourceSnapshot.cpuPercent,
+      memoryTotalBytes: b.resourceSnapshot.memoryTotalBytes,
+      memoryUsedBytes: b.resourceSnapshot.memoryUsedBytes,
+      filesystems: b.resourceSnapshot.filesystems ?? [],
+      network: b.resourceSnapshot.network ?? [],
+    });
+  }
   return json({ ok: true });
 });

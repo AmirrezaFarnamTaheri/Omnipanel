@@ -1,14 +1,20 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { endpointPrincipals, inbounds, nodes, plans, subscriptionTokens, users } from "@/db/schema";
 import { requirePage } from "@/lib/auth";
-import { buildIR } from "@/lib/subscription";
+import { decryptSecret, sha256 } from "@/lib/crypto";
+import { buildIR, compile, type AccessPath, type IR } from "@/lib/subscription";
+import { compileClientBalancerDocument } from "@/lib/subscription-balancer";
+import { profileMetadataHeaders, subscriptionUserinfo } from "@/lib/subscription-profile";
+import { getSubscriptionProfileConfig } from "@/lib/governance-store";
 import { usageForUser } from "@/lib/users";
 import { CLIENT_REGISTRY } from "@/lib/capabilities";
 import { ago, fmtBytes, fmtDate } from "@/lib/format";
 import { rotateEndpointAction, rotateTokenAction, updateUserAction, userStatusAction } from "@/app/actions/people";
 import { ActionForm } from "@/components/ActionForm";
+import { SubscriptionInspector, type CompiledFormatPreview } from "@/components/SubscriptionInspector";
 import {
   Badge,
   Card,
@@ -18,7 +24,10 @@ import {
   CardTitle,
   EmptyState,
   Field,
+  Input,
   PageHeader,
+  Select,
+  statusTone,
   Table,
   TableBody,
   TableCell,
@@ -27,6 +36,8 @@ import {
   TableRow,
   TableWrapper,
 } from "@/components/ui";
+
+export const dynamic = "force-dynamic";
 
 export default async function UserPage({ params }: { params: Promise<{ id: string }> }) {
   const me = await requirePage("viewer");
@@ -39,6 +50,8 @@ export default async function UserPage({ params }: { params: Promise<{ id: strin
   const plan = allPlans.find((p) => p.id === u.planId);
   const usage = await usageForUser(db, id);
   const ir = await buildIR(id);
+  const profileCfg = await getSubscriptionProfileConfig();
+
   const principals = await db
     .select({ p: endpointPrincipals, ib: inbounds, node: nodes })
     .from(endpointPrincipals)
@@ -46,51 +59,175 @@ export default async function UserPage({ params }: { params: Promise<{ id: strin
     .innerJoin(nodes, eq(nodes.id, inbounds.nodeId))
     .where(and(eq(endpointPrincipals.userId, id), eq(endpointPrincipals.state, "active")))
     .orderBy(endpointPrincipals.id);
+
   const [tok] = await db
     .select()
     .from(subscriptionTokens)
     .where(and(eq(subscriptionTokens.userId, id)))
     .orderBy(subscriptionTokens.id)
     .then((r) => r.filter((t) => !t.revokedAt).slice(-1));
+
   const pct = plan?.quotaBytes ? Math.min(100, (usage.total / plan.quotaBytes) * 100) : 0;
+
+  const provisionedPaths: AccessPath[] = principals
+    .filter(({ ib }) => ib.protocol === "vless-reality-vision")
+    .map(({ p, ib, node }) => {
+      const paramsObj = (ib.params ?? {}) as Record<string, string>;
+      return {
+        inboundId: ib.id,
+        tag: `${node.name}-${ib.name}`,
+        nodeName: node.name,
+        server: node.publicAddress,
+        port: ib.port,
+        protocol: "vless-reality-vision",
+        transport: "tcp",
+        runtime: "singbox",
+        credential: decryptSecret(p.credentialEnc),
+        sni: ib.sni,
+        tlsModel: "reality",
+        reality: {
+          publicKey: paramsObj.realityPublicKey ?? "",
+          shortId: paramsObj.shortId ?? "",
+          fingerprint: paramsObj.fingerprint ?? "chrome",
+          flow: paramsObj.flow ?? "xtls-rprx-vision",
+        },
+        route: "direct",
+        enforceability: "metered",
+        revision: node.structuralSeq,
+        health: "healthy",
+      };
+    });
+
+  const previewIr: IR = {
+    user: { id: u.id, name: u.name, status: u.status },
+    paths: ir.paths.length > 0 ? ir.paths : provisionedPaths,
+    excluded: ir.excluded,
+    diagnostics: ir.diagnostics,
+    quotaBytes: plan?.quotaBytes ?? null,
+    expiresAt: u.expiresAt,
+  };
+
+  const balancerDoc = compileClientBalancerDocument({
+    groupTag: "omni-auto-best",
+    strategy: "url-test",
+    probeUrl: "https://cp.cloudflare.com/generate_204",
+    intervalSeconds: 180,
+    toleranceMs: 50,
+    endpoints: previewIr.paths.map((p) => ({
+      tag: p.tag,
+      protocol: p.protocol,
+      weight: 100,
+    })),
+  });
+  const balancerJson = JSON.stringify(balancerDoc, null, 2);
+
+  const formatPreviews: CompiledFormatPreview[] = [
+    ...(await Promise.all(
+      CLIENT_REGISTRY.map(async (c) => {
+        const formatIr = await buildIR(id, c.format);
+        const compiled = compile(previewIr, c.format);
+        return {
+          format: c.format,
+          label: c.label,
+          contentType: compiled.contentType,
+          admittedCount: formatIr.paths.length,
+          excludedReasons: formatIr.excluded,
+          compiledBody: compiled.body,
+          sha256: sha256(compiled.body),
+        };
+      }),
+    )),
+    {
+      format: "balancer",
+      label: "Balancer & Observatory",
+      contentType: "application/json",
+      admittedCount: balancerDoc.memberTags.length,
+      excludedReasons: [],
+      compiledBody: balancerJson,
+      sha256: balancerDoc.digest,
+    },
+  ];
+
+  const userinfoHeader = subscriptionUserinfo({
+    uploadBytes: usage.up,
+    downloadBytes: usage.down,
+    quotaBytes: plan?.quotaBytes ?? null,
+    expiresAt: u.expiresAt,
+    expiryPresentation: profileCfg.expiryPresentation,
+  });
+
+  const headersPreview: Record<string, string> = {
+    "subscription-userinfo": userinfoHeader,
+    "profile-update-interval": String(profileCfg.updateIntervalHours),
+    ...profileMetadataHeaders({
+      title: `${profileCfg.profileTitlePrefix} ${u.name}`,
+      supportUrl: profileCfg.supportUrl || undefined,
+      webPageUrl: profileCfg.profileWebPageUrl || undefined,
+      announce: profileCfg.announce || undefined,
+    }),
+  };
 
   return (
     <>
       <PageHeader
+        breadcrumbs={
+          <>
+            <Link href="/users" className="hover:text-slate-900">
+              Users
+            </Link>
+            <span>/</span>
+            <span className="text-slate-900">{u.name}</span>
+          </>
+        }
         title={u.name}
-        subtitle={`${u.email ?? "no email"} · version ${u.version} · created ${fmtDate(u.createdAt)}`}
-        actions={<Badge variant="secondary">{u.status}{u.suspendReason ? ` (${u.suspendReason})` : ""}</Badge>}
+        subtitle={`${u.email ?? "no email"} · optimistic concurrency version v${u.version} · created ${fmtDate(u.createdAt)}`}
+        actions={
+          <Badge variant={statusTone(u.status)}>
+            {u.status}
+            {u.suspendReason ? ` (${u.suspendReason})` : ""}
+          </Badge>
+        }
       />
 
       <div className="mb-6 grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Usage this period</CardTitle>
+            <CardTitle className="text-base">Measured Usage This Period</CardTitle>
+            <CardDescription>
+              Authoritative counter deltas from node <code className="font-mono text-xs">meter_observations</code>.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex items-end gap-2">
-              <span className="text-4xl font-bold">{fmtBytes(usage.total)}</span>
+              <span className="text-3xl font-bold tracking-tight text-slate-900 tabular-nums">
+                {fmtBytes(usage.total)}
+              </span>
             </div>
-            <p className="mt-1 text-sm text-slate-600">
-              ↑ {fmtBytes(usage.up)} · ↓ {fmtBytes(usage.down)}{plan?.quotaBytes ? ` · quota ${fmtBytes(plan.quotaBytes)}` : " · unlimited"}
+            <p className="mt-1 font-mono text-xs text-slate-600 tabular-nums">
+              ↑ {fmtBytes(usage.up)} · ↓ {fmtBytes(usage.down)}
+              {plan?.quotaBytes ? ` · quota ${fmtBytes(plan.quotaBytes)} (${pct.toFixed(1)}%)` : " · unmetered plan"}
             </p>
             {plan?.quotaBytes ? (
-              <div className="mt-3 h-2 overflow-hidden rounded bg-slate-100">
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
                 <div
-                  className={`h-full ${pct >= 100 ? "bg-rose-500" : pct > 80 ? "bg-amber-500" : "bg-indigo-500"}`}
+                  className={`h-full transition-all ${
+                    pct >= 100 ? "bg-rose-500" : pct > 80 ? "bg-amber-500" : "bg-indigo-600"
+                  }`}
                   style={{ width: `${pct}%` }}
                 />
               </div>
             ) : null}
-            <div className="mt-3 flex items-center gap-2 text-sm">
-              Accounting quality:
-              <Badge variant="secondary">{usage.quality}</Badge>
-              <Badge variant="secondary">{plan?.enforcement} enforcement</Badge>
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+              <span className="text-slate-500">Accounting quality:</span>
+              <Badge variant={statusTone(usage.quality)}>{usage.quality}</Badge>
+              <Badge variant="outline">{plan?.enforcement} enforcement</Badge>
             </div>
             {usage.gaps.length > 0 && (
               <ul className="mt-3 space-y-1 rounded-lg bg-amber-50 p-3 text-xs text-amber-900">
                 {usage.gaps.slice(0, 5).map((g) => (
-                  <li key={g.id}><strong>{g.kind}</strong> · {g.note} · {ago(g.detectedAt)}</li>
+                  <li key={g.id}>
+                    <strong>{g.kind}</strong> · {g.note} · {ago(g.detectedAt)}
+                  </li>
                 ))}
                 <li className="pt-1 text-amber-700">Unknown intervals are never converted into usage or charges.</li>
               </ul>
@@ -100,49 +237,57 @@ export default async function UserPage({ params }: { params: Promise<{ id: strin
 
         <Card>
           <CardHeader>
-            <CardTitle>Profile & plan</CardTitle>
+            <CardTitle className="text-base">Subscriber Profile & Plan Assignment</CardTitle>
+            <CardDescription>Protected with optimistic concurrency version checking.</CardDescription>
           </CardHeader>
           <CardContent>
             {canEdit ? (
-              <ActionForm action={updateUserAction} submit="Save changes">
+              <ActionForm action={updateUserAction} submitLabel="Save Profile Changes">
                 <input type="hidden" name="userId" value={u.id} />
                 <input type="hidden" name="version" value={u.version} />
                 <div className="grid gap-3 md:grid-cols-2">
-                  <Field label="Name">
-                    <input name="name" defaultValue={u.name} required className="w-full" />
+                  <Field label="Subscriber Name">
+                    <Input name="name" defaultValue={u.name} required />
                   </Field>
                   <Field label="Email">
-                    <input name="email" type="email" defaultValue={u.email ?? ""} className="w-full" />
+                    <Input name="email" type="email" defaultValue={u.email ?? ""} />
                   </Field>
                   <Field label="Plan">
-                    <select name="planId" defaultValue={u.planId} className="w-full">
+                    <Select name="planId" defaultValue={u.planId}>
                       {allPlans.map((p) => (
                         <option key={p.id} value={p.id}>
                           {p.name} ({p.enforcement})
                         </option>
                       ))}
-                    </select>
+                    </Select>
                   </Field>
-                  <Field label="Expires">
-                    <input name="expiresAt" type="date" defaultValue={u.expiresAt?.toISOString().slice(0, 10) ?? ""} className="w-full" />
+                  <Field label="Expiration Date (UTC)">
+                    <Input
+                      name="expiresAt"
+                      type="date"
+                      defaultValue={u.expiresAt?.toISOString().slice(0, 10) ?? ""}
+                      className="font-mono"
+                    />
                   </Field>
                 </div>
                 <p className="mt-2 text-xs text-slate-500">
-                  Saved with optimistic concurrency (version {u.version}); a concurrent edit is rejected rather than overwritten.
+                  Optimistic lock version <code className="font-mono">v{u.version}</code>; concurrent edits fail closed.
                 </p>
               </ActionForm>
             ) : (
-              <p className="text-sm text-slate-600">Plan: {plan?.name}. Expires {fmtDate(u.expiresAt)}.</p>
+              <p className="text-sm text-slate-600">
+                Plan: {plan?.name}. Expires {fmtDate(u.expiresAt)}.
+              </p>
             )}
             {canEdit && (
               <div className="mt-4 flex flex-wrap gap-3 border-t border-slate-100 pt-4">
                 {u.status === "active" ? (
-                  <ActionForm action={userStatusAction} submit="Suspend user" variant="destructive">
+                  <ActionForm action={userStatusAction} submitLabel="Suspend User" variant="destructive" size="sm">
                     <input type="hidden" name="userId" value={u.id} />
                     <input type="hidden" name="status" value="suspended" />
                   </ActionForm>
                 ) : (
-                  <ActionForm action={userStatusAction} submit="Resume user" variant="outline">
+                  <ActionForm action={userStatusAction} submitLabel="Resume User" variant="outline" size="sm">
                     <input type="hidden" name="userId" value={u.id} />
                     <input type="hidden" name="status" value="active" />
                   </ActionForm>
@@ -155,51 +300,47 @@ export default async function UserPage({ params }: { params: Promise<{ id: strin
 
       <Card className="mb-6">
         <CardHeader>
-          <CardTitle>Subscription</CardTitle>
+          <CardTitle className="text-base">Subscription Identity & Multi-Client Compiler</CardTitle>
+          <CardDescription>
+            One token per subscriber; raw token is never stored at rest (only SHA-256 hash + 9-char prefix).
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-slate-600">
-            Active token:{" "}
-            <code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs">{tok ? `${tok.prefix}…` : "none"}</code>{" "}
-            {tok?.lastUsedAt ? `· last fetched ${ago(tok.lastUsedAt)}` : "· never fetched"}. Only a hash is stored,
-            so the URL cannot be recovered; rotate to issue a new one.
-          </p>
-          <p className="mt-1 text-xs text-slate-500">
-            Formats: {CLIENT_REGISTRY.map((c) => c.label).join(" · ")}. Responses are <code>private, no-store</code>.
-          </p>
-          {canEdit && (
-            <ActionForm action={rotateTokenAction} submit="Rotate subscription URL" variant="outline" size="sm" className="mt-3">
-              <input type="hidden" name="userId" value={u.id} />
-            </ActionForm>
-          )}
-          <div className="mt-5">
-            <h3 className="mb-2 text-sm font-semibold text-slate-800">Why each endpoint is included or excluded</h3>
-            <ul className="space-y-1 text-sm">
-              {ir.paths.map((p) => (
-                <li key={p.inboundId} className="flex flex-wrap items-center gap-2">
-                  <Badge variant="success">included</Badge>
-                  <span className="font-medium">{p.tag}</span>
-                  <span className="text-xs text-slate-500">{p.protocol} · {p.transport.toUpperCase()} {p.port} · {p.tlsModel} · {p.route} · {p.enforceability}</span>
-                </li>
-              ))}
-              {ir.excluded.map((e) => (
-                <li key={e.inboundId} className="flex flex-wrap items-center gap-2">
-                  <Badge variant="warning">excluded</Badge>
-                  <span className="font-medium">{e.name}</span>
-                  <span className="text-xs text-slate-500">{e.reason}</span>
-                </li>
-              ))}
-              {ir.paths.length + ir.excluded.length === 0 && <li className="text-slate-500">No endpoints exist yet.</li>}
-            </ul>
-            {u.status !== "active" && <p className="mt-2 text-sm text-amber-700">User is {u.status}: the subscription URL returns 403 with no credentials.</p>}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50/70 p-3.5">
+            <div className="text-xs text-slate-600 space-y-1">
+              <p>
+                Active token prefix:{" "}
+                <code className="rounded bg-white px-2 py-0.5 font-mono font-semibold text-slate-900 border border-slate-200">
+                  {tok ? `${tok.prefix}…` : "none"}
+                </code>{" "}
+                {tok?.lastUsedAt ? `· last fetched ${ago(tok.lastUsedAt)}` : "· never fetched"}
+              </p>
+              <p className="text-slate-500">
+                Supported client targets: {CLIENT_REGISTRY.map((c) => c.label).join(" · ")}.
+              </p>
+            </div>
+            {canEdit && (
+              <ActionForm
+                action={rotateTokenAction}
+                submitLabel="Rotate Subscription URL"
+                variant="outline"
+                size="sm"
+              >
+                <input type="hidden" name="userId" value={u.id} />
+              </ActionForm>
+            )}
           </div>
+
+          <SubscriptionInspector formats={formatPreviews} headersPreview={headersPreview} />
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>Endpoint credentials</CardTitle>
-          <CardDescription>Credentials are unique per user and endpoint, encrypted at rest, and delivered only to the node that hosts the endpoint.</CardDescription>
+          <CardTitle className="text-base">Per-Endpoint Principal Credentials</CardTitle>
+          <CardDescription>
+            Unique UUID/credential per user and endpoint, encrypted at rest with AES-256-GCM and delivered only to the hosting node.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <TableWrapper>
@@ -207,29 +348,36 @@ export default async function UserPage({ params }: { params: Promise<{ id: strin
               <TableHeader>
                 <TableRow>
                   <TableHead>Endpoint</TableHead>
-                  <TableHead>Node</TableHead>
-                  <TableHead className="w-40">Attribution key</TableHead>
-                  <TableHead className="w-24">Created</TableHead>
-                  <TableHead className="w-20">Action</TableHead>
+                  <TableHead>Hosting Node</TableHead>
+                  <TableHead>Attribution Key</TableHead>
+                  <TableHead>Provisioned</TableHead>
+                  <TableHead>Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {principals.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={5}>
-                      <EmptyState title="No credentials provisioned" description="No endpoint credentials exist for this user yet." />
+                      <EmptyState
+                        title="No credentials provisioned"
+                        description="No endpoint credentials exist for this user yet."
+                      />
                     </TableCell>
                   </TableRow>
                 ) : (
                   principals.map(({ p, ib, node }) => (
                     <TableRow key={p.id}>
-                      <TableCell className="font-medium">{ib.name}</TableCell>
-                      <TableCell>{node.name}</TableCell>
+                      <TableCell className="font-mono text-xs font-semibold text-slate-900">{ib.name}</TableCell>
+                      <TableCell>
+                        <Link href={`/nodes/${node.id}`} className="font-mono text-xs text-indigo-600 hover:underline">
+                          {node.name}
+                        </Link>
+                      </TableCell>
                       <TableCell className="font-mono text-xs">{p.attributionKey}</TableCell>
-                      <TableCell className="text-xs">{ago(p.createdAt)}</TableCell>
+                      <TableCell className="text-xs text-slate-500 tabular-nums">{ago(p.createdAt)}</TableCell>
                       <TableCell>
                         {canEdit && (
-                          <ActionForm action={rotateEndpointAction} submit="Rotate" variant="outline" size="sm">
+                          <ActionForm action={rotateEndpointAction} submitLabel="Rotate Key" variant="outline" size="sm">
                             <input type="hidden" name="principalId" value={p.id} />
                           </ActionForm>
                         )}

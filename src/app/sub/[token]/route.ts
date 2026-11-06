@@ -6,6 +6,7 @@ import { problemResponse, ProblemError } from "@/lib/problem";
 import { rateLimit } from "@/lib/ratelimit";
 import { buildIR, compile, CompileError, findUserByToken } from "@/lib/subscription";
 import { profileMetadataHeaders, subscriptionUserinfo } from "@/lib/subscription-profile";
+import { getSubscriptionProfileConfig } from "@/lib/governance-store";
 import { usageForUser } from "@/lib/users";
 
 export const dynamic = "force-dynamic";
@@ -32,11 +33,13 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
     const format = clientForRequest(url.searchParams.get("format"), req.headers.get("user-agent"));
     const usage = await usageForUser(db, u.id);
     const ir = await buildIR(u.id, format);
+    const profileCfg = await getSubscriptionProfileConfig();
     const userinfo = subscriptionUserinfo({
       uploadBytes: usage.up,
       downloadBytes: usage.down,
       quotaBytes: ir.quotaBytes,
       expiresAt: u.expiresAt,
+      expiryPresentation: profileCfg.expiryPresentation,
     });
     if (u.status !== "active") {
       // No usable credentials are ever returned for suspended or expired users.
@@ -57,8 +60,13 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
         ...HEADERS,
         "content-type": out.contentType,
         "subscription-userinfo": userinfo,
-        "profile-update-interval": "6",
-        ...profileMetadataHeaders({ title: `OmniPanel ${u.name}` }),
+        "profile-update-interval": String(profileCfg.updateIntervalHours),
+        ...profileMetadataHeaders({
+          title: `${profileCfg.profileTitlePrefix} ${u.name}`,
+          supportUrl: profileCfg.supportUrl || undefined,
+          webPageUrl: profileCfg.profileWebPageUrl || undefined,
+          announce: profileCfg.announce || undefined,
+        }),
       },
     });
   } catch (e) {

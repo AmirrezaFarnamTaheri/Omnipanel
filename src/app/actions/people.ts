@@ -3,7 +3,16 @@
 import { revalidatePath } from "next/cache";
 import { actorOf, requireRole } from "@/lib/auth";
 import { act, int, str, type ActionState } from "@/lib/action-helpers";
-import { createPlan, createUser, mutateUserStatus, rotateEndpoint, rotateSubscriptionToken, updateUser } from "@/lib/users";
+import {
+  bulkSubscriberOperation,
+  createPlan,
+  createUser,
+  mutateUserStatus,
+  rotateEndpoint,
+  rotateSubscriptionToken,
+  updateUser,
+  type BulkUserOperationKind,
+} from "@/lib/users";
 import { drainOutbox } from "@/lib/outbox";
 
 const refresh = () => revalidatePath("/", "layout");
@@ -88,3 +97,27 @@ export async function rotateEndpointAction(_p: ActionState, fd: FormData): Promi
     return { message: "Credential replaced. The retired credential is never reused." };
   });
 }
+
+export async function bulkUserLifecycleAction(_p: ActionState, fd: FormData): Promise<ActionState> {
+  return act(async () => {
+    const me = await requireRole("operator");
+    const opRaw = str(fd, "operation");
+    const operation: BulkUserOperationKind =
+      opRaw === "resume_suspended"
+        ? "resume_suspended"
+        : opRaw === "assign_plan"
+          ? "assign_plan"
+          : opRaw === "rotate_all_tokens"
+            ? "rotate_all_tokens"
+            : "extend_expiry_30d";
+    const planIdRaw = str(fd, "planId");
+    const planId = planIdRaw ? Number(planIdRaw) : undefined;
+    const res = await bulkSubscriberOperation(actorOf(me), { operation, planId });
+    await drainOutbox();
+    refresh();
+    return {
+      message: `Bulk operation (${res.operation}) completed across ${res.affectedCount} subscriber(s) and recorded to the genesis audit chain.`,
+    };
+  });
+}
+

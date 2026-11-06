@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { count, desc } from "drizzle-orm";
+import { ArrowRight, FileSignature, Layers, Server, ShieldAlert, Users } from "lucide-react";
 import { db } from "@/db";
 import { auditLog, inboundHealth, inbounds, nodes, plans, users } from "@/db/schema";
 import { requirePage } from "@/lib/auth";
 import { evaluateAlerts } from "@/lib/alerts";
 import { drainOutbox, sweepExpiry } from "@/lib/outbox";
+import { listDesiredStateProposals } from "@/lib/governance-store";
 import { periodStart, usageForUser } from "@/lib/users";
 import { ago, fmtBytes, isOnline } from "@/lib/format";
 import {
@@ -16,6 +18,7 @@ import {
   CardTitle,
   PageHeader,
   Stat,
+  statusTone,
   Table,
   TableBody,
   TableCell,
@@ -26,6 +29,8 @@ import {
 } from "@/components/ui";
 import { ActionForm } from "@/components/ActionForm";
 import { runWorkerAction } from "@/app/actions/system";
+
+export const dynamic = "force-dynamic";
 
 export default async function Overview() {
   await requirePage("viewer");
@@ -44,6 +49,8 @@ export default async function Overview() {
   const healthy = health.find((h) => h.state === "healthy")?.n ?? 0;
   const recentUsers = await db.select().from(users).orderBy(desc(users.id)).limit(6);
   const usage = await Promise.all(recentUsers.map((u) => usageForUser(db, u.id)));
+  const proposals = await listDesiredStateProposals();
+  const pendingProposals = proposals.filter((p) => !p.decision || p.decision.consumedAt === null);
 
   if (allNodes.length === 0 && nu === 0) {
     return (
@@ -58,23 +65,32 @@ export default async function Overview() {
           </CardHeader>
           <CardContent>
             <div className="grid gap-4 md:grid-cols-3">
-              <Link href="/nodes" className="group block rounded-xl border border-slate-200 p-5 hover:border-indigo-200 hover:bg-indigo-50 transition-colors">
+              <Link
+                href="/nodes"
+                className="group block rounded-xl border border-slate-200 p-5 hover:border-indigo-200 hover:bg-indigo-50 transition-colors"
+              >
                 <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center group-hover:bg-indigo-200 transition-colors mb-3">
-                  <span className="text-lg">🖥️</span>
+                  <Server className="h-5 w-5 text-indigo-700" />
                 </div>
                 <h3 className="font-semibold">1. Register a node</h3>
                 <p className="mt-1 text-sm text-slate-600">Provider, ASN and address are tracked for diversity analysis.</p>
               </Link>
-              <Link href="/plans" className="group block rounded-xl border border-slate-200 p-5 hover:border-indigo-200 hover:bg-indigo-50 transition-colors">
+              <Link
+                href="/plans"
+                className="group block rounded-xl border border-slate-200 p-5 hover:border-indigo-200 hover:bg-indigo-50 transition-colors"
+              >
                 <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center group-hover:bg-indigo-200 transition-colors mb-3">
-                  <span className="text-lg">📋</span>
+                  <Layers className="h-5 w-5 text-indigo-700" />
                 </div>
                 <h3 className="font-semibold">2. Create a plan</h3>
                 <p className="mt-1 text-sm text-slate-600">Choose metered or hard enforcement honestly.</p>
               </Link>
-              <Link href="/users" className="group block rounded-xl border border-slate-200 p-5 hover:border-indigo-200 hover:bg-indigo-50 transition-colors">
+              <Link
+                href="/users"
+                className="group block rounded-xl border border-slate-200 p-5 hover:border-indigo-200 hover:bg-indigo-50 transition-colors"
+              >
                 <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center group-hover:bg-indigo-200 transition-colors mb-3">
-                  <span className="text-lg">👥</span>
+                  <Users className="h-5 w-5 text-indigo-700" />
                 </div>
                 <h3 className="font-semibold">3. Add users</h3>
                 <p className="mt-1 text-sm text-slate-600">One subscription identity, per-endpoint credentials.</p>
@@ -89,32 +105,69 @@ export default async function Overview() {
   return (
     <>
       <PageHeader
-        title="Overview"
-        subtitle="Intent → capability validation → immutable revision → applied state → observed connectivity → accounting → subscription → audit."
-        actions={<ActionForm action={runWorkerAction} submit="Run worker now" variant="outline" size="sm" />}
+        title="Control-Plane Overview"
+        subtitle="Intent → capability validation → dual-operator signed revision → applied state → L0–L3 observed connectivity → durable accounting → deterministic subscription → genesis-chained audit."
+        actions={<ActionForm action={runWorkerAction} submitLabel="Drain Outbox & Sweep" variant="outline" size="sm" />}
       />
+
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        <Stat label="Nodes" value={allNodes.length} hint={`${new Set(allNodes.map((n) => n.provider.toLowerCase())).size} provider(s)`} />
-        <Stat label="Endpoints" value={ni} hint={`${healthy} healthy`} />
-        <Stat label="Users" value={nu} hint={`${np} plan(s)`} />
-        <Stat label="Open alerts" value={alerts.length} hint={alerts.some((a) => a.severity === "critical") ? "critical present" : "none critical"} />
-        <Stat label="Audit records" value={na} hint="hash-chained" />
+        <Stat
+          label="Enrolled Nodes"
+          value={allNodes.length}
+          hint={`${new Set(allNodes.map((n) => n.provider.toLowerCase())).size} distinct provider(s)`}
+        />
+        <Stat label="Listeners" value={ni} hint={`${healthy} L3-verified healthy`} />
+        <Stat label="Subscribers" value={nu} hint={`${np} active plan(s)`} />
+        <Stat
+          label="Pending Approvals"
+          value={pendingProposals.length}
+          hint="2-person Ed25519 governance"
+        />
+        <Stat label="Audit Ledger" value={na} hint="SHA-256 genesis-chained" />
       </div>
 
+      {pendingProposals.length > 0 && (
+        <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl border border-indigo-200 bg-indigo-50/70 p-4">
+          <div className="flex items-start gap-3">
+            <FileSignature className="h-5 w-5 text-indigo-600 shrink-0 mt-0.5" />
+            <div className="text-xs">
+              <p className="text-sm font-semibold text-indigo-950">
+                {pendingProposals.length} Signed Desired-State Proposal(s) Awaiting Dual-Operator Ceremony
+              </p>
+              <p className="text-indigo-800 mt-0.5">
+                Next up: <code className="font-mono font-semibold">{pendingProposals[0].proposalId}</code> on{" "}
+                <strong>{pendingProposals[0].nodeName}</strong> (seq #{pendingProposals[0].structuralSequence}) —{" "}
+                {pendingProposals[0].note}
+              </p>
+            </div>
+          </div>
+          <Link
+            href="/approvals"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-indigo-700 shrink-0"
+          >
+            Review & Approve
+            <ArrowRight className="h-3.5 w-3.5" />
+          </Link>
+        </div>
+      )}
+
       {alerts.length > 0 && (
-        <Card className="mb-6">
+        <Card className="mb-6 border-amber-200">
           <CardHeader>
-            <CardTitle>Active alerts</CardTitle>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <ShieldAlert className="h-4 w-4 text-amber-600" />
+              Active Alerts ({alerts.length})
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <ul className="divide-y divide-slate-100">
               {alerts.map((a) => (
-                <li key={a.id} className="flex items-center justify-between gap-3 py-2 text-sm">
-                  <span className="flex items-center gap-2">
+                <li key={a.id} className="flex items-center justify-between gap-3 py-2.5 text-sm">
+                  <span className="flex items-center gap-2.5">
                     <Badge variant={a.severity === "critical" ? "error" : "warning"}>{a.severity}</Badge>
-                    {a.message}
+                    <span>{a.message}</span>
                   </span>
-                  <span className="text-xs text-slate-500">{ago(a.createdAt)}</span>
+                  <span className="text-xs text-slate-500 tabular-nums">{ago(a.createdAt)}</span>
                 </li>
               ))}
             </ul>
@@ -124,7 +177,10 @@ export default async function Overview() {
 
       <Card className="mb-6">
         <CardHeader>
-          <CardTitle>Desired vs applied</CardTitle>
+          <CardTitle className="text-base">Desired vs. Applied Node State</CardTitle>
+          <CardDescription>
+            Tracks structural revision convergence and incremental membership event delivery across enrolled nodes.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <TableWrapper>
@@ -132,11 +188,11 @@ export default async function Overview() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Node</TableHead>
-                  <TableHead className="w-24">Provider / ASN</TableHead>
-                  <TableHead className="w-20">Link</TableHead>
-                  <TableHead className="w-40">Structural (desired → applied)</TableHead>
-                  <TableHead className="w-40">Membership</TableHead>
-                  <TableHead>Applied state</TableHead>
+                  <TableHead>Provider / ASN</TableHead>
+                  <TableHead>Heartbeat</TableHead>
+                  <TableHead>Structural (Desired → Applied)</TableHead>
+                  <TableHead>Membership (Desired → Applied)</TableHead>
+                  <TableHead>Agent State</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -145,14 +201,14 @@ export default async function Overview() {
                   return (
                     <TableRow key={n.id}>
                       <TableCell>
-                        <Link href={`/nodes/${n.id}`} className="font-medium text-indigo-600 hover:underline">
+                        <Link href={`/nodes/${n.id}`} className="font-mono text-xs font-semibold text-indigo-600 hover:underline">
                           {n.name}
                         </Link>
-                        <div className="text-xs text-slate-500">{n.publicAddress}</div>
+                        <div className="font-mono text-xs text-slate-500 tabular-nums">{n.publicAddress}</div>
                       </TableCell>
-                      <TableCell>
-                        {n.provider}
-                        <div className="text-xs text-slate-500">{n.asn || "—"}</div>
+                      <TableCell className="text-xs">
+                        <span className="font-medium text-slate-900">{n.provider}</span>
+                        <div className="font-mono text-slate-500">{n.asn || "—"} · {n.region || "—"}</div>
                       </TableCell>
                       <TableCell>
                         {n.status === "active" ? (
@@ -160,18 +216,26 @@ export default async function Overview() {
                         ) : (
                           <Badge variant="secondary">{n.status.replace("_", " ")}</Badge>
                         )}
-                        <div className="text-xs text-slate-500">{ago(n.lastSeenAt)}</div>
+                        <div className="mt-0.5 text-xs text-slate-500 tabular-nums">{ago(n.lastSeenAt)}</div>
+                      </TableCell>
+                      <TableCell className="font-mono text-xs tabular-nums">
+                        #{n.structuralSeq} → #{n.appliedStructuralSeq}{" "}
+                        {n.structuralSeq !== n.appliedStructuralSeq && (
+                          <Badge variant="warning" className="ml-1">
+                            pending
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs tabular-nums">
+                        #{n.membershipSeq} → #{n.appliedMembershipSeq}{" "}
+                        {n.membershipSeq !== n.appliedMembershipSeq && (
+                          <Badge variant="warning" className="ml-1">
+                            pending
+                          </Badge>
+                        )}
                       </TableCell>
                       <TableCell>
-                        #{n.structuralSeq} → #{n.appliedStructuralSeq}
-                        {n.structuralSeq !== n.appliedStructuralSeq && <Badge variant="warning">pending</Badge>}
-                      </TableCell>
-                      <TableCell>
-                        #{n.membershipSeq} → #{n.appliedMembershipSeq}
-                        {n.membershipSeq !== n.appliedMembershipSeq && <Badge variant="warning">pending</Badge>}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="secondary">{n.appliedState}</Badge>
+                        <Badge variant={statusTone(n.appliedState)}>{n.appliedState}</Badge>
                       </TableCell>
                     </TableRow>
                   );
@@ -184,18 +248,21 @@ export default async function Overview() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Usage this period</CardTitle>
-          <CardDescription>from {periodStart().toISOString().slice(0, 10)}</CardDescription>
+          <CardTitle className="text-base">Subscriber Usage This Period</CardTitle>
+          <CardDescription>
+            Billing period starting {periodStart().toISOString().slice(0, 10)} UTC · Unknown intervals never trigger quota suspension
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <TableWrapper>
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>User</TableHead>
-                  <TableHead className="w-20">Status</TableHead>
-                  <TableHead className="w-24">Measured</TableHead>
-                  <TableHead>Accounting quality</TableHead>
+                  <TableHead>Subscriber</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Upload / Download</TableHead>
+                  <TableHead>Total Measured</TableHead>
+                  <TableHead>Accounting Quality</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -205,13 +272,19 @@ export default async function Overview() {
                       <Link href={`/users/${u.id}`} className="font-medium text-indigo-600 hover:underline">
                         {u.name}
                       </Link>
+                      {u.email && <div className="font-mono text-xs text-slate-500">{u.email}</div>}
                     </TableCell>
                     <TableCell>
-                      <Badge variant="secondary">{u.status}</Badge>
+                      <Badge variant={statusTone(u.status)}>{u.status}</Badge>
                     </TableCell>
-                    <TableCell>{fmtBytes(usage[i].total)}</TableCell>
+                    <TableCell className="font-mono text-xs text-slate-600 tabular-nums">
+                      ↑ {fmtBytes(usage[i].up)} · ↓ {fmtBytes(usage[i].down)}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs font-semibold text-slate-900 tabular-nums">
+                      {fmtBytes(usage[i].total)}
+                    </TableCell>
                     <TableCell>
-                      <Badge variant="secondary">{usage[i].quality}</Badge>
+                      <Badge variant={statusTone(usage[i].quality)}>{usage[i].quality}</Badge>
                     </TableCell>
                   </TableRow>
                 ))}

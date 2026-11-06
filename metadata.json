@@ -1,0 +1,5 @@
+{
+  "name": "OmniPanel Control Plane",
+  "description": "Unified multi-protocol proxy infrastructure control plane with capability-gated runtimes, dual-operator signed desired-state revisions, deterministic subscriptions, and hash-chained auditing.",
+  "requestFramePermissions": []
+}

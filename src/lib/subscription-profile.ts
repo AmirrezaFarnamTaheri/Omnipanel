@@ -2,6 +2,7 @@ export type ProfileMetadata = {
   title: string;
   supportUrl?: string;
   profileUrl?: string;
+  webPageUrl?: string;
   announce?: string;
 };
 
@@ -35,7 +36,8 @@ export function profileMetadataHeaders(metadata: ProfileMetadata): Record<string
   const title = validHeaderText(metadata.title, 256, "profile title");
   const headers: Record<string, string> = { "profile-title": base64Utf8(title) };
   if (metadata.supportUrl !== undefined) headers["support-url"] = validHttpsUrl(metadata.supportUrl, "support URL");
-  if (metadata.profileUrl !== undefined) headers["profile-web-page-url"] = validHttpsUrl(metadata.profileUrl, "profile URL");
+  const profileUrl = metadata.profileUrl ?? metadata.webPageUrl;
+  if (profileUrl !== undefined) headers["profile-web-page-url"] = validHttpsUrl(profileUrl, "profile URL");
   if (metadata.announce !== undefined) headers.announce = base64Utf8(validHeaderText(metadata.announce, 512, "announce"));
   return headers;
 }

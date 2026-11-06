@@ -33,6 +33,27 @@ export async function audit(
   });
 }
 
+export async function recordAudit(
+  tx: any,
+  entry: {
+    actor: string;
+    action: string;
+    objectType: string;
+    objectId: string | number;
+    detail?: Record<string, unknown>;
+    correlationId?: string;
+  },
+) {
+  await audit(
+    tx,
+    { label: entry.actor, correlationId: entry.correlationId },
+    entry.action,
+    entry.objectType,
+    entry.objectId,
+    entry.detail ?? {},
+  );
+}
+
 export async function verifyAuditChain() {
   const rows = await db.select().from(auditLog).orderBy(asc(auditLog.id));
   let prev = "genesis";
@@ -48,8 +69,11 @@ export async function verifyAuditChain() {
           detail: r.detail,
         }),
     );
-    if (r.prevHash !== prev || r.hash !== expected) return { ok: false, brokenAt: r.id, count: rows.length };
+    if (r.prevHash !== prev || r.hash !== expected) {
+      return { ok: false, brokenAt: r.id, count: rows.length, checked: rows.length };
+    }
     prev = r.hash;
   }
-  return { ok: true, brokenAt: null, count: rows.length };
+  return { ok: true, brokenAt: null, count: rows.length, checked: rows.length };
 }
+

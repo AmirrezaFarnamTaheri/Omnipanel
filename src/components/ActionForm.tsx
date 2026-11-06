@@ -1,13 +1,15 @@
 "use client";
 
 import { useActionState, useState, type ReactNode } from "react";
+import { Check, Copy } from "lucide-react";
 import type { ActionState } from "@/lib/action-helpers";
 import { Button } from "@/components/ui";
 
 type Props = {
   action: (prev: ActionState, fd: FormData) => Promise<ActionState>;
   children?: ReactNode;
-  submit: string;
+  submit?: string;
+  submitLabel?: string;
   variant?: "default" | "outline" | "destructive" | "ghost";
   size?: "default" | "sm" | "lg" | "icon";
   className?: string;
@@ -18,17 +20,18 @@ function SecretBox({ label, value, hint }: { label: string; value: string; hint?
   return (
     <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3">
       <p className="text-xs font-semibold text-amber-900">{label}</p>
-      <code className="mt-1 block break-all rounded bg-white px-2 py-1.5 text-xs text-slate-900">{value}</code>
+      <code className="mt-1 block break-all rounded bg-white px-2 py-1.5 font-mono text-xs text-slate-900">{value}</code>
       {hint && <p className="mt-1 break-all text-xs text-amber-800">{hint}</p>}
       <div className="mt-2 flex items-center gap-3">
         <button
           type="button"
-          className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 text-indigo-600 hover:bg-slate-100 hover:text-indigo-700 h-10 w-10"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-amber-200 bg-white text-indigo-600 transition-colors hover:bg-amber-100 hover:text-indigo-700"
           onClick={() => {
             navigator.clipboard?.writeText(value).then(() => setCopied(true));
           }}
+          aria-label="Copy secret to clipboard"
         >
-          {copied ? "✓" : "⎘"}
+          {copied ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
         </button>
         <span className="text-xs text-amber-800">Store it now. It cannot be shown again.</span>
       </div>
@@ -36,21 +39,30 @@ function SecretBox({ label, value, hint }: { label: string; value: string; hint?
   );
 }
 
-export function ActionForm({ action, children, submit, variant = "default", size, className = "" }: Props) {
+export function ActionForm({
+  action,
+  children,
+  submit,
+  submitLabel,
+  variant = "default",
+  size,
+  className = "",
+}: Props) {
   const [state, formAction, pending] = useActionState(action, {} as ActionState);
+  const label = submitLabel ?? submit ?? "Submit";
   return (
     <form action={formAction} className={className}>
       {children}
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <Button variant={variant} size={size} disabled={pending}>
-          {pending ? "Working…" : submit}
+          {pending ? "Working…" : label}
         </Button>
         {state.error && (
           <p role="alert" className="text-sm font-medium text-rose-700">
             {state.error}
           </p>
         )}
-        {state.ok && state.message && <p className="text-sm text-emerald-700">{state.message}</p>}
+        {state.ok && state.message && <p className="text-sm font-medium text-emerald-700">{state.message}</p>}
       </div>
       {state.secret && <SecretBox {...state.secret} />}
     </form>

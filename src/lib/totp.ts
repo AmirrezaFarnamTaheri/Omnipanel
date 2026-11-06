@@ -36,6 +36,7 @@ function base32Decode(s: string): Buffer {
 }
 
 export const newTotpSecret = () => base32Encode(crypto.randomBytes(20));
+export const generateTotpSecret = newTotpSecret;
 
 function hotp(secret: string, counter: number) {
   const buf = Buffer.alloc(8);
@@ -44,6 +45,10 @@ function hotp(secret: string, counter: number) {
   const off = h[h.length - 1] & 15;
   const code = ((h[off] & 0x7f) << 24) | (h[off + 1] << 16) | (h[off + 2] << 8) | h[off + 3];
   return String(code % 1_000_000).padStart(6, "0");
+}
+
+export function generateTotp(secret: string, now = Date.now()): string {
+  return hotp(secret, Math.floor(now / 30_000));
 }
 
 export function verifyTotp(secret: string, code: string, now = Date.now()) {

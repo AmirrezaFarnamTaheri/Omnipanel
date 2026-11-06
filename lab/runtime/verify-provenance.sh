@@ -31,7 +31,6 @@ if [[ ! "$GITHUB_REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ || "$GITHUB_RE
 fi
 
 command -v cosign >/dev/null
-command -v jq >/dev/null
 command -v sha256sum >/dev/null
 
 readonly expected_identity="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/runtime-smoke.yml@${GITHUB_REF}"
@@ -48,29 +47,65 @@ cosign verify-blob "$metadata" \
   --certificate-oidc-issuer "$expected_issuer"
 
 artifact_digest="$(sha256sum "$artifact" | awk '{print $1}')"
-jq --exit-status --arg digest "$artifact_digest" '
-  type == "object"
-  and (keys == [
-    "artifactSha256",
-    "buildTags",
-    "goVersion",
-    "runtime",
-    "sourceRepository",
-    "sourceSignatureStatus",
-    "upstreamCommit",
-    "upstreamTag",
-    "version"
-  ])
-  and .runtime == "sing-box"
-  and .version == "1.14.4+omni.2"
-  and .sourceRepository == "SagerNet/sing-box"
-  and .upstreamTag == "v1.14.4"
-  and .upstreamCommit == "c005f35300ce76427dc285481ec5695f5b179cd2"
-  and .sourceSignatureStatus == "github-api-verified"
-  and .goVersion == "go version go1.26.10 linux/amd64"
-  and .buildTags == "with_v2ray_api,with_utls,badlinkname,tfogo_checklinkname0"
-  and .artifactSha256 == $digest
-' "$metadata" >/dev/null
+
+if command -v jq >/dev/null 2>&1; then
+  jq --exit-status --arg digest "$artifact_digest" '
+    type == "object"
+    and (keys == [
+      "artifactSha256",
+      "buildTags",
+      "goVersion",
+      "runtime",
+      "sourceRepository",
+      "sourceSignatureStatus",
+      "upstreamCommit",
+      "upstreamTag",
+      "version"
+    ])
+    and .runtime == "sing-box"
+    and .version == "1.14.4+omni.2"
+    and .sourceRepository == "SagerNet/sing-box"
+    and .upstreamTag == "v1.14.4"
+    and .upstreamCommit == "c005f35300ce76427dc285481ec5695f5b179cd2"
+    and .sourceSignatureStatus == "github-api-verified"
+    and .goVersion == "go version go1.26.10 linux/amd64"
+    and .buildTags == "with_v2ray_api,with_utls,badlinkname,tfogo_checklinkname0"
+    and .artifactSha256 == $digest
+  ' "$metadata" >/dev/null
+else
+  node -e '
+    const fs = require("node:fs");
+    const [metaPath, digest] = process.argv.slice(1);
+    const data = JSON.parse(fs.readFileSync(metaPath, "utf8"));
+    const expectedKeys = [
+      "artifactSha256",
+      "buildTags",
+      "goVersion",
+      "runtime",
+      "sourceRepository",
+      "sourceSignatureStatus",
+      "upstreamCommit",
+      "upstreamTag",
+      "version",
+    ];
+    const keys = Object.keys(data ?? {}).sort();
+    const ok =
+      data &&
+      typeof data === "object" &&
+      !Array.isArray(data) &&
+      JSON.stringify(keys) === JSON.stringify(expectedKeys) &&
+      data.runtime === "sing-box" &&
+      data.version === "1.14.4+omni.2" &&
+      data.sourceRepository === "SagerNet/sing-box" &&
+      data.upstreamTag === "v1.14.4" &&
+      data.upstreamCommit === "c005f35300ce76427dc285481ec5695f5b179cd2" &&
+      data.sourceSignatureStatus === "github-api-verified" &&
+      data.goVersion === "go version go1.26.10 linux/amd64" &&
+      data.buildTags === "with_v2ray_api,with_utls,badlinkname,tfogo_checklinkname0" &&
+      data.artifactSha256 === digest;
+    if (!ok) process.exit(1);
+  ' "$metadata" "$artifact_digest"
+fi
 
 printf 'Verified Sing-box artifact and build metadata with Sigstore identity %s\n' "$expected_identity"
 printf 'Artifact SHA-256: %s\n' "$artifact_digest"

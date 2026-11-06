@@ -202,6 +202,14 @@ export async function publishStructural(
   return rev;
 }
 
+export async function publishStructuralRevision(nodeId: number, actorLabel: string) {
+  return db.transaction(async (tx) => {
+    const rev = await publishStructural(tx, nodeId, { label: actorLabel }, { force: true });
+    if (!rev) throw new Error("Failed to publish structural revision");
+    return rev;
+  });
+}
+
 /* ---------- Membership stream ---------- */
 
 export async function emitMembership(
