@@ -149,29 +149,26 @@ export default async function NodesPage() {
       {me.role !== "viewer" && (
         <Card>
           <CardHeader>
-            <CardTitle>Register a node</CardTitle>
+            <CardTitle>Add a Node</CardTitle>
             <CardDescription>
-              Issues a single-use SHA-256 hashed enrollment token. Private, loopback, and cloud metadata addresses are rejected.
+              Enter a name and public IP or hostname. Provider and region are optional.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <ActionForm action={createNodeAction} submit="Register node">
+            <ActionForm action={createNodeAction} submit="Add Node">
               <input type="hidden" name="idemKey" value={idem} />
-              <div className="grid gap-4 md:grid-cols-3">
-                <Field label="Name">
-                  <Input name="name" required placeholder="fra-2" />
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <Field label="Node Name">
+                  <Input name="name" required placeholder="my-vps-1" />
                 </Field>
-                <Field label="Public address" hint="IP or hostname. Private, loopback and metadata ranges are rejected.">
+                <Field label="Public IP or Hostname">
                   <Input name="address" required placeholder="203.0.113.25" className="font-mono" />
                 </Field>
-                <Field label="Provider">
-                  <Input name="provider" required placeholder="Hetzner" />
+                <Field label="Provider (optional)">
+                  <Input name="provider" placeholder="Hetzner / Self-Hosted" />
                 </Field>
-                <Field label="ASN">
-                  <Input name="asn" placeholder="AS24940" className="font-mono" />
-                </Field>
-                <Field label="Region">
-                  <Input name="region" placeholder="Falkenstein, DE" />
+                <Field label="Region (optional)">
+                  <Input name="region" placeholder="Frankfurt, DE" />
                 </Field>
               </div>
             </ActionForm>

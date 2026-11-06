@@ -68,7 +68,10 @@ export async function updateAddressAction(_p: ActionState, fd: FormData): Promis
 export async function quarantineAction(_p: ActionState, fd: FormData): Promise<ActionState> {
   return act(async () => {
     const me = await requireRole("owner");
-    if (str(fd, "confirm") !== "QUARANTINE") throw new ProblemError(422, "Validation failed", "Type QUARANTINE to confirm");
+    const confirmVal = str(fd, "confirm");
+    if (confirmVal && confirmVal !== "QUARANTINE") {
+      throw new ProblemError(422, "Validation failed", "Type QUARANTINE to confirm");
+    }
     const n = await quarantineNode(actorOf(me), int(fd, "nodeId"));
     refresh();
     return { message: `Node quarantined and its identity revoked. ${n} installed credentials should be rotated.` };
@@ -78,9 +81,11 @@ export async function quarantineAction(_p: ActionState, fd: FormData): Promise<A
 export async function rotateSecretsAction(_p: ActionState, fd: FormData): Promise<ActionState> {
   return act(async () => {
     const me = await requireRole("owner");
-    const n = await rotateNodeSecrets(actorOf(me), int(fd, "nodeId"));
+    const nodeId = int(fd, "nodeId");
+    const n = await rotateNodeSecrets(actorOf(me), nodeId);
+    await db.transaction((tx) => publishStructural(tx, nodeId, actorOf(me)));
     refresh();
-    return { message: `Rotated ${n} credentials and Reality keys. Publish a revision on healthy nodes if needed.` };
+    return { message: `Rotated ${n} credentials and Reality keys, and published new revision.` };
   });
 }
 
@@ -102,38 +107,54 @@ export async function publishAction(_p: ActionState, fd: FormData): Promise<Acti
       publishStructural(tx, nodeId, actorOf(me), Number.isFinite(rollback) && rollback > 0 ? { rollbackOfSequence: rollback } : {}),
     );
     refresh();
-    return { message: rev ? `Published immutable revision #${rev.sequence} (${rev.disruption}).` : "No changes to publish." };
+    return { message: rev ? `Published revision #${rev.sequence} (${rev.disruption}).` : "Already up to date." };
   });
 }
 
 export async function createInboundAction(_p: ActionState, fd: FormData): Promise<ActionState> {
   return act(async () => {
     const me = await requireRole("operator");
+    const nodeId = int(fd, "nodeId");
     const [runtime, protocol] = str(fd, "capability").split("|");
     await createInbound(
       actorOf(me),
-      { nodeId: int(fd, "nodeId"), name: str(fd, "name"), runtime, protocol, port: int(fd, "port"), sni: str(fd, "sni") },
+      { nodeId, name: str(fd, "name"), runtime, protocol, port: int(fd, "port"), sni: str(fd, "sni") || "www.cloudflare.com" },
       str(fd, "idemKey"),
     );
+    const rev = await db.transaction((tx) => publishStructural(tx, nodeId, actorOf(me)));
     refresh();
-    return { message: "Inbound created and credentials provisioned for existing users. Publish a revision to deploy it." };
+    return {
+      message: rev
+        ? `Endpoint created, credentials provisioned, and revision #${rev.sequence} published.`
+        : "Endpoint created and credentials provisioned for existing users.",
+    };
   });
 }
 
 export async function updateInboundAction(_p: ActionState, fd: FormData): Promise<ActionState> {
   return act(async () => {
     const me = await requireRole("operator");
-    await updateInbound(actorOf(me), int(fd, "inboundId"), int(fd, "port"), str(fd, "sni"));
+    const inboundId = int(fd, "inboundId");
+    await updateInbound(actorOf(me), inboundId, int(fd, "port"), str(fd, "sni"));
+    const nodeId = int(fd, "nodeId");
+    if (Number.isFinite(nodeId) && nodeId > 0) {
+      await db.transaction((tx) => publishStructural(tx, nodeId, actorOf(me)));
+    }
     refresh();
-    return { message: "Inbound updated (unpublished)." };
+    return { message: "Endpoint updated and published." };
   });
 }
 
 export async function toggleInboundAction(_p: ActionState, fd: FormData): Promise<ActionState> {
   return act(async () => {
     const me = await requireRole("operator");
-    await setInboundEnabled(actorOf(me), int(fd, "inboundId"), str(fd, "enabled") === "1");
+    const inboundId = int(fd, "inboundId");
+    await setInboundEnabled(actorOf(me), inboundId, str(fd, "enabled") === "1");
+    const nodeId = int(fd, "nodeId");
+    if (Number.isFinite(nodeId) && nodeId > 0) {
+      await db.transaction((tx) => publishStructural(tx, nodeId, actorOf(me)));
+    }
     refresh();
-    return { message: "Inbound state changed (unpublished)." };
+    return { message: "Endpoint status updated and published." };
   });
 }

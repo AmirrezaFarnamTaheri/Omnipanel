@@ -130,3 +130,57 @@ export function compileClientBalancerDocument(
     digest,
   };
 }
+
+/**
+ * Dynamically tunes client balancer probe interval and tolerance based on
+ * recent L2/L3 vantage latency percentiles so mobile clients conserve battery
+ * when endpoints are stable or experiencing high jitter.
+ */
+export function computeAdaptiveBalancerParameters(latenciesMs: number[]): {
+  intervalSeconds: number;
+  toleranceMs: number;
+  p50LatencyMs: number;
+  p95LatencyMs: number;
+  tuningProfile: "low_latency_stable" | "moderate_jitter" | "degraded_battery_saver";
+} {
+  const valid = latenciesMs.filter((n) => Number.isFinite(n) && n >= 0).sort((a, b) => a - b);
+  if (valid.length === 0) {
+    return {
+      intervalSeconds: 300,
+      toleranceMs: 100,
+      p50LatencyMs: 0,
+      p95LatencyMs: 0,
+      tuningProfile: "degraded_battery_saver",
+    };
+  }
+  const p50 = valid[Math.floor((valid.length - 1) * 0.5)];
+  const p95 = valid[Math.floor((valid.length - 1) * 0.95)];
+  const jitter = Math.max(0, p95 - p50);
+
+  if (p95 <= 60 && jitter <= 30) {
+    return {
+      intervalSeconds: 180,
+      toleranceMs: 35,
+      p50LatencyMs: p50,
+      p95LatencyMs: p95,
+      tuningProfile: "low_latency_stable",
+    };
+  }
+  if (p95 <= 180) {
+    return {
+      intervalSeconds: 240,
+      toleranceMs: Math.min(250, Math.max(50, jitter + 25)),
+      p50LatencyMs: p50,
+      p95LatencyMs: p95,
+      tuningProfile: "moderate_jitter",
+    };
+  }
+  return {
+    intervalSeconds: 360,
+    toleranceMs: Math.min(500, Math.max(120, jitter + 50)),
+    p50LatencyMs: p50,
+    p95LatencyMs: p95,
+    tuningProfile: "degraded_battery_saver",
+  };
+}
+

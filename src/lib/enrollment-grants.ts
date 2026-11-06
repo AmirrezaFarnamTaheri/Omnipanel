@@ -1,5 +1,5 @@
 import { createHash, createHmac, randomBytes } from "node:crypto";
-import { verifyTotp } from "./totp";
+import { verifyTotpMatchedStep } from "./totp";
 
 export type StepUpVerificationSource = "trusted" | "legacy";
 
@@ -200,25 +200,24 @@ export class EnrollmentGrantService {
       throw new Error("TOTP step-up rate budget exhausted (max 5 failed attempts per 5 minutes)");
     }
 
-    const currentCounter = Math.floor(now.getTime() / 30_000);
-    const valid = verifyTotp(session.totpSecretBase32, input.totpCode, now.getTime());
-    if (!valid) {
+    const matchedCounter = verifyTotpMatchedStep(session.totpSecretBase32, input.totpCode, now.getTime());
+    if (matchedCounter === null) {
       recentFailures.push(now.getTime());
       this.failedAttemptsByAdmin.set(session.adminId, recentFailures);
       throw new Error("invalid TOTP factor code");
     }
 
     const lastCounter = this.lastUsedCounterByAdmin.get(session.adminId) ?? -1;
-    if (currentCounter <= lastCounter) {
+    if (matchedCounter <= lastCounter) {
       throw new Error("replayed TOTP counter refused across administrator sessions");
     }
 
-    this.lastUsedCounterByAdmin.set(session.adminId, currentCounter);
+    this.lastUsedCounterByAdmin.set(session.adminId, matchedCounter);
     const record: TrustedStepUpRecord = {
       sessionId: session.sessionId,
       adminId: session.adminId,
       verifiedSource: "trusted",
-      verifiedCounter: currentCounter,
+      verifiedCounter: matchedCounter,
       verifiedAt: now,
     };
     this.stepUps.set(session.sessionId, record);

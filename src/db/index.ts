@@ -1,9 +1,35 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import { DataType, newDb } from "pg-mem";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+
+export function assertProductionDatabaseConfig(env: NodeJS.ProcessEnv = process.env): void {
+  const isProdRuntime =
+    env.NODE_ENV === "production" &&
+    env.NEXT_PHASE !== "phase-production-build" &&
+    env.OMNI_ALLOW_EMBEDDED_PREVIEW !== "1";
+
+  if (!isProdRuntime) return;
+
+  const dbUrl = env.DATABASE_URL?.trim() ?? "";
+  if (
+    !dbUrl ||
+    dbUrl.startsWith("pg-mem://") ||
+    dbUrl === "postgres://test:test@127.0.0.1:5432/omnipanel_test"
+  ) {
+    throw new Error(
+      "FATAL: Production startup requires a configured PostgreSQL DATABASE_URL. Embedded fallback is forbidden in production.",
+    );
+  }
+
+  const kekRaw = env.OMNI_KEK?.trim() ?? "";
+  if (!kekRaw || Buffer.from(kekRaw, "base64").length !== 32) {
+    throw new Error(
+      "FATAL: Production startup requires OMNI_KEK set to a base64-encoded 32-byte (256-bit) Key Encryption Key.",
+    );
+  }
+}
 
 function getLocalKek(): Buffer {
   const fromEnv = process.env.OMNI_KEK;
@@ -64,6 +90,7 @@ const globalForDb = globalThis as typeof globalThis & {
 };
 
 function createEmbeddedPool(): Pool {
+  const { DataType, newDb } = require("pg-mem") as typeof import("pg-mem");
   const mem = newDb({ autoCreateForeignKeyIndices: true });
 
   mem.public.registerFunction({
@@ -459,10 +486,38 @@ function createEmbeddedPool(): Pool {
     return null;
   };
 
+  const txBackupStack: Array<{ restore: () => void }> = [];
+
+  const handleTxControl = (sqlText: string): boolean => {
+    const cmd = sqlText.trim().replace(/;$/, "").toLowerCase();
+    if (cmd === "begin" || cmd.startsWith("begin ")) {
+      txBackupStack.push(mem.backup());
+      return false;
+    }
+    if (cmd === "commit" || cmd.startsWith("commit ")) {
+      txBackupStack.pop();
+      return false;
+    }
+    if (cmd === "rollback" || cmd.startsWith("rollback ")) {
+      const b = txBackupStack.pop();
+      if (b) b.restore();
+      return true;
+    }
+    return false;
+  };
+
   const patchQuery = (target: any) => {
     const origQuery = target.query.bind(target);
     target.query = async (queryTextOrConfig: any, values?: any, callback?: any) => {
       if (queryTextOrConfig && typeof queryTextOrConfig === "object") {
+        if (typeof queryTextOrConfig.text === "string" && handleTxControl(queryTextOrConfig.text)) {
+          const emptyRes = { rows: [], rowCount: 0, command: "ROLLBACK", oid: 0, fields: [] };
+          if (typeof callback === "function") {
+            callback(null, emptyRes);
+            return;
+          }
+          return emptyRes;
+        }
         const isArrayMode = queryTextOrConfig.rowMode === "array";
         const { rowMode: _rm, types: _tp, ...restConfig } = queryTextOrConfig;
         let customKeys: string[] | null = null;
@@ -500,6 +555,14 @@ function createEmbeddedPool(): Pool {
         return res;
       }
       if (typeof queryTextOrConfig === "string") {
+        if (handleTxControl(queryTextOrConfig)) {
+          const emptyRes = { rows: [], rowCount: 0, command: "ROLLBACK", oid: 0, fields: [] };
+          if (typeof callback === "function") {
+            callback(null, emptyRes);
+            return;
+          }
+          return emptyRes;
+        }
         return origQuery(queryTextOrConfig.replace(/::float8\b/gi, "::float"), values, callback);
       }
       return origQuery(queryTextOrConfig, values, callback);
@@ -524,7 +587,7 @@ function sqlStr(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
 }
 
-function seedEmbeddedDatabaseSync(mem: ReturnType<typeof newDb>) {
+function seedEmbeddedDatabaseSync(mem: any) {
   if (globalForDb.__omniEmbeddedSeeded) return;
   globalForDb.__omniEmbeddedSeeded = true;
 
@@ -682,9 +745,11 @@ function seedEmbeddedDatabaseSync(mem: ReturnType<typeof newDb>) {
   ];
 
   const { privateKey, publicKey } = crypto.generateKeyPairSync("ed25519");
+  const privateKeyPem = privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+  const publicKeyPem = publicKey.export({ type: "spki", format: "pem" }).toString();
   const signingKeypair = {
-    privateKeyPem: privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
-    publicKeyPem: publicKey.export({ type: "spki", format: "pem" }).toString(),
+    privateKeyEnc: encryptSecret(privateKeyPem),
+    publicKeyPem,
   };
 
   const proposalExp = new Date(now.getTime() + 540_000);
@@ -896,6 +961,8 @@ function seedEmbeddedDatabaseSync(mem: ReturnType<typeof newDb>) {
     `);
   }
 }
+
+assertProductionDatabaseConfig(process.env);
 
 const useEmbedded =
   !databaseUrl ||

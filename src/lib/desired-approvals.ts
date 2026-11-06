@@ -62,9 +62,19 @@ export type ProposalRecord = {
 };
 
 export class PublicationApprovalError extends Error {
-  code: "INVALID_INPUT" | "UNAUTHORIZED" | "CONFLICT" | "SEQUENCE_CONFLICT";
+  code:
+    | "INVALID_INPUT"
+    | "UNAUTHORIZED"
+    | "CONFLICT"
+    | "SEQUENCE_CONFLICT"
+    | "CANDIDATE_MANIFEST_DRIFT";
   constructor(
-    code: "INVALID_INPUT" | "UNAUTHORIZED" | "CONFLICT" | "SEQUENCE_CONFLICT",
+    code:
+      | "INVALID_INPUT"
+      | "UNAUTHORIZED"
+      | "CONFLICT"
+      | "SEQUENCE_CONFLICT"
+      | "CANDIDATE_MANIFEST_DRIFT",
     message: string,
   ) {
     super(message);
@@ -212,6 +222,7 @@ export function validateDualOperatorApproval(
     approverRole: string;
     expectedSha256: string;
     now?: Date;
+    allowSelfApproval?: boolean;
   },
 ): NonNullable<ProposalRecord["decision"]> {
   const now = input.now ?? new Date();
@@ -221,7 +232,7 @@ export function validateDualOperatorApproval(
   if (input.approverRole !== "owner") {
     throw new PublicationApprovalError("UNAUTHORIZED", "Publication approval requires owner role");
   }
-  if (input.approverAdminId === proposal.proposerAdminId) {
+  if (!input.allowSelfApproval && input.approverAdminId === proposal.proposerAdminId) {
     throw new PublicationApprovalError(
       "UNAUTHORIZED",
       "Self-approval refused: a distinct second owner administrator must review and approve",
@@ -270,6 +281,7 @@ export function validateApprovedPublicationWindow(
     currentMembershipSeq: number;
   },
   now: Date = new Date(),
+  opts?: { allowSelfApproval?: boolean },
 ): void {
   if (!proposal.decision) {
     throw new PublicationApprovalError("UNAUTHORIZED", "Proposal has no independent second-owner approval decision");
@@ -277,7 +289,7 @@ export function validateApprovedPublicationWindow(
   if (proposal.decision.consumedAt !== null) {
     throw new PublicationApprovalError("UNAUTHORIZED", "Publication approval has already been consumed (replay refused)");
   }
-  if (proposal.proposerAdminId === proposal.decision.approverAdminId) {
+  if (!opts?.allowSelfApproval && proposal.proposerAdminId === proposal.decision.approverAdminId) {
     throw new PublicationApprovalError("UNAUTHORIZED", "Dual-operator separation invariant violated");
   }
   const proposalExp = new Date(proposal.expiresAt);

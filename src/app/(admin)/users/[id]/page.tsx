@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { endpointPrincipals, inbounds, nodes, plans, subscriptionTokens, users } from "@/db/schema";
+import { endpointPrincipals, healthObservations, inbounds, nodes, plans, subscriptionTokens, users } from "@/db/schema";
 import { requirePage } from "@/lib/auth";
 import { decryptSecret, sha256 } from "@/lib/crypto";
 import { buildIR, compile, type AccessPath, type IR } from "@/lib/subscription";
-import { compileClientBalancerDocument } from "@/lib/subscription-balancer";
+import { compileClientBalancerDocument, computeAdaptiveBalancerParameters } from "@/lib/subscription-balancer";
+import { computeSubscriptionEtag } from "@/lib/enterprise-hardening";
 import { profileMetadataHeaders, subscriptionUserinfo } from "@/lib/subscription-profile";
 import { getSubscriptionProfileConfig } from "@/lib/governance-store";
 import { usageForUser } from "@/lib/users";
@@ -67,6 +68,15 @@ export default async function UserPage({ params }: { params: Promise<{ id: strin
     .orderBy(subscriptionTokens.id)
     .then((r) => r.filter((t) => !t.revokedAt).slice(-1));
 
+  const recentObs = await db
+    .select()
+    .from(healthObservations)
+    .orderBy(desc(healthObservations.id))
+    .limit(16);
+  const adaptiveTuning = computeAdaptiveBalancerParameters(
+    recentObs.map((o) => o.latencyMs).filter((ms): ms is number => typeof ms === "number" && ms >= 0),
+  );
+
   const pct = plan?.quotaBytes ? Math.min(100, (usage.total / plan.quotaBytes) * 100) : 0;
 
   const provisionedPaths: AccessPath[] = principals
@@ -111,8 +121,8 @@ export default async function UserPage({ params }: { params: Promise<{ id: strin
     groupTag: "omni-auto-best",
     strategy: "url-test",
     probeUrl: "https://cp.cloudflare.com/generate_204",
-    intervalSeconds: 180,
-    toleranceMs: 50,
+    intervalSeconds: adaptiveTuning.intervalSeconds,
+    toleranceMs: adaptiveTuning.toleranceMs,
     endpoints: previewIr.paths.map((p) => ({
       tag: p.tag,
       protocol: p.protocol,
@@ -156,7 +166,15 @@ export default async function UserPage({ params }: { params: Promise<{ id: strin
     expiryPresentation: profileCfg.expiryPresentation,
   });
 
+  const etagValue = computeSubscriptionEtag({
+    compiledBody: formatPreviews[0]?.compiledBody ?? "",
+    userinfoHeader,
+    format: formatPreviews[0]?.format ?? "singbox",
+    updateIntervalHours: profileCfg.updateIntervalHours,
+  });
+
   const headersPreview: Record<string, string> = {
+    etag: etagValue,
     "subscription-userinfo": userinfoHeader,
     "profile-update-interval": String(profileCfg.updateIntervalHours),
     ...profileMetadataHeaders({
@@ -180,21 +198,76 @@ export default async function UserPage({ params }: { params: Promise<{ id: strin
           </>
         }
         title={u.name}
-        subtitle={`${u.email ?? "no email"} · optimistic concurrency version v${u.version} · created ${fmtDate(u.createdAt)}`}
+        subtitle={`${u.email ?? "No email"} · ${plan?.name ?? "Plan"} · Created ${fmtDate(u.createdAt)}`}
         actions={
-          <Badge variant={statusTone(u.status)}>
-            {u.status}
-            {u.suspendReason ? ` (${u.suspendReason})` : ""}
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Link
+              href={`/portal/${tok ? tok.prefix : u.id}`}
+              className="inline-flex h-8 items-center rounded-lg bg-indigo-600 px-3 text-xs font-medium text-white shadow-xs hover:bg-indigo-700"
+            >
+              Open Shareable Portal →
+            </Link>
+            <Badge variant={statusTone(u.status)}>
+              {u.status}
+              {u.suspendReason ? ` (${u.suspendReason})` : ""}
+            </Badge>
+          </div>
         }
       />
 
+      {/* Row 1: Client Configs & Shareable Portal (Front and center for personal use) */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="text-base">Client Configs & Subscription Links</CardTitle>
+          <CardDescription>
+            Copy ready-to-use configs for Sing-box, Clash Meta (Mihomo), Xray, or Hysteria2, or open the shareable portal for QR codes.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50/70 p-3.5">
+            <div className="text-xs text-slate-600 space-y-1">
+              <p>
+                Active token prefix:{" "}
+                <code className="rounded bg-white px-2 py-0.5 font-mono font-semibold text-slate-900 border border-slate-200">
+                  {tok ? `${tok.prefix}…` : "none"}
+                </code>{" "}
+                {tok?.lastUsedAt ? `· last fetched ${ago(tok.lastUsedAt)}` : "· ready to connect"}
+              </p>
+              <p className="text-slate-500">
+                Clients: {CLIENT_REGISTRY.map((c) => c.label).join(" · ")}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Link
+                href={`/portal/${tok ? tok.prefix : u.id}`}
+                className="inline-flex h-8 items-center rounded-lg border border-indigo-200 bg-indigo-50 px-3 text-xs font-medium text-indigo-700 hover:bg-indigo-100"
+              >
+                Open Self-Service Portal →
+              </Link>
+              {canEdit && (
+                <ActionForm
+                  action={rotateTokenAction}
+                  submitLabel="Rotate Subscription URL"
+                  variant="outline"
+                  size="sm"
+                >
+                  <input type="hidden" name="userId" value={u.id} />
+                </ActionForm>
+              )}
+            </div>
+          </div>
+
+          <SubscriptionInspector formats={formatPreviews} headersPreview={headersPreview} />
+        </CardContent>
+      </Card>
+
+      {/* Row 2: Usage & Profile Settings */}
       <div className="mb-6 grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Measured Usage This Period</CardTitle>
+            <CardTitle className="text-base">Traffic Usage This Period</CardTitle>
             <CardDescription>
-              Authoritative counter deltas from node <code className="font-mono text-xs">meter_observations</code>.
+              Measured uplink and downlink bytes across all nodes.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -205,7 +278,7 @@ export default async function UserPage({ params }: { params: Promise<{ id: strin
             </div>
             <p className="mt-1 font-mono text-xs text-slate-600 tabular-nums">
               ↑ {fmtBytes(usage.up)} · ↓ {fmtBytes(usage.down)}
-              {plan?.quotaBytes ? ` · quota ${fmtBytes(plan.quotaBytes)} (${pct.toFixed(1)}%)` : " · unmetered plan"}
+              {plan?.quotaBytes ? ` · quota ${fmtBytes(plan.quotaBytes)} (${pct.toFixed(1)}%)` : " · unlimited quota"}
             </p>
             {plan?.quotaBytes ? (
               <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
@@ -229,7 +302,6 @@ export default async function UserPage({ params }: { params: Promise<{ id: strin
                     <strong>{g.kind}</strong> · {g.note} · {ago(g.detectedAt)}
                   </li>
                 ))}
-                <li className="pt-1 text-amber-700">Unknown intervals are never converted into usage or charges.</li>
               </ul>
             )}
           </CardContent>
@@ -237,8 +309,8 @@ export default async function UserPage({ params }: { params: Promise<{ id: strin
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Subscriber Profile & Plan Assignment</CardTitle>
-            <CardDescription>Protected with optimistic concurrency version checking.</CardDescription>
+            <CardTitle className="text-base">Profile & Plan Settings</CardTitle>
+            <CardDescription>Update name, plan assignment, or account status.</CardDescription>
           </CardHeader>
           <CardContent>
             {canEdit ? (
@@ -246,10 +318,10 @@ export default async function UserPage({ params }: { params: Promise<{ id: strin
                 <input type="hidden" name="userId" value={u.id} />
                 <input type="hidden" name="version" value={u.version} />
                 <div className="grid gap-3 md:grid-cols-2">
-                  <Field label="Subscriber Name">
+                  <Field label="Name">
                     <Input name="name" defaultValue={u.name} required />
                   </Field>
-                  <Field label="Email">
+                  <Field label="Email (optional)">
                     <Input name="email" type="email" defaultValue={u.email ?? ""} />
                   </Field>
                   <Field label="Plan">
@@ -261,7 +333,7 @@ export default async function UserPage({ params }: { params: Promise<{ id: strin
                       ))}
                     </Select>
                   </Field>
-                  <Field label="Expiration Date (UTC)">
+                  <Field label="Expiration Date (optional)">
                     <Input
                       name="expiresAt"
                       type="date"
@@ -270,9 +342,6 @@ export default async function UserPage({ params }: { params: Promise<{ id: strin
                     />
                   </Field>
                 </div>
-                <p className="mt-2 text-xs text-slate-500">
-                  Optimistic lock version <code className="font-mono">v{u.version}</code>; concurrent edits fail closed.
-                </p>
               </ActionForm>
             ) : (
               <p className="text-sm text-slate-600">
@@ -298,48 +367,12 @@ export default async function UserPage({ params }: { params: Promise<{ id: strin
         </Card>
       </div>
 
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="text-base">Subscription Identity & Multi-Client Compiler</CardTitle>
-          <CardDescription>
-            One token per subscriber; raw token is never stored at rest (only SHA-256 hash + 9-char prefix).
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50/70 p-3.5">
-            <div className="text-xs text-slate-600 space-y-1">
-              <p>
-                Active token prefix:{" "}
-                <code className="rounded bg-white px-2 py-0.5 font-mono font-semibold text-slate-900 border border-slate-200">
-                  {tok ? `${tok.prefix}…` : "none"}
-                </code>{" "}
-                {tok?.lastUsedAt ? `· last fetched ${ago(tok.lastUsedAt)}` : "· never fetched"}
-              </p>
-              <p className="text-slate-500">
-                Supported client targets: {CLIENT_REGISTRY.map((c) => c.label).join(" · ")}.
-              </p>
-            </div>
-            {canEdit && (
-              <ActionForm
-                action={rotateTokenAction}
-                submitLabel="Rotate Subscription URL"
-                variant="outline"
-                size="sm"
-              >
-                <input type="hidden" name="userId" value={u.id} />
-              </ActionForm>
-            )}
-          </div>
-
-          <SubscriptionInspector formats={formatPreviews} headersPreview={headersPreview} />
-        </CardContent>
-      </Card>
-
+      {/* Row 3: Per-Endpoint Credentials */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Per-Endpoint Principal Credentials</CardTitle>
+          <CardTitle className="text-base">Per-Endpoint Credentials</CardTitle>
           <CardDescription>
-            Unique UUID/credential per user and endpoint, encrypted at rest with AES-256-GCM and delivered only to the hosting node.
+            Unique UUID/credential per endpoint, encrypted at rest with AES-256-GCM.
           </CardDescription>
         </CardHeader>
         <CardContent>

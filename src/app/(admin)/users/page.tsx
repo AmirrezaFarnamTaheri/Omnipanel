@@ -83,8 +83,8 @@ export default async function UsersPage() {
                     <TableHead className="w-32">Plan</TableHead>
                     <TableHead className="w-28">Status</TableHead>
                     <TableHead className="w-48">Measured / quota</TableHead>
-                    <TableHead className="w-28">Quality</TableHead>
-                    <TableHead className="w-32 text-right">Expires</TableHead>
+                    <TableHead className="w-32">Expires</TableHead>
+                    <TableHead className="w-44 text-right">Connection Links</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -123,11 +123,24 @@ export default async function UsersPage() {
                             </div>
                           )}
                         </TableCell>
-                        <TableCell>
-                          <Badge variant={statusTone(usage[i].quality)}>{usage[i].quality}</Badge>
-                        </TableCell>
-                        <TableCell className="text-right font-mono text-xs tabular-nums text-slate-600">
+                        <TableCell className="font-mono text-xs tabular-nums text-slate-600">
                           {fmtDate(u.expiresAt)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="inline-flex items-center gap-1.5">
+                            <Link
+                              href={`/users/${u.id}`}
+                              className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                            >
+                              Configs
+                            </Link>
+                            <Link
+                              href={`/portal/${u.id}`}
+                              className="inline-flex items-center rounded-md bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100"
+                            >
+                              Portal →
+                            </Link>
+                          </div>
                         </TableCell>
                       </TableRow>
                     );

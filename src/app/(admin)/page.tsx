@@ -105,25 +105,20 @@ export default async function Overview() {
   return (
     <>
       <PageHeader
-        title="Control-Plane Overview"
-        subtitle="Intent → capability validation → dual-operator signed revision → applied state → L0–L3 observed connectivity → durable accounting → deterministic subscription → genesis-chained audit."
-        actions={<ActionForm action={runWorkerAction} submitLabel="Drain Outbox & Sweep" variant="outline" size="sm" />}
+        title="Overview"
+        subtitle="Manage your VPS nodes, proxy endpoints, and subscriber connection links."
+        actions={<ActionForm action={runWorkerAction} submitLabel="Sync Outbox" variant="outline" size="sm" />}
       />
 
-      <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Stat
-          label="Enrolled Nodes"
+          label="Nodes"
           value={allNodes.length}
-          hint={`${new Set(allNodes.map((n) => n.provider.toLowerCase())).size} distinct provider(s)`}
+          hint={`${new Set(allNodes.map((n) => n.provider.toLowerCase())).size} provider(s)`}
         />
-        <Stat label="Listeners" value={ni} hint={`${healthy} L3-verified healthy`} />
-        <Stat label="Subscribers" value={nu} hint={`${np} active plan(s)`} />
-        <Stat
-          label="Pending Approvals"
-          value={pendingProposals.length}
-          hint="2-person Ed25519 governance"
-        />
-        <Stat label="Audit Ledger" value={na} hint="SHA-256 genesis-chained" />
+        <Stat label="Active Endpoints" value={ni} hint={`${healthy} healthy`} />
+        <Stat label="Users" value={nu} hint={`${np} plan(s)`} />
+        <Stat label="Audit Events" value={na} hint="Tamper-evident log" />
       </div>
 
       {pendingProposals.length > 0 && (
@@ -132,10 +127,10 @@ export default async function Overview() {
             <FileSignature className="h-5 w-5 text-indigo-600 shrink-0 mt-0.5" />
             <div className="text-xs">
               <p className="text-sm font-semibold text-indigo-950">
-                {pendingProposals.length} Signed Desired-State Proposal(s) Awaiting Dual-Operator Ceremony
+                {pendingProposals.length} Staged Node Revision(s) Ready to Publish
               </p>
               <p className="text-indigo-800 mt-0.5">
-                Next up: <code className="font-mono font-semibold">{pendingProposals[0].proposalId}</code> on{" "}
+                Next: <code className="font-mono font-semibold">{pendingProposals[0].proposalId}</code> on{" "}
                 <strong>{pendingProposals[0].nodeName}</strong> (seq #{pendingProposals[0].structuralSequence}) —{" "}
                 {pendingProposals[0].note}
               </p>
@@ -145,7 +140,7 @@ export default async function Overview() {
             href="/approvals"
             className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-indigo-700 shrink-0"
           >
-            Review & Approve
+            Quick Publish
             <ArrowRight className="h-3.5 w-3.5" />
           </Link>
         </div>
@@ -156,7 +151,7 @@ export default async function Overview() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <ShieldAlert className="h-4 w-4 text-amber-600" />
-              Active Alerts ({alerts.length})
+              Active Notices ({alerts.length})
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -175,124 +170,130 @@ export default async function Overview() {
         </Card>
       )}
 
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="text-base">Desired vs. Applied Node State</CardTitle>
-          <CardDescription>
-            Tracks structural revision convergence and incremental membership event delivery across enrolled nodes.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <TableWrapper>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Node</TableHead>
-                  <TableHead>Provider / ASN</TableHead>
-                  <TableHead>Heartbeat</TableHead>
-                  <TableHead>Structural (Desired → Applied)</TableHead>
-                  <TableHead>Membership (Desired → Applied)</TableHead>
-                  <TableHead>Agent State</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {allNodes.map((n) => {
-                  const online = isOnline(n.lastSeenAt);
-                  return (
-                    <TableRow key={n.id}>
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-base">Nodes</CardTitle>
+                <CardDescription>Status and revision sync across your servers.</CardDescription>
+              </div>
+              <Link href="/nodes" className="text-xs font-medium text-indigo-600 hover:underline">
+                Manage nodes →
+              </Link>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <TableWrapper>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Node</TableHead>
+                    <TableHead>Location</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {allNodes.map((n) => {
+                    const online = isOnline(n.lastSeenAt);
+                    return (
+                      <TableRow key={n.id}>
+                        <TableCell>
+                          <Link href={`/nodes/${n.id}`} className="font-mono text-xs font-semibold text-indigo-600 hover:underline">
+                            {n.name}
+                          </Link>
+                          <div className="font-mono text-xs text-slate-500 tabular-nums">{n.publicAddress}</div>
+                        </TableCell>
+                        <TableCell className="text-xs text-slate-600">
+                          {n.provider} {n.region ? `· ${n.region}` : ""}
+                        </TableCell>
+                        <TableCell>
+                          {n.status === "active" ? (
+                            <Badge variant={online ? "success" : "error"}>{online ? "online" : "offline"}</Badge>
+                          ) : (
+                            <Badge variant="secondary">{n.status.replace("_", " ")}</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Link
+                            href={`/nodes/${n.id}`}
+                            className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                          >
+                            Endpoints →
+                          </Link>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </TableWrapper>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-base">Users & Connection Links</CardTitle>
+                <CardDescription>Traffic usage and quick access to client configs.</CardDescription>
+              </div>
+              <Link href="/users" className="text-xs font-medium text-indigo-600 hover:underline">
+                All users →
+              </Link>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <TableWrapper>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>User</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Traffic</TableHead>
+                    <TableHead className="text-right">Client Configs</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {recentUsers.map((u, i) => (
+                    <TableRow key={u.id}>
                       <TableCell>
-                        <Link href={`/nodes/${n.id}`} className="font-mono text-xs font-semibold text-indigo-600 hover:underline">
-                          {n.name}
+                        <Link href={`/users/${u.id}`} className="font-medium text-indigo-600 hover:underline">
+                          {u.name}
                         </Link>
-                        <div className="font-mono text-xs text-slate-500 tabular-nums">{n.publicAddress}</div>
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        <span className="font-medium text-slate-900">{n.provider}</span>
-                        <div className="font-mono text-slate-500">{n.asn || "—"} · {n.region || "—"}</div>
+                        {u.email && <div className="font-mono text-xs text-slate-500">{u.email}</div>}
                       </TableCell>
                       <TableCell>
-                        {n.status === "active" ? (
-                          <Badge variant={online ? "success" : "error"}>{online ? "online" : "offline"}</Badge>
-                        ) : (
-                          <Badge variant="secondary">{n.status.replace("_", " ")}</Badge>
-                        )}
-                        <div className="mt-0.5 text-xs text-slate-500 tabular-nums">{ago(n.lastSeenAt)}</div>
+                        <Badge variant={statusTone(u.status)}>{u.status}</Badge>
                       </TableCell>
-                      <TableCell className="font-mono text-xs tabular-nums">
-                        #{n.structuralSeq} → #{n.appliedStructuralSeq}{" "}
-                        {n.structuralSeq !== n.appliedStructuralSeq && (
-                          <Badge variant="warning" className="ml-1">
-                            pending
-                          </Badge>
-                        )}
+                      <TableCell className="font-mono text-xs font-semibold text-slate-900 tabular-nums">
+                        {fmtBytes(usage[i].total)}
                       </TableCell>
-                      <TableCell className="font-mono text-xs tabular-nums">
-                        #{n.membershipSeq} → #{n.appliedMembershipSeq}{" "}
-                        {n.membershipSeq !== n.appliedMembershipSeq && (
-                          <Badge variant="warning" className="ml-1">
-                            pending
-                          </Badge>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={statusTone(n.appliedState)}>{n.appliedState}</Badge>
+                      <TableCell className="text-right">
+                        <div className="inline-flex items-center gap-1.5">
+                          <Link
+                            href={`/users/${u.id}`}
+                            className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                          >
+                            Configs
+                          </Link>
+                          <Link
+                            href={`/portal/${u.id}`}
+                            className="inline-flex items-center rounded-md bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100"
+                          >
+                            Portal →
+                          </Link>
+                        </div>
                       </TableCell>
                     </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </TableWrapper>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Subscriber Usage This Period</CardTitle>
-          <CardDescription>
-            Billing period starting {periodStart().toISOString().slice(0, 10)} UTC · Unknown intervals never trigger quota suspension
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <TableWrapper>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Subscriber</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Upload / Download</TableHead>
-                  <TableHead>Total Measured</TableHead>
-                  <TableHead>Accounting Quality</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {recentUsers.map((u, i) => (
-                  <TableRow key={u.id}>
-                    <TableCell>
-                      <Link href={`/users/${u.id}`} className="font-medium text-indigo-600 hover:underline">
-                        {u.name}
-                      </Link>
-                      {u.email && <div className="font-mono text-xs text-slate-500">{u.email}</div>}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={statusTone(u.status)}>{u.status}</Badge>
-                    </TableCell>
-                    <TableCell className="font-mono text-xs text-slate-600 tabular-nums">
-                      ↑ {fmtBytes(usage[i].up)} · ↓ {fmtBytes(usage[i].down)}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs font-semibold text-slate-900 tabular-nums">
-                      {fmtBytes(usage[i].total)}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={statusTone(usage[i].quality)}>{usage[i].quality}</Badge>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableWrapper>
-        </CardContent>
-      </Card>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableWrapper>
+          </CardContent>
+        </Card>
+      </div>
     </>
   );
 }

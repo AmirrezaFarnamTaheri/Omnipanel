@@ -1,11 +1,12 @@
 import { desc } from "drizzle-orm";
-import { CheckCircle2, Code2, Cpu, ShieldAlert } from "lucide-react";
+import { CheckCircle2, Code2, Cpu, FileCheck2, ShieldAlert } from "lucide-react";
 import { db } from "@/db";
 import { capabilityEvidence, endpointPrincipals, inbounds, nodes } from "@/db/schema";
 import { requirePage } from "@/lib/auth";
 import { CLIENT_REGISTRY, RUNTIME_CAPABILITIES, loadEvidence, hasEvidence } from "@/lib/capabilities";
 import { decryptSecret } from "@/lib/crypto";
 import { GATE_QUALIFICATION_MATRIX, renderRuntimeConfigFragment } from "@/lib/runtime-renderers";
+import { generateSlsaProvenanceAndSbom, runChaosFaultInjectionSuite } from "@/lib/enterprise-hardening";
 import { ago } from "@/lib/format";
 import { recordEvidenceAction } from "@/app/actions/system";
 import { ActionForm } from "@/components/ActionForm";
@@ -54,6 +55,9 @@ export default async function CapabilitiesPage() {
       principals: mappedPrincipals,
     }),
   );
+
+  const chaosSuite = runChaosFaultInjectionSuite();
+  const releaseAttestation = generateSlsaProvenanceAndSbom();
 
   return (
     <div className="space-y-6">
@@ -347,6 +351,80 @@ export default async function CapabilitiesPage() {
                 </TableBody>
               </Table>
             </TableWrapper>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between gap-2">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <FileCheck2 className="h-4 w-4 text-indigo-600" />
+                Fault-Injection Chaos Suite
+              </CardTitle>
+              <Badge variant={chaosSuite.allPassed ? "success" : "error"}>
+                {chaosSuite.allPassed ? `${chaosSuite.scenarios.length}/${chaosSuite.scenarios.length} PASS` : "FAIL"}
+              </Badge>
+            </div>
+            <CardDescription>
+              Deterministic verification of watchdog rollback, corrupted WAL frame isolation, JCS signature rejection, and NTP skew fail-closed behavior.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2 text-xs">
+            {chaosSuite.scenarios.map((s) => (
+              <div
+                key={s.scenarioId}
+                className="flex items-start justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50/70 p-2.5"
+              >
+                <div>
+                  <div className="font-mono font-semibold text-slate-900">{s.scenarioId}</div>
+                  <div className="text-slate-600">{s.expectedInvariant}</div>
+                </div>
+                <Badge variant={s.passed ? "success" : "error"}>{s.passed ? "PASS" : "FAIL"}</Badge>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between gap-2">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <FileCheck2 className="h-4 w-4 text-indigo-600" />
+                SLSA Level 3 Provenance & CycloneDX 1.5 SBOM
+              </CardTitle>
+              <Badge variant="info" className="font-mono text-xs">
+                {releaseAttestation.slsaLevel}
+              </Badge>
+            </div>
+            <CardDescription>
+              Signed in-toto v1 statement and CycloneDX 1.5 component inventory for release artifacts.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2.5 text-xs font-mono">
+            <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-2.5 space-y-1">
+              <div className="flex justify-between">
+                <span className="font-sans text-slate-500">Builder ID:</span>
+                <span className="truncate max-w-[240px] text-slate-900" title={releaseAttestation.builderId}>
+                  {releaseAttestation.builderId}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="font-sans text-slate-500">Bundle Digest:</span>
+                <span className="text-emerald-700">{releaseAttestation.bundleDigest.slice(0, 24)}…</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="font-sans text-slate-500">SBOM Format:</span>
+                <span className="text-indigo-700">
+                  {releaseAttestation.sbomFormat} ({releaseAttestation.sbomComponentsCount} components)
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="font-sans text-slate-500">Attested Subjects:</span>
+                <span className="text-slate-900">{releaseAttestation.binarySubjects.length} release binaries</span>
+              </div>
+            </div>
           </CardContent>
         </Card>
       </div>

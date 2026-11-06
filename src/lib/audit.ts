@@ -34,7 +34,7 @@ export async function audit(
 }
 
 export async function recordAudit(
-  tx: any,
+  tx: Tx,
   entry: {
     actor: string;
     action: string;

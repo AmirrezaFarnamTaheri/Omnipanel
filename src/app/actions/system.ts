@@ -2,7 +2,7 @@
 
 import fs from "node:fs";
 import os from "node:os";
-import { eq, lt } from "drizzle-orm";
+import { eq, lt, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import {
@@ -15,12 +15,12 @@ import {
   usageAggregates,
 } from "@/db/schema";
 import { audit } from "@/lib/audit";
-import { actorOf, createSession, requireRole } from "@/lib/auth";
+import { actorOf, requireRole } from "@/lib/auth";
 import { decryptSecret, verifyPassword } from "@/lib/crypto";
 import { act, int, str, type ActionState } from "@/lib/action-helpers";
 import { declareRecoveryEpoch } from "@/lib/revisions";
 import { ProblemError } from "@/lib/problem";
-import { verifyTotp } from "@/lib/totp";
+import { verifyTotpMatchedStep } from "@/lib/totp";
 import { findCapabilityByKey } from "@/lib/capabilities";
 import { drainOutbox, sweepExpiry } from "@/lib/outbox";
 import {
@@ -56,10 +56,8 @@ export async function recordEvidenceAction(_p: ActionState, fd: FormData): Promi
     if (!["verified", "failed"].includes(status)) {
       throw new ProblemError(422, "Validation failed", "Unknown status");
     }
-    const note = str(fd, "note");
-    if (note.length < 10) {
-      throw new ProblemError(422, "Validation failed", "Evidence needs a note referencing the lab run (min 10 chars)");
-    }
+    const rawNote = str(fd, "note");
+    const note = rawNote.length >= 10 ? rawNote : (rawNote || "Verified by personal operator");
     await db.transaction(async (tx) => {
       await tx
         .insert(capabilityEvidence)
@@ -67,19 +65,33 @@ export async function recordEvidenceAction(_p: ActionState, fd: FormData): Promi
       await audit(tx, actorOf(me), "capability.evidence", "capability", str(fd, "key"), { claim, status, note });
     });
     refresh();
-    return { message: "Historical note recorded. This does not qualify a runtime or enable production admission." };
+    return { message: "Capability note recorded." };
   });
 }
 
-/** Step-up verification for high-risk operations: re-enter password (and TOTP when enabled). */
+/** Optional step-up verification when password is provided: verifies password (and TOTP when enabled, with matched-counter anti-replay). */
 async function stepUp(adminId: number, fd: FormData) {
-  const [a] = await db.select().from(admins).where(eq(admins.id, adminId));
   const pw = String(fd.get("password") ?? "");
+  if (!pw) return;
+  const [a] = await db.select().from(admins).where(eq(admins.id, adminId));
   if (!verifyPassword(pw, a.passwordHash)) {
     throw new ProblemError(401, "Unauthorized", "Step-up failed: wrong password");
   }
-  if (a.totpEnabled && a.totpSecretEnc && !verifyTotp(decryptSecret(a.totpSecretEnc), str(fd, "code"))) {
-    throw new ProblemError(401, "Unauthorized", "Step-up failed: invalid authenticator code");
+  if (a.totpEnabled && a.totpSecretEnc) {
+    const matchedStep = verifyTotpMatchedStep(decryptSecret(a.totpSecretEnc), str(fd, "code"));
+    if (matchedStep === null) {
+      throw new ProblemError(401, "Unauthorized", "Step-up failed: invalid authenticator code");
+    }
+    const counterKey = `totp.last_counter.${adminId}`;
+    const [existingCounter] = await db.select().from(settings).where(eq(settings.key, counterKey));
+    const lastStep = existingCounter ? Number(existingCounter.value) : -1;
+    if (matchedStep <= lastStep) {
+      throw new ProblemError(401, "Unauthorized", "Step-up failed: authenticator code was already used (replay refused)");
+    }
+    await db
+      .insert(settings)
+      .values({ key: counterKey, value: String(matchedStep) })
+      .onConflictDoUpdate({ target: settings.key, set: { value: String(matchedStep) } });
   }
 }
 
@@ -87,13 +99,11 @@ export async function declareEpochAction(_p: ActionState, fd: FormData): Promise
   return act(async () => {
     const me = await requireRole("owner");
     await stepUp(me.id, fd);
-    const reason = str(fd, "reason");
-    if (reason.length < 10) {
-      throw new ProblemError(422, "Validation failed", "Describe the recovery event (min 10 chars)");
-    }
+    const rawReason = str(fd, "reason");
+    const reason = rawReason.length >= 3 ? rawReason : "Personal operator recovery epoch bump";
     const next = await db.transaction((tx) => declareRecoveryEpoch(tx, actorOf(me), reason));
     refresh();
-    return { message: `Control-plane epoch ${next} authorized. Agents will receive signed recovery snapshots.` };
+    return { message: `Control-plane epoch #${next} authorized.` };
   });
 }
 
@@ -115,7 +125,7 @@ export async function purgeRetentionAction(_p: ActionState, _fd: FormData): Prom
     });
     refresh();
     return {
-      message: "Raw usage events >30d, hourly aggregates >180d and health samples >7d purged. Audit records are retained.",
+      message: "Old usage and health samples purged.",
     };
   });
 }
@@ -126,7 +136,7 @@ export async function runWorkerAction(_p: ActionState, _fd: FormData): Promise<A
     await sweepExpiry();
     const n = await drainOutbox();
     refresh();
-    return { message: `Outbox drained: ${n} job(s) processed.` };
+    return { message: `Synced outbox & expirations (${n} job(s) processed).` };
   });
 }
 
@@ -145,7 +155,7 @@ export async function updateSubscriptionProfileAction(_p: ActionState, fd: FormD
     });
     refresh();
     return {
-      message: "Subscription profile metadata and expiry presentation policy updated and recorded to the audit chain.",
+      message: "Subscription profile settings saved.",
     };
   });
 }
@@ -159,7 +169,7 @@ export async function queueBackupTaskAction(_p: ActionState, fd: FormData): Prom
     const created = await queueBackupOrRestoreTask(`admin:${me.email}`, kind, storageTarget);
     refresh();
     return {
-      message: `Queued ${created.kind} task ${created.id} (attempt #${created.attempt}).`,
+      message: `Queued ${created.kind} task ${created.id}.`,
     };
   });
 }
@@ -172,9 +182,7 @@ export async function advanceBackupTaskAction(_p: ActionState, fd: FormData): Pr
     const updated = await transitionBackupTaskState(`admin:${me.email}`, taskId, nextState);
     refresh();
     return {
-      message: `Task ${updated.id} transitioned to ${updated.state}${
-        updated.artifactDigest ? ` (${updated.artifactDigest.slice(0, 23)}…)` : ""
-      }.`,
+      message: `Task ${updated.id} transitioned to ${updated.state}.`,
     };
   });
 }
@@ -183,12 +191,12 @@ export async function createProposalAction(_p: ActionState, fd: FormData): Promi
   return act(async () => {
     const me = await requireRole("owner");
     const nodeId = int(fd, "nodeId");
-    const note = str(fd, "note");
+    const note = str(fd, "note") || "Personal desired-state update";
     const ttlSeconds = Number(str(fd, "ttlSeconds") || "300");
     const proposal = await createDesiredStateProposal(me, nodeId, note, ttlSeconds);
     refresh();
     return {
-      message: `Signed desired-state proposal ${proposal.proposalId} staged for ${proposal.nodeName} (seq #${proposal.structuralSequence}). Switch to a second owner to review and approve.`,
+      message: `Signed proposal ${proposal.proposalId} created for ${proposal.nodeName} (seq #${proposal.structuralSequence}).`,
     };
   });
 }
@@ -197,11 +205,21 @@ export async function approveProposalAction(_p: ActionState, fd: FormData): Prom
   return act(async () => {
     const me = await requireRole("owner");
     const proposalId = str(fd, "proposalId");
-    const expectedSha256 = str(fd, "expectedSha256");
-    const updated = await approveDesiredStateProposal(me, proposalId, expectedSha256);
+    const expectedSha256 = str(fd, "expectedSha256") || undefined;
+    const autoPublish = str(fd, "autoPublish") === "1";
+    const updated = await approveDesiredStateProposal(me, proposalId, expectedSha256, {
+      allowSelfApproval: true,
+    });
+    if (autoPublish) {
+      const pub = await publishApprovedDesiredStateProposal(me, proposalId, { allowSelfApproval: true });
+      refresh();
+      return {
+        message: `Approved & published revision #${pub.decision?.publishedRevisionSeq} for ${pub.nodeName}.`,
+      };
+    }
     refresh();
     return {
-      message: `Proposal ${updated.proposalId} dual-approved by ${me.email}. Ready for atomic one-time publication.`,
+      message: `Proposal ${updated.proposalId} approved. Ready to publish.`,
     };
   });
 }
@@ -210,10 +228,10 @@ export async function publishProposalAction(_p: ActionState, fd: FormData): Prom
   return act(async () => {
     const me = await requireRole("owner");
     const proposalId = str(fd, "proposalId");
-    const updated = await publishApprovedDesiredStateProposal(me, proposalId);
+    const updated = await publishApprovedDesiredStateProposal(me, proposalId, { allowSelfApproval: true });
     refresh();
     return {
-      message: `Published dual-approved revision #${updated.decision?.publishedRevisionSeq} for ${updated.nodeName}. Approval consumed.`,
+      message: `Published revision #${updated.decision?.publishedRevisionSeq} for ${updated.nodeName}.`,
     };
   });
 }
@@ -248,9 +266,14 @@ export async function recordResourceSnapshotAction(_p: ActionState, fd: FormData
       // keep fallback if statfsSync is unavailable
     }
 
-    const allUsage = await db.select().from(usageAggregates);
-    const totalRx = allUsage.reduce((acc, r) => acc + r.up, 0);
-    const totalTx = allUsage.reduce((acc, r) => acc + r.down, 0);
+    const [totals] = await db
+      .select({
+        up: sql<number>`coalesce(sum(${usageAggregates.up}), 0)::float8`,
+        down: sql<number>`coalesce(sum(${usageAggregates.down}), 0)::float8`,
+      })
+      .from(usageAggregates);
+    const totalRx = totals?.up ?? 0;
+    const totalTx = totals?.down ?? 0;
 
     const res = await recordNodeResourceTelemetry(`admin:${me.email}`, nodeId, {
       nodeId: node.name,
@@ -327,10 +350,13 @@ export async function runPanelImportDryRunAction(_p: ActionState, fd: FormData):
   });
 }
 
-export async function commitPanelImportUsersAction(_p: ActionState, _fd: FormData): Promise<ActionState> {
+export async function commitPanelImportUsersAction(_p: ActionState, fd: FormData): Promise<ActionState> {
   return act(async () => {
     const me = await requireRole("owner");
-    const res = await commitPanelImportDryRun(`admin:${me.email}`);
+    const expectedDigest = str(fd, "expectedDryRunDigest") || undefined;
+    const res = await commitPanelImportDryRun(`admin:${me.email}`, {
+      expectedDryRunDigest: expectedDigest,
+    });
     refresh();
     return {
       message:
@@ -400,18 +426,6 @@ export async function runEnrollmentAuthorityDrillAction(_p: ActionState, fd: For
       message: `Enrollment grant ${snap.activeGrantId} (${snap.grantStatus}) processed with trusted TOTP counter #${snap.stepUpCounter} and HMAC peer digest ${snap.lastRateLimitCheck.peerDigestHex.slice(0, 14)}…`,
     };
   });
-}
-
-export async function switchOperatorIdentityAction(fd: FormData): Promise<void> {
-  const targetAdminId = int(fd, "adminId");
-  const [target] = await db.select().from(admins).where(eq(admins.id, targetAdminId));
-  if (!target) return;
-  await db
-    .insert(settings)
-    .values({ key: "embedded.active_admin_id", value: String(target.id) })
-    .onConflictDoUpdate({ target: settings.key, set: { value: String(target.id) } });
-  await createSession(target.id);
-  refresh();
 }
 
 

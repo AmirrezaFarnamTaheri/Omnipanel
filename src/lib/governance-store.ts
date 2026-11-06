@@ -1,8 +1,21 @@
 import crypto from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { admins, endpointPrincipals, inbounds, nodes, plans, settings, usageAggregates, users } from "@/db/schema";
+import {
+  admins,
+  endpointPrincipals,
+  inbounds,
+  nodes,
+  outboxJobs,
+  plans,
+  settings,
+  subscriptionTokens,
+  usageAggregates,
+  usageQualityIntervals,
+  users,
+} from "@/db/schema";
 import { recordAudit, verifyAuditChain } from "@/lib/audit";
+import type { Tx } from "@/lib/tx";
 import {
   advanceBackupTask,
   createBackupTask,
@@ -10,9 +23,10 @@ import {
   type BackupTaskKind,
   type BackupTaskState,
 } from "@/lib/backup-tasks";
-import { decryptSecret, sha256 } from "@/lib/crypto";
+import { decryptSecret, encryptSecret, randomToken, sha256 } from "@/lib/crypto";
 import {
   buildSignedEnvelope,
+  PublicationApprovalError,
   validateApprovedPublicationWindow,
   validateDualOperatorApproval,
   verifySignedEnvelope,
@@ -24,7 +38,13 @@ import {
   type ResourceFreshness,
   type ResourceSnapshot,
 } from "@/lib/observability";
-import { publishStructuralRevision } from "@/lib/revisions";
+import {
+  buildManifest,
+  emitMembership,
+  publishApprovedManifest,
+  publishStructuralRevision,
+  type Manifest,
+} from "@/lib/revisions";
 import { computeSyncPageDigest, validateSyncPage, type SyncPage, type SyncRecord } from "@/lib/syncfeed";
 import {
   evaluateFirewallInventory,
@@ -67,7 +87,11 @@ import {
   type IssuedNodeCertificate,
 } from "@/lib/enrollment-grants";
 import { generateTotp, generateTotpSecret } from "@/lib/totp";
-import { createUser } from "@/lib/users";
+import { assertPlanAdmissible, periodStart, provisionPrincipal } from "@/lib/users";
+
+export type EvidenceSource = "simulated" | "agent_reported" | "independently_verified";
+
+type Executor = Tx | typeof db;
 
 export interface SubscriptionProfileConfig {
   profileTitlePrefix: string;
@@ -87,8 +111,8 @@ const DEFAULT_SUB_PROFILE: SubscriptionProfileConfig = {
   updateIntervalHours: 12,
 };
 
-async function getSettingJson<T>(key: string, fallback: T): Promise<T> {
-  const [row] = await db.select().from(settings).where(eq(settings.key, key));
+async function getSettingJson<T>(key: string, fallback: T, txOrDb: Executor = db): Promise<T> {
+  const [row] = await txOrDb.select().from(settings).where(eq(settings.key, key));
   if (!row?.value) return fallback;
   try {
     return JSON.parse(row.value) as T;
@@ -97,7 +121,7 @@ async function getSettingJson<T>(key: string, fallback: T): Promise<T> {
   }
 }
 
-async function setSettingValue(txOrDb: typeof db, key: string, value: string) {
+async function setSettingValue(txOrDb: Executor, key: string, value: string) {
   await txOrDb
     .insert(settings)
     .values({ key, value })
@@ -159,19 +183,22 @@ export async function updateSubscriptionProfileConfig(
     }
   }
 
-  await setSettingValue(db, "sub.profile_title_prefix", next.profileTitlePrefix);
-  await setSettingValue(db, "sub.support_url", next.supportUrl);
-  await setSettingValue(db, "sub.web_page_url", next.profileWebPageUrl);
-  await setSettingValue(db, "sub.announce", next.announce);
-  await setSettingValue(db, "sub.expiry_presentation", next.expiryPresentation);
-  await setSettingValue(db, "sub.update_interval_hours", String(next.updateIntervalHours));
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(7002)`);
+    await setSettingValue(tx, "sub.profile_title_prefix", next.profileTitlePrefix);
+    await setSettingValue(tx, "sub.support_url", next.supportUrl);
+    await setSettingValue(tx, "sub.web_page_url", next.profileWebPageUrl);
+    await setSettingValue(tx, "sub.announce", next.announce);
+    await setSettingValue(tx, "sub.expiry_presentation", next.expiryPresentation);
+    await setSettingValue(tx, "sub.update_interval_hours", String(next.updateIntervalHours));
 
-  await recordAudit(db as any, {
-    actor,
-    action: "settings.subscription_profile.update",
-    objectType: "settings",
-    objectId: "subscription_profile",
-    detail: next as unknown as Record<string, unknown>,
+    await recordAudit(tx, {
+      actor,
+      action: "settings.subscription_profile.update",
+      objectType: "settings",
+      objectId: "subscription_profile",
+      detail: next as unknown as Record<string, unknown>,
+    });
   });
 
   return next;
@@ -181,47 +208,63 @@ export async function updateSubscriptionProfileConfig(
 // Node Host Resource Snapshots (Explicitly separated from L0-L3 proxy health)
 // ---------------------------------------------------------------------------
 
-export type SerializedResourceSnapshot = Omit<ResourceSnapshot, "sampledAt"> & { sampledAt: string };
+export type SerializedResourceSnapshot = Omit<ResourceSnapshot, "sampledAt"> & {
+  sampledAt: string;
+  source?: EvidenceSource;
+};
 
-function hydrateSnapshot(raw: SerializedResourceSnapshot): ResourceSnapshot {
+function hydrateSnapshot(raw: SerializedResourceSnapshot): ResourceSnapshot & { source: EvidenceSource } {
   return {
     ...raw,
     sampledAt: new Date(raw.sampledAt),
+    source: raw.source ?? "simulated",
   };
 }
 
-function serializeSnapshot(snap: ResourceSnapshot): SerializedResourceSnapshot {
+function serializeSnapshot(snap: ResourceSnapshot, source: EvidenceSource): SerializedResourceSnapshot {
   return {
     ...snap,
     sampledAt: snap.sampledAt.toISOString(),
+    source,
   };
 }
 
 export async function getNodeResourceTelemetry(
   nodeId: number,
   now: Date = new Date(),
-): Promise<{ snapshot: ResourceSnapshot | null; freshness: ResourceFreshness }> {
+): Promise<{
+  snapshot: (ResourceSnapshot & { source: EvidenceSource }) | null;
+  freshness: ResourceFreshness;
+  source: EvidenceSource;
+}> {
   const map = await getSettingJson<Record<string, SerializedResourceSnapshot>>("node.resources", {});
   const raw = map[String(nodeId)];
   if (!raw) {
-    return { snapshot: null, freshness: "unknown" };
+    return { snapshot: null, freshness: "unknown", source: "simulated" };
   }
   const snapshot = hydrateSnapshot(raw);
   const freshness = classifyResourceFreshness(snapshot, now);
-  return { snapshot, freshness };
+  return { snapshot, freshness, source: snapshot.source };
 }
 
-export async function recordNodeResourceTelemetry(
+export async function persistNodeResourceTelemetryInTx(
+  tx: Tx,
   actor: string,
   nodeId: number,
   snapshot: ResourceSnapshot,
-): Promise<{ snapshot: ResourceSnapshot; freshness: ResourceFreshness }> {
+  source: EvidenceSource = "agent_reported",
+): Promise<{
+  snapshot: ResourceSnapshot & { source: EvidenceSource };
+  freshness: ResourceFreshness;
+  source: EvidenceSource;
+}> {
   validateResourceSnapshot(snapshot);
-  const map = await getSettingJson<Record<string, SerializedResourceSnapshot>>("node.resources", {});
-  map[String(nodeId)] = serializeSnapshot(snapshot);
-  await setSettingValue(db, "node.resources", JSON.stringify(map));
+  await tx.execute(sql`select pg_advisory_xact_lock(7002)`);
+  const map = await getSettingJson<Record<string, SerializedResourceSnapshot>>("node.resources", {}, tx);
+  map[String(nodeId)] = serializeSnapshot(snapshot, source);
+  await setSettingValue(tx, "node.resources", JSON.stringify(map));
 
-  await recordAudit(db as any, {
+  await recordAudit(tx, {
     actor,
     action: "node.resource_snapshot.record",
     objectType: "node",
@@ -232,13 +275,32 @@ export async function recordNodeResourceTelemetry(
       cpuPercent: snapshot.cpuPercent,
       memoryUsedBytes: snapshot.memoryUsedBytes,
       memoryTotalBytes: snapshot.memoryTotalBytes,
+      source,
     },
   });
 
   return {
-    snapshot,
+    snapshot: { ...snapshot, source },
     freshness: classifyResourceFreshness(snapshot, new Date()),
+    source,
   };
+}
+
+export async function recordNodeResourceTelemetry(
+  actor: string,
+  nodeId: number,
+  snapshot: ResourceSnapshot,
+  source?: EvidenceSource,
+): Promise<{
+  snapshot: ResourceSnapshot & { source: EvidenceSource };
+  freshness: ResourceFreshness;
+  source: EvidenceSource;
+}> {
+  const effectiveSource: EvidenceSource =
+    source ?? (actor.startsWith("agent:") ? "agent_reported" : "simulated");
+  return db.transaction((tx) =>
+    persistNodeResourceTelemetryInTx(tx, actor, nodeId, snapshot, effectiveSource),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -345,65 +407,68 @@ export async function advanceNodeSyncFeedCheckpoint(
   nodeId: number,
   actionType: "append_active" | "emit_tombstone" | "compact_cursor",
 ): Promise<SerializedSyncPage> {
-  const map = await getSettingJson<Record<string, SerializedSyncPage>>("node.syncfeed", {});
-  const current = hydrateSyncPage((await getNodeSyncFeedPage(nodeId)).page);
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(7002)`);
+    const map = await getSettingJson<Record<string, SerializedSyncPage>>("node.syncfeed", {}, tx);
+    const current = hydrateSyncPage((await getNodeSyncFeedPage(nodeId)).page);
 
-  let baseCursor = current.baseCursor;
-  let records = [...current.records];
-  const nextSeq = current.nextCursor + 1;
+    let baseCursor = current.baseCursor;
+    let records = [...current.records];
+    const nextSeq = current.nextCursor + 1;
 
-  if (actionType === "append_active") {
-    records.push({
-      sequence: nextSeq,
-      id: `principal:node-${nodeId}:u${nextSeq}:active`,
-      tombstone: false,
-      payload: Buffer.from(JSON.stringify({ principalSeq: nextSeq, state: "active" }), "utf8"),
-    });
-  } else if (actionType === "emit_tombstone") {
-    records.push({
-      sequence: nextSeq,
-      id: `principal:node-${nodeId}:revoked-${nextSeq}`,
-      tombstone: true,
-      payload: Buffer.alloc(0),
-    });
-  } else if (actionType === "compact_cursor") {
-    baseCursor = current.nextCursor;
-    records = [
-      {
-        sequence: baseCursor + 1,
-        id: `principal:node-${nodeId}:checkpoint-${baseCursor + 1}`,
+    if (actionType === "append_active") {
+      records.push({
+        sequence: nextSeq,
+        id: `principal:node-${nodeId}:u${nextSeq}:active`,
         tombstone: false,
-        payload: Buffer.from(JSON.stringify({ compactedFrom: current.baseCursor }), "utf8"),
+        payload: Buffer.from(JSON.stringify({ principalSeq: nextSeq, state: "active" }), "utf8"),
+      });
+    } else if (actionType === "emit_tombstone") {
+      records.push({
+        sequence: nextSeq,
+        id: `principal:node-${nodeId}:revoked-${nextSeq}`,
+        tombstone: true,
+        payload: Buffer.alloc(0),
+      });
+    } else if (actionType === "compact_cursor") {
+      baseCursor = current.nextCursor;
+      records = [
+        {
+          sequence: baseCursor + 1,
+          id: `principal:node-${nodeId}:checkpoint-${baseCursor + 1}`,
+          tombstone: false,
+          payload: Buffer.from(JSON.stringify({ compactedFrom: current.baseCursor }), "utf8"),
+        },
+      ];
+    }
+
+    const nextPage: SyncPage = {
+      baseCursor,
+      nextCursor: baseCursor + records.length,
+      records,
+      digest: computeSyncPageDigest(records),
+    };
+
+    validateSyncPage(nextPage.baseCursor, nextPage);
+    const serialized = serializeSyncPage(nextPage);
+    map[String(nodeId)] = serialized;
+    await setSettingValue(tx, "node.syncfeed", JSON.stringify(map));
+
+    await recordAudit(tx, {
+      actor,
+      action: `node.syncfeed.${actionType}`,
+      objectType: "node",
+      objectId: nodeId,
+      detail: {
+        baseCursor: serialized.baseCursor,
+        nextCursor: serialized.nextCursor,
+        recordCount: serialized.records.length,
+        digest: serialized.digest,
       },
-    ];
-  }
+    });
 
-  const nextPage: SyncPage = {
-    baseCursor,
-    nextCursor: baseCursor + records.length,
-    records,
-    digest: computeSyncPageDigest(records),
-  };
-
-  validateSyncPage(nextPage.baseCursor, nextPage);
-  const serialized = serializeSyncPage(nextPage);
-  map[String(nodeId)] = serialized;
-  await setSettingValue(db, "node.syncfeed", JSON.stringify(map));
-
-  await recordAudit(db as any, {
-    actor,
-    action: `node.syncfeed.${actionType}`,
-    objectType: "node",
-    objectId: nodeId,
-    detail: {
-      baseCursor: serialized.baseCursor,
-      nextCursor: serialized.nextCursor,
-      recordCount: serialized.records.length,
-      digest: serialized.digest,
-    },
+    return serialized;
   });
-
-  return serialized;
 }
 
 // ---------------------------------------------------------------------------
@@ -445,32 +510,35 @@ export async function queueBackupOrRestoreTask(
   kind: BackupTaskKind,
   storageTarget: string,
 ): Promise<SerializedBackupTask> {
-  const tasks = await getSettingJson<SerializedBackupTask[]>("backup.tasks", []);
-  const id = `${kind}-${Date.now().toString(36)}-${crypto.randomBytes(2).toString("hex")}`;
-  const created = createBackupTask(id, kind, new Date());
-  const serialized: SerializedBackupTask = {
-    id: created.id,
-    kind: created.kind,
-    state: created.state,
-    attempt: created.attempt,
-    createdAt: created.createdAt.toISOString(),
-    updatedAt: created.updatedAt.toISOString(),
-    artifactDigest: created.artifactDigest,
-    errorCode: created.errorCode,
-    storageTarget: storageTarget.trim() || "local:/var/lib/omnipanel/archives/snap.tar.zst",
-  };
-  tasks.unshift(serialized);
-  await setSettingValue(db, "backup.tasks", JSON.stringify(tasks));
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(7002)`);
+    const tasks = await getSettingJson<SerializedBackupTask[]>("backup.tasks", [], tx);
+    const id = `${kind}-${Date.now().toString(36)}-${crypto.randomBytes(2).toString("hex")}`;
+    const created = createBackupTask(id, kind, new Date());
+    const serialized: SerializedBackupTask = {
+      id: created.id,
+      kind: created.kind,
+      state: created.state,
+      attempt: created.attempt,
+      createdAt: created.createdAt.toISOString(),
+      updatedAt: created.updatedAt.toISOString(),
+      artifactDigest: created.artifactDigest,
+      errorCode: created.errorCode,
+      storageTarget: storageTarget.trim() || "local:/var/lib/omnipanel/archives/snap.tar.zst",
+    };
+    tasks.unshift(serialized);
+    await setSettingValue(tx, "backup.tasks", JSON.stringify(tasks));
 
-  await recordAudit(db as any, {
-    actor,
-    action: "backup.task.create",
-    objectType: "backup_task",
-    objectId: serialized.id,
-    detail: { kind: serialized.kind, state: serialized.state, storageTarget: serialized.storageTarget },
+    await recordAudit(tx, {
+      actor,
+      action: "backup.task.create",
+      objectType: "backup_task",
+      objectId: serialized.id,
+      detail: { kind: serialized.kind, state: serialized.state, storageTarget: serialized.storageTarget },
+    });
+
+    return serialized;
   });
-
-  return serialized;
 }
 
 export async function transitionBackupTaskState(
@@ -478,52 +546,55 @@ export async function transitionBackupTaskState(
   taskId: string,
   nextState: BackupTaskState,
 ): Promise<SerializedBackupTask> {
-  const tasks = await getSettingJson<SerializedBackupTask[]>("backup.tasks", []);
-  const idx = tasks.findIndex((t) => t.id === taskId);
-  if (idx === -1) {
-    throw new Error(`Backup task ${taskId} not found`);
-  }
-  const raw = tasks[idx];
-  const current = hydrateBackupTask(raw);
-  const now = new Date(Math.max(Date.now(), current.updatedAt.getTime() + 1000));
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(7002)`);
+    const tasks = await getSettingJson<SerializedBackupTask[]>("backup.tasks", [], tx);
+    const idx = tasks.findIndex((t) => t.id === taskId);
+    if (idx === -1) {
+      throw new Error(`Backup task ${taskId} not found`);
+    }
+    const raw = tasks[idx];
+    const current = hydrateBackupTask(raw);
+    const now = new Date(Math.max(Date.now(), current.updatedAt.getTime() + 1000));
 
-  const digest =
-    nextState === "succeeded" || nextState === "restored"
-      ? raw.artifactDigest || `sha256:${sha256(`omni-archive:${raw.id}:${raw.storageTarget}`)}`
-      : raw.artifactDigest;
-  const errorCode = nextState === "failed" ? "ERR_ARCHIVE_VERIFY_TIMEOUT" : "";
+    const digest =
+      nextState === "succeeded" || nextState === "restored"
+        ? raw.artifactDigest || `sha256:${sha256(`omni-archive:${raw.id}:${raw.storageTarget}`)}`
+        : raw.artifactDigest;
+    const errorCode = nextState === "failed" ? "ERR_ARCHIVE_VERIFY_TIMEOUT" : "";
 
-  const updated = advanceBackupTask(current, nextState, now, digest, errorCode);
-  const serialized: SerializedBackupTask = {
-    id: updated.id,
-    kind: updated.kind,
-    state: updated.state,
-    attempt: updated.attempt,
-    createdAt: updated.createdAt.toISOString(),
-    updatedAt: updated.updatedAt.toISOString(),
-    artifactDigest: updated.artifactDigest,
-    errorCode: updated.errorCode,
-    storageTarget: raw.storageTarget,
-  };
+    const updated = advanceBackupTask(current, nextState, now, digest, errorCode);
+    const serialized: SerializedBackupTask = {
+      id: updated.id,
+      kind: updated.kind,
+      state: updated.state,
+      attempt: updated.attempt,
+      createdAt: updated.createdAt.toISOString(),
+      updatedAt: updated.updatedAt.toISOString(),
+      artifactDigest: updated.artifactDigest,
+      errorCode: updated.errorCode,
+      storageTarget: raw.storageTarget,
+    };
 
-  tasks[idx] = serialized;
-  await setSettingValue(db, "backup.tasks", JSON.stringify(tasks));
+    tasks[idx] = serialized;
+    await setSettingValue(tx, "backup.tasks", JSON.stringify(tasks));
 
-  await recordAudit(db as any, {
-    actor,
-    action: "backup.task.transition",
-    objectType: "backup_task",
-    objectId: serialized.id,
-    detail: {
-      from: raw.state,
-      to: serialized.state,
-      attempt: serialized.attempt,
-      artifactDigest: serialized.artifactDigest,
-      errorCode: serialized.errorCode,
-    },
+    await recordAudit(tx, {
+      actor,
+      action: "backup.task.transition",
+      objectType: "backup_task",
+      objectId: serialized.id,
+      detail: {
+        from: raw.state,
+        to: serialized.state,
+        attempt: serialized.attempt,
+        artifactDigest: serialized.artifactDigest,
+        errorCode: serialized.errorCode,
+      },
+    });
+
+    return serialized;
   });
-
-  return serialized;
 }
 
 // ---------------------------------------------------------------------------
@@ -535,21 +606,43 @@ export type EnrichedProposalRecord = ProposalRecord & {
   note: string;
 };
 
-async function getOrCreateSigningKeypair(): Promise<{ privateKeyPem: string; publicKeyPem: string }> {
-  const existing = await getSettingJson<{ privateKeyPem: string; publicKeyPem: string } | null>(
-    "desired.signing_keypair",
-    null,
-  );
+type StoredSigningKeypair = {
+  privateKeyEnc?: string;
+  privateKeyPem?: string;
+  publicKeyPem: string;
+};
+
+export async function getOrCreateSigningKeypair(
+  txOrDb: Executor = db,
+): Promise<{ privateKeyPem: string; publicKeyPem: string }> {
+  const existing = await getSettingJson<StoredSigningKeypair | null>("desired.signing_keypair", null, txOrDb);
+  if (existing?.privateKeyEnc && existing?.publicKeyPem) {
+    return {
+      privateKeyPem: decryptSecret(existing.privateKeyEnc),
+      publicKeyPem: existing.publicKeyPem,
+    };
+  }
   if (existing?.privateKeyPem && existing?.publicKeyPem) {
-    return existing;
+    // Transparently upgrade any legacy plaintext private key to KEK-encrypted storage
+    const upgraded: StoredSigningKeypair = {
+      privateKeyEnc: encryptSecret(existing.privateKeyPem),
+      publicKeyPem: existing.publicKeyPem,
+    };
+    await setSettingValue(txOrDb, "desired.signing_keypair", JSON.stringify(upgraded));
+    return {
+      privateKeyPem: existing.privateKeyPem,
+      publicKeyPem: existing.publicKeyPem,
+    };
   }
   const { privateKey, publicKey } = crypto.generateKeyPairSync("ed25519");
-  const pair = {
-    privateKeyPem: privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
-    publicKeyPem: publicKey.export({ type: "spki", format: "pem" }).toString(),
+  const privateKeyPem = privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+  const publicKeyPem = publicKey.export({ type: "spki", format: "pem" }).toString();
+  const stored: StoredSigningKeypair = {
+    privateKeyEnc: encryptSecret(privateKeyPem),
+    publicKeyPem,
   };
-  await setSettingValue(db, "desired.signing_keypair", JSON.stringify(pair));
-  return pair;
+  await setSettingValue(txOrDb, "desired.signing_keypair", JSON.stringify(stored));
+  return { privateKeyPem, publicKeyPem };
 }
 
 export async function listDesiredStateProposals(): Promise<EnrichedProposalRecord[]> {
@@ -566,227 +659,251 @@ export async function createDesiredStateProposal(
   if (proposerAdmin.role !== "owner") {
     throw new Error("Staging a desired-state publication proposal requires owner role");
   }
-  const [node] = await db.select().from(nodes).where(eq(nodes.id, nodeId));
-  if (!node) throw new Error("Node not found");
 
-  const [epochRow] = await db.select().from(settings).where(eq(settings.key, "control_plane_epoch"));
-  const epochNum = Number(epochRow?.value ?? "1");
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(7003)`);
+    const [node] = await tx.select().from(nodes).where(eq(nodes.id, nodeId));
+    if (!node) throw new Error("Node not found");
 
-  const activeInbounds = (await db.select().from(inbounds).where(eq(inbounds.nodeId, nodeId)))
-    .filter((i) => i.enabled)
-    .sort((a, b) => a.id - b.id);
+    const [epochRow] = await tx.select().from(settings).where(eq(settings.key, "control_plane_epoch"));
+    const epochNum = Number(epochRow?.value ?? "1");
 
-  const payload = {
-    node: { id: node.id, name: node.name },
-    egress: {
-      mode: "direct",
-      denyCidrs: ["127.0.0.0/8", "::1/128", "169.254.0.0/16", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"],
-    },
-    inbounds: activeInbounds.map((i) => {
-      const secrets = (i.secrets ?? {}) as Record<string, string>;
-      const secretRefs: Record<string, { ref: string; digest: string }> = {};
-      for (const k of Object.keys(secrets).sort()) {
-        const plain = decryptSecret(secrets[k]);
-        secretRefs[k] = { ref: `inbound/${i.id}/${k}`, digest: sha256(plain) };
-      }
-      return {
-        id: i.id,
-        name: i.name,
-        protocol: i.protocol,
-        runtime: i.runtime,
-        transport: i.transport,
-        port: i.port,
-        sni: i.sni,
-        params: i.params,
-        secretRefs,
-      };
-    }),
-  };
+    const payload = await buildManifest(tx, nodeId);
 
-  const { privateKeyPem } = await getOrCreateSigningKeypair();
-  const privKey = crypto.createPrivateKey(privateKeyPem);
-  const sign = (canonical: string) =>
-    crypto.sign(null, Buffer.from(canonical, "utf8"), privKey).toString("base64");
+    const { privateKeyPem } = await getOrCreateSigningKeypair(tx);
+    const privKey = crypto.createPrivateKey(privateKeyPem);
+    const sign = (canonical: string) =>
+      crypto.sign(null, Buffer.from(canonical, "utf8"), privKey).toString("base64");
 
-  const boundedTtl = Math.max(60, Math.min(ttlSeconds, 600));
-  const now = new Date();
-  const nextSeq = node.structuralSeq + 1;
-  const nodeUuid = `node-${node.id}-${node.name}`;
-  const epochStr = `epoch-${epochNum}`;
+    const boundedTtl = Math.max(60, Math.min(ttlSeconds, 600));
+    const now = new Date();
+    const nextSeq = node.structuralSeq + 1;
+    const nodeUuid = `node-${node.id}-${node.name}`;
+    const epochStr = `epoch-${epochNum}`;
 
-  const built = buildSignedEnvelope({
-    nodeUuid,
-    controlPlaneEpoch: epochStr,
-    structuralSequence: nextSeq,
-    membershipSequence: node.membershipSeq,
-    disruption: "listener_restart",
-    payload,
-    keyId: "cp-ed25519-k1",
-    sign,
-    now,
-    ttlSeconds: boundedTtl,
+    const built = buildSignedEnvelope({
+      nodeUuid,
+      controlPlaneEpoch: epochStr,
+      structuralSequence: nextSeq,
+      membershipSequence: node.membershipSeq,
+      disruption: "listener_restart",
+      payload: payload as unknown as Record<string, unknown>,
+      keyId: "cp-ed25519-k1",
+      sign,
+      now,
+      ttlSeconds: boundedTtl,
+    });
+
+    const proposals = await getSettingJson<EnrichedProposalRecord[]>("desired.proposals", [], tx);
+    const record: EnrichedProposalRecord = {
+      proposalId: `prop-n${node.id}-s${nextSeq}-${crypto.randomBytes(2).toString("hex")}`,
+      nodeId: node.id,
+      nodeName: node.name,
+      nodeUuid,
+      controlPlaneEpoch: epochNum,
+      structuralSequence: nextSeq,
+      membershipSequence: node.membershipSeq,
+      disruption: "listener_restart",
+      envelopeJson: built.envelopeJson,
+      envelopeSha256: built.envelopeSha256,
+      proposerAdminId: proposerAdmin.id,
+      proposerEmail: proposerAdmin.email,
+      createdAt: now.toISOString(),
+      expiresAt: new Date(now.getTime() + boundedTtl * 1000).toISOString(),
+      note: note.trim() || `Signed desired-state publication for ${node.name} seq #${nextSeq}`,
+    };
+
+    proposals.unshift(record);
+    await setSettingValue(tx, "desired.proposals", JSON.stringify(proposals));
+
+    await recordAudit(tx, {
+      actor: `admin:${proposerAdmin.email}`,
+      action: "desired_proposal.stage",
+      objectType: "desired_proposal",
+      objectId: record.proposalId,
+      detail: {
+        nodeId: record.nodeId,
+        structuralSequence: record.structuralSequence,
+        envelopeSha256: record.envelopeSha256,
+        expiresAt: record.expiresAt,
+      },
+    });
+
+    return record;
   });
-
-  const proposals = await getSettingJson<EnrichedProposalRecord[]>("desired.proposals", []);
-  const record: EnrichedProposalRecord = {
-    proposalId: `prop-n${node.id}-s${nextSeq}-${crypto.randomBytes(2).toString("hex")}`,
-    nodeId: node.id,
-    nodeName: node.name,
-    nodeUuid,
-    controlPlaneEpoch: epochNum,
-    structuralSequence: nextSeq,
-    membershipSequence: node.membershipSeq,
-    disruption: "listener_restart",
-    envelopeJson: built.envelopeJson,
-    envelopeSha256: built.envelopeSha256,
-    proposerAdminId: proposerAdmin.id,
-    proposerEmail: proposerAdmin.email,
-    createdAt: now.toISOString(),
-    expiresAt: new Date(now.getTime() + boundedTtl * 1000).toISOString(),
-    note: note.trim() || `Signed desired-state publication for ${node.name} seq #${nextSeq}`,
-  };
-
-  proposals.unshift(record);
-  await setSettingValue(db, "desired.proposals", JSON.stringify(proposals));
-
-  await recordAudit(db as any, {
-    actor: `admin:${proposerAdmin.email}`,
-    action: "desired_proposal.stage",
-    objectType: "desired_proposal",
-    objectId: record.proposalId,
-    detail: {
-      nodeId: record.nodeId,
-      structuralSequence: record.structuralSequence,
-      envelopeSha256: record.envelopeSha256,
-      expiresAt: record.expiresAt,
-    },
-  });
-
-  return record;
 }
 
 export async function approveDesiredStateProposal(
   approverAdmin: { id: number; email: string; role: string },
   proposalId: string,
-  expectedSha256: string,
+  expectedSha256?: string,
+  opts?: { allowSelfApproval?: boolean },
 ): Promise<EnrichedProposalRecord> {
-  const proposals = await getSettingJson<EnrichedProposalRecord[]>("desired.proposals", []);
-  const idx = proposals.findIndex((p) => p.proposalId === proposalId);
-  if (idx === -1) {
-    throw new Error(`Proposal ${proposalId} not found`);
-  }
-  const proposal = proposals[idx];
-  const { publicKeyPem } = await getOrCreateSigningKeypair();
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(7003)`);
+    const proposals = await getSettingJson<EnrichedProposalRecord[]>("desired.proposals", [], tx);
+    const idx = proposals.findIndex((p) => p.proposalId === proposalId);
+    if (idx === -1) {
+      throw new Error(`Proposal ${proposalId} not found`);
+    }
+    const proposal = proposals[idx];
+    const { publicKeyPem } = await getOrCreateSigningKeypair(tx);
 
-  verifySignedEnvelope(proposal.envelopeJson, {
-    expectedNodeUuid: proposal.nodeUuid,
-    expectedEpoch: `epoch-${proposal.controlPlaneEpoch}`,
-    publicKeyPem,
-    now: new Date(),
-  });
+    verifySignedEnvelope(proposal.envelopeJson, {
+      expectedNodeUuid: proposal.nodeUuid,
+      expectedEpoch: `epoch-${proposal.controlPlaneEpoch}`,
+      publicKeyPem,
+      now: new Date(),
+    });
 
-  const decision = validateDualOperatorApproval(proposal, {
-    approverAdminId: approverAdmin.id,
-    approverEmail: approverAdmin.email,
-    approverRole: approverAdmin.role,
-    expectedSha256: expectedSha256.trim().toLowerCase(),
-    now: new Date(),
-  });
+    const digestToConfirm = expectedSha256?.trim().toLowerCase() || proposal.envelopeSha256;
 
-  const updated: EnrichedProposalRecord = {
-    ...proposal,
-    decision,
-  };
-  proposals[idx] = updated;
-  await setSettingValue(db, "desired.proposals", JSON.stringify(proposals));
-
-  await recordAudit(db as any, {
-    actor: `admin:${approverAdmin.email}`,
-    action: "desired_proposal.approve",
-    objectType: "desired_proposal",
-    objectId: updated.proposalId,
-    detail: {
-      nodeId: updated.nodeId,
-      structuralSequence: updated.structuralSequence,
-      proposerEmail: updated.proposerEmail,
+    const decision = validateDualOperatorApproval(proposal, {
+      approverAdminId: approverAdmin.id,
       approverEmail: approverAdmin.email,
-      reviewedSha256: decision.reviewedSha256,
-    },
-  });
+      approverRole: approverAdmin.role,
+      expectedSha256: digestToConfirm,
+      now: new Date(),
+      allowSelfApproval: opts?.allowSelfApproval ?? false,
+    });
 
-  return updated;
+    const updated: EnrichedProposalRecord = {
+      ...proposal,
+      decision,
+    };
+    proposals[idx] = updated;
+    await setSettingValue(tx, "desired.proposals", JSON.stringify(proposals));
+
+    await recordAudit(tx, {
+      actor: `admin:${approverAdmin.email}`,
+      action: "desired_proposal.approve",
+      objectType: "desired_proposal",
+      objectId: updated.proposalId,
+      detail: {
+        nodeId: updated.nodeId,
+        structuralSequence: updated.structuralSequence,
+        proposerEmail: updated.proposerEmail,
+        approverEmail: approverAdmin.email,
+        reviewedSha256: decision.reviewedSha256,
+      },
+    });
+
+    return updated;
+  });
 }
+
+const activeProposalPublications = new Set<string>();
 
 export async function publishApprovedDesiredStateProposal(
   publisherAdmin: { id: number; email: string; role: string },
   proposalId: string,
+  opts?: { injectBeforeConsumeCrash?: () => void; allowSelfApproval?: boolean },
 ): Promise<EnrichedProposalRecord> {
   if (publisherAdmin.role !== "owner") {
     throw new Error("Publishing an approved desired-state revision requires owner role");
   }
-  const proposals = await getSettingJson<EnrichedProposalRecord[]>("desired.proposals", []);
-  const idx = proposals.findIndex((p) => p.proposalId === proposalId);
-  if (idx === -1) {
-    throw new Error(`Proposal ${proposalId} not found`);
+  if (activeProposalPublications.has(proposalId)) {
+    throw new PublicationApprovalError(
+      "CONFLICT",
+      `Concurrent publication attempt for proposal ${proposalId} refused (one-time approval lock active)`,
+    );
   }
-  const proposal = proposals[idx];
-  const [node] = await db.select().from(nodes).where(eq(nodes.id, proposal.nodeId));
-  if (!node) throw new Error("Node not found");
+  activeProposalPublications.add(proposalId);
 
-  const [epochRow] = await db.select().from(settings).where(eq(settings.key, "control_plane_epoch"));
-  const authorizedEpoch = Number(epochRow?.value ?? "1");
+  try {
+    return await db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(7003)`);
+      const proposals = await getSettingJson<EnrichedProposalRecord[]>("desired.proposals", [], tx);
+      const idx = proposals.findIndex((p) => p.proposalId === proposalId);
+      if (idx === -1) {
+        throw new Error(`Proposal ${proposalId} not found`);
+      }
+      const proposal = proposals[idx];
+      const [node] = await tx.select().from(nodes).where(eq(nodes.id, proposal.nodeId));
+      if (!node) throw new Error("Node not found");
 
-  const { publicKeyPem } = await getOrCreateSigningKeypair();
-  verifySignedEnvelope(proposal.envelopeJson, {
-    expectedNodeUuid: proposal.nodeUuid,
-    expectedEpoch: `epoch-${proposal.controlPlaneEpoch}`,
-    publicKeyPem,
-    now: new Date(),
-  });
+      const [epochRow] = await tx.select().from(settings).where(eq(settings.key, "control_plane_epoch"));
+      const authorizedEpoch = Number(epochRow?.value ?? "1");
 
-  validateApprovedPublicationWindow(
-    proposal,
-    {
-      authorizedEpoch,
-      currentStructuralSeq: node.structuralSeq,
-      currentMembershipSeq: node.membershipSeq,
-    },
-    new Date(),
-  );
+      const { publicKeyPem } = await getOrCreateSigningKeypair(tx);
+      const verified = verifySignedEnvelope(proposal.envelopeJson, {
+        expectedNodeUuid: proposal.nodeUuid,
+        expectedEpoch: `epoch-${proposal.controlPlaneEpoch}`,
+        publicKeyPem,
+        now: new Date(),
+      });
 
-  const pubResult = await publishStructuralRevision(
-    proposal.nodeId,
-    `admin:${publisherAdmin.email} (dual-approved:${proposal.decision?.approverEmail})`,
-  );
+      validateApprovedPublicationWindow(
+        proposal,
+        {
+          authorizedEpoch,
+          currentStructuralSeq: node.structuralSeq,
+          currentMembershipSeq: node.membershipSeq,
+        },
+        new Date(),
+        { allowSelfApproval: opts?.allowSelfApproval ?? false },
+      );
 
-  const updated: EnrichedProposalRecord = {
-    ...proposal,
-    decision: proposal.decision
-      ? {
-          ...proposal.decision,
-          consumedAt: new Date().toISOString(),
-          publishedRevisionSeq: pubResult.sequence,
-        }
-      : undefined,
-  };
-  proposals[idx] = updated;
-  await setSettingValue(db, "desired.proposals", JSON.stringify(proposals));
+      const rawPayload = verified.envelope.manifest.payload as Record<string, unknown>;
+      const approvedManifest: Manifest = {
+        schema: "omni.desired-state/v1",
+        node: (rawPayload.node as Manifest["node"]) ?? { id: node.id, name: node.name },
+        egress: (rawPayload.egress as Manifest["egress"]) ?? {
+          mode: "direct",
+          denyCidrs: ["127.0.0.0/8", "::1/128", "169.254.0.0/16", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"],
+        },
+        inbounds: (rawPayload.inbounds as Manifest["inbounds"]) ?? [],
+      };
 
-  await recordAudit(db as any, {
-    actor: `admin:${publisherAdmin.email}`,
-    action: "desired_proposal.publish",
-    objectType: "desired_proposal",
-    objectId: updated.proposalId,
-    detail: {
-      nodeId: updated.nodeId,
-      structuralSequence: pubResult.sequence,
-      envelopeSha256: updated.envelopeSha256,
-      proposerEmail: updated.proposerEmail,
-      approverEmail: updated.decision?.approverEmail,
-    },
-  });
+      const pubResult = await publishApprovedManifest(
+        tx,
+        proposal.nodeId,
+        {
+          label: `admin:${publisherAdmin.email} (dual-approved:${proposal.decision?.approverEmail})`,
+          adminId: publisherAdmin.id,
+          role: "owner",
+        },
+        approvedManifest,
+        proposal.structuralSequence,
+        proposal.controlPlaneEpoch,
+      );
 
-  return updated;
+      if (opts?.injectBeforeConsumeCrash) {
+        opts.injectBeforeConsumeCrash();
+      }
+
+      const updated: EnrichedProposalRecord = {
+        ...proposal,
+        decision: proposal.decision
+          ? {
+              ...proposal.decision,
+              consumedAt: new Date().toISOString(),
+              publishedRevisionSeq: pubResult.sequence,
+            }
+          : undefined,
+      };
+      proposals[idx] = updated;
+      await setSettingValue(tx, "desired.proposals", JSON.stringify(proposals));
+
+      await recordAudit(tx, {
+        actor: `admin:${publisherAdmin.email}`,
+        action: "desired_proposal.publish",
+        objectType: "desired_proposal",
+        objectId: updated.proposalId,
+        detail: {
+          nodeId: updated.nodeId,
+          structuralSequence: pubResult.sequence,
+          envelopeSha256: updated.envelopeSha256,
+          proposerEmail: updated.proposerEmail,
+          approverEmail: updated.decision?.approverEmail,
+        },
+      });
+
+      return updated;
+    });
+  } finally {
+    activeProposalPublications.delete(proposalId);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -795,7 +912,8 @@ export async function publishApprovedDesiredStateProposal(
 
 export async function getNodeFirewallInventory(nodeId: number): Promise<{
   snapshot: FirewallInventorySnapshot;
-  report: FirewallSafetyReport;
+  report: FirewallSafetyReport & { source: EvidenceSource };
+  source: EvidenceSource;
 }> {
   const [node] = await db.select().from(nodes).where(eq(nodes.id, nodeId));
   const nodeIbs = await db.select().from(inbounds).where(eq(inbounds.nodeId, nodeId));
@@ -870,9 +988,11 @@ export async function getNodeFirewallInventory(nodeId: number): Promise<{
     ],
   };
 
+  const baseReport = evaluateFirewallInventory(snapshot);
   return {
     snapshot,
-    report: evaluateFirewallInventory(snapshot),
+    report: { ...baseReport, source: "simulated" },
+    source: "simulated",
   };
 }
 
@@ -882,7 +1002,8 @@ export async function getNodeFirewallInventory(nodeId: number): Promise<{
 
 export async function getCertificateInventory(): Promise<{
   entries: CertificateInventoryEntry[];
-  report: CertificateInventoryReport;
+  report: CertificateInventoryReport & { source: EvidenceSource };
+  source: EvidenceSource;
 }> {
   const allNodes = await db.select().from(nodes).orderBy(nodes.id);
   const allInbounds = await db.select().from(inbounds).orderBy(inbounds.id);
@@ -954,9 +1075,11 @@ export async function getCertificateInventory(): Promise<{
     }),
   ];
 
+  const baseReport = evaluateCertificateInventory(entries, now);
   return {
     entries,
-    report: evaluateCertificateInventory(entries, now),
+    report: { ...baseReport, source: "simulated" },
+    source: "simulated",
   };
 }
 
@@ -964,88 +1087,102 @@ export async function getCertificateInventory(): Promise<{
 // PostgreSQL PITR + Independent KEK Recovery Drill
 // ---------------------------------------------------------------------------
 
-export async function getLastPitrRecoveryDrill(): Promise<PitrRecoveryDrillReport | null> {
-  return getSettingJson<PitrRecoveryDrillReport | null>("dr.last_pitr_drill", null);
+export type PitrDrillWithSource = PitrRecoveryDrillReport & { source: EvidenceSource };
+
+export async function getLastPitrRecoveryDrill(): Promise<PitrDrillWithSource | null> {
+  const raw = await getSettingJson<PitrDrillWithSource | null>("dr.last_pitr_drill", null);
+  if (!raw) return null;
+  return { ...raw, source: raw.source ?? "simulated" };
 }
 
 export async function runPitrAndKekRecoveryDrill(
   actor: string,
   providerKind: "local_private_dir" | "s3_compatible" = "s3_compatible",
-): Promise<PitrRecoveryDrillReport> {
-  const [epochRow] = await db.select().from(settings).where(eq(settings.key, "control_plane_epoch"));
-  const currentEpoch = Number(epochRow?.value ?? "1");
+): Promise<PitrDrillWithSource> {
   const auditStatus = await verifyAuditChain();
 
-  const kekBytes = crypto.createHash("sha256").update("omnipanel-independent-dr-kek-v2").digest();
-  const payload = Buffer.from(
-    JSON.stringify({
-      snapshotType: "pg_pitr_plus_kek_bundle",
-      epoch: currentEpoch,
-      auditCount: auditStatus.count,
-      verifiedAt: new Date().toISOString(),
-    }),
-    "utf8",
-  );
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(7002)`);
+    const [epochRow] = await tx.select().from(settings).where(eq(settings.key, "control_plane_epoch"));
+    const currentEpoch = Number(epochRow?.value ?? "1");
 
-  const providerConfig =
-    providerKind === "s3_compatible"
-      ? ({
-          kind: "s3_compatible" as const,
-          providerId: "s3-eu-central-vault",
-          endpointUrl: "https://s3.eu-central-1.vault.omnipanel.internal",
-          bucket: "omnipanel-pitr-archives",
-          region: "eu-central-1",
-          tlsVerifyPeer: true,
-          tlsInsecureSkipVerify: false,
-          caBundleSha256: sha256("omnipanel-vault-root-ca"),
-        })
-      : ({
-          kind: "local_private_dir" as const,
-          providerId: "local-owner-0700",
-          directoryPath: "/var/lib/omnipanel/backups",
-          modeOctal: "0700",
-          allowSymlinks: false,
-        });
+    const kekBytes = crypto.createHash("sha256").update("omnipanel-independent-dr-kek-v2").digest();
+    const payload = Buffer.from(
+      JSON.stringify({
+        snapshotType: "pg_pitr_plus_kek_bundle",
+        epoch: currentEpoch,
+        auditCount: auditStatus.count,
+        verifiedAt: new Date().toISOString(),
+      }),
+      "utf8",
+    );
 
-  const envelope = encryptBackupArtifact({
-    artifactId: `pitr-snap-e${currentEpoch}-${Date.now().toString(36)}`,
-    providerConfig,
-    kekId: "kek-hsm-dr-slot-01",
-    kekBytes,
-    controlPlaneEpoch: currentEpoch,
-    walTargetLsn: `0/16B3${String(1000 + auditStatus.count)}`,
-    plaintext: payload,
+    const providerConfig =
+      providerKind === "s3_compatible"
+        ? ({
+            kind: "s3_compatible" as const,
+            providerId: "s3-eu-central-vault",
+            endpointUrl: "https://s3.eu-central-1.vault.omnipanel.internal",
+            bucket: "omnipanel-pitr-archives",
+            region: "eu-central-1",
+            tlsVerifyPeer: true,
+            tlsInsecureSkipVerify: false,
+            caBundleSha256: sha256("omnipanel-vault-root-ca"),
+          })
+        : ({
+            kind: "local_private_dir" as const,
+            providerId: "local-owner-0700",
+            directoryPath: "/var/lib/omnipanel/backups",
+            modeOctal: "0700",
+            allowSymlinks: false,
+          });
+
+    const envelope = encryptBackupArtifact({
+      artifactId: `pitr-snap-e${currentEpoch}-${Date.now().toString(36)}`,
+      providerConfig,
+      kekId: "kek-hsm-dr-slot-01",
+      kekBytes,
+      controlPlaneEpoch: currentEpoch,
+      walTargetLsn: `0/16B3${String(1000 + auditStatus.count)}`,
+      plaintext: payload,
+    });
+
+    const baseReport = verifyPitrAndKekRecoveryDrill({
+      envelope,
+      independentKekBytes: kekBytes,
+      expectedPlaintextSha256: envelope.plaintextSha256,
+      restoredAuditGenesisHash: sha256("omnipanel-audit-genesis-anchor"),
+      restoredAuditChainValid: auditStatus.ok,
+      previousEpoch: currentEpoch,
+      declaredNextEpoch: currentEpoch + 1,
+      drillNow: new Date(),
+    });
+
+    const report: PitrDrillWithSource = {
+      ...baseReport,
+      source: "simulated",
+    };
+
+    await setSettingValue(tx, "dr.last_pitr_drill", JSON.stringify(report));
+
+    await recordAudit(tx, {
+      actor,
+      action: "dr.pitr_kek_drill.verify",
+      objectType: "dr_drill",
+      objectId: report.artifactId,
+      detail: {
+        verified: report.verified,
+        source: report.source,
+        providerId: providerConfig.providerId,
+        kekId: report.kekId,
+        walTargetLsn: report.walTargetLsn,
+        plaintextSha256: report.plaintextSha256,
+        simulatedNextEpoch: report.newAuthorizedEpoch,
+      },
+    });
+
+    return report;
   });
-
-  const report = verifyPitrAndKekRecoveryDrill({
-    envelope,
-    independentKekBytes: kekBytes,
-    expectedPlaintextSha256: envelope.plaintextSha256,
-    restoredAuditGenesisHash: sha256("omnipanel-audit-genesis-anchor"),
-    restoredAuditChainValid: auditStatus.ok,
-    previousEpoch: currentEpoch,
-    declaredNextEpoch: currentEpoch + 1,
-    drillNow: new Date(),
-  });
-
-  await setSettingValue(db, "dr.last_pitr_drill", JSON.stringify(report));
-
-  await recordAudit(db as any, {
-    actor,
-    action: "dr.pitr_kek_drill.verify",
-    objectType: "dr_drill",
-    objectId: report.artifactId,
-    detail: {
-      verified: report.verified,
-      providerId: providerConfig.providerId,
-      kekId: report.kekId,
-      walTargetLsn: report.walTargetLsn,
-      plaintextSha256: report.plaintextSha256,
-      simulatedNextEpoch: report.newAuthorizedEpoch,
-    },
-  });
-
-  return report;
 }
 
 // ---------------------------------------------------------------------------
@@ -1058,14 +1195,19 @@ async function buildDatabasePanelExportPayload(
   const allIbs = await db.select().from(inbounds).orderBy(inbounds.id);
   const allPrincipals = await db.select().from(endpointPrincipals).orderBy(endpointPrincipals.id);
   const allUsers = await db.select().from(users).orderBy(users.id);
-  const allUsage = await db.select().from(usageAggregates);
+  const usageRows = await db
+    .select({
+      userId: usageAggregates.userId,
+      up: sql<number>`coalesce(sum(${usageAggregates.up}), 0)::float8`,
+      down: sql<number>`coalesce(sum(${usageAggregates.down}), 0)::float8`,
+    })
+    .from(usageAggregates)
+    .groupBy(usageAggregates.userId);
 
   const userMap = new Map(allUsers.map((u) => [u.id, u]));
-  const usageMap = new Map<number, { up: number; down: number }>();
-  for (const row of allUsage) {
-    const prev = usageMap.get(row.userId) ?? { up: 0, down: 0 };
-    usageMap.set(row.userId, { up: prev.up + row.up, down: prev.down + row.down });
-  }
+  const usageMap = new Map<number, { up: number; down: number }>(
+    usageRows.map((r) => [r.userId, { up: r.up, down: r.down }]),
+  );
 
   return {
     sourcePanel,
@@ -1131,107 +1273,183 @@ export async function executePanelImportDryRun(
     payload = await buildDatabasePanelExportPayload(sourcePanel);
   }
 
-  const allIbs = await db.select().from(inbounds);
-  const allUsers = await db.select().from(users);
-  const report = evaluatePanelImportDryRun(
-    payload,
-    allIbs.map((i) => i.port),
-    allUsers.flatMap((u) => [u.name, u.email ?? ""].filter(Boolean)),
-  );
-  await setSettingValue(db, "importer.last_dry_run", JSON.stringify(report));
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(7002)`);
+    const allIbs = await tx.select().from(inbounds);
+    const allUsers = await tx.select().from(users);
+    const report = evaluatePanelImportDryRun(
+      payload,
+      allIbs.map((i) => i.port),
+      allUsers.flatMap((u) => [u.name, u.email ?? ""].filter(Boolean)),
+    );
+    await setSettingValue(tx, "importer.last_dry_run", JSON.stringify(report));
 
-  await recordAudit(db as any, {
-    actor,
-    action: "importer.dry_run.evaluate",
-    objectType: "importer",
-    objectId: `${report.sourcePanel}:${report.migrationJournalDigest.slice(0, 12)}`,
-    detail: {
-      sourcePanel: report.sourcePanel,
-      sourceVersion: report.sourceVersion,
-      admittedCount: report.admittedInbounds.length,
-      rejectedCount: report.rejectedInbounds.length,
-      logicalUserCount: report.logicalUsers.length,
-      migrationJournalDigest: report.migrationJournalDigest,
-    },
+    await recordAudit(tx, {
+      actor,
+      action: "importer.dry_run.evaluate",
+      objectType: "importer",
+      objectId: `${report.sourcePanel}:${report.migrationJournalDigest.slice(0, 12)}`,
+      detail: {
+        sourcePanel: report.sourcePanel,
+        sourceVersion: report.sourceVersion,
+        admittedCount: report.admittedInbounds.length,
+        rejectedCount: report.rejectedInbounds.length,
+        logicalUserCount: report.logicalUsers.length,
+        migrationJournalDigest: report.migrationJournalDigest,
+      },
+    });
+
+    return report;
   });
-
-  return report;
 }
 
-export async function commitPanelImportDryRun(actor: string): Promise<{
+export async function commitPanelImportDryRun(
+  actor: string,
+  opts?: { expectedDryRunDigest?: string; injectAfterCountCrash?: number },
+): Promise<{
   importedUsers: string[];
   skippedExistingUsers: string[];
   migrationJournalDigest: string;
 }> {
-  const report = await getLastPanelImportDryRun();
-  if (!report) {
-    throw new Error("Run a migration dry-run diff before committing subscribers");
-  }
-  const allPlans = await db.select().from(plans).orderBy(plans.id);
-  const defaultPlan = allPlans.find((p) => p.enforcement !== "hard") ?? allPlans[0];
-  if (!defaultPlan) {
-    throw new Error("No admissible plan exists to attach migrated subscribers");
-  }
-
-  const existingUsers = await db.select().from(users);
-  const existingSet = new Set(
-    existingUsers.flatMap((u) => [u.name.toLowerCase(), (u.email ?? "").toLowerCase()].filter(Boolean))
-  );
-
-  const importedUsers: string[] = [];
-  const skippedExistingUsers: string[] = [];
-
-  for (const lu of report.logicalUsers) {
-    const key = lu.name.trim();
-    if (!key || existingSet.has(key.toLowerCase())) {
-      skippedExistingUsers.push(key);
-      continue;
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(7002)`);
+    const report = await getSettingJson<DryRunImportReport | null>("importer.last_dry_run", null, tx);
+    if (!report) {
+      throw new Error("Run a migration dry-run diff before committing subscribers");
     }
-    const isEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(key);
-    const displayName = isEmail ? key.split("@")[0].replace(/[^a-zA-Z0-9_-]/g, "-") : key.slice(0, 60);
-    await createUser(
-      { label: actor },
-      {
-        name: displayName || `migrated-${importedUsers.length + 1}`,
-        email: isEmail ? key : null,
-        planId: defaultPlan.id,
-        expiresAt: lu.expiresAt ? new Date(lu.expiresAt) : null,
-      },
-      `mig-${report.migrationJournalDigest.slice(0, 16)}-${key}`,
-    );
-    importedUsers.push(key);
-    existingSet.add(key.toLowerCase());
-  }
+    if (!report.readyToCommit) {
+      throw new Error("Dry-run report is not readyToCommit (no admitted inbounds)");
+    }
+    if (opts?.expectedDryRunDigest && opts.expectedDryRunDigest !== report.migrationJournalDigest) {
+      throw new Error(
+        `Migration dry-run digest mismatch: expected ${opts.expectedDryRunDigest}, current stored dry-run is ${report.migrationJournalDigest}`,
+      );
+    }
 
-  await recordAudit(db as any, {
-    actor,
-    action: "importer.migration.commit_users",
-    objectType: "importer",
-    objectId: report.migrationJournalDigest.slice(0, 16),
-    detail: {
-      sourcePanel: report.sourcePanel,
+    // Recheck port ownership at commit time inside the transaction
+    const liveIbs = await tx.select().from(inbounds);
+    const livePorts = new Set(liveIbs.map((i) => i.port));
+    for (const admitted of report.admittedInbounds) {
+      if (livePorts.has(admitted.port)) {
+        throw new Error(
+          `Commit aborted: port ${admitted.port} for admitted inbound "${admitted.tag}" became occupied after dry-run evaluation`,
+        );
+      }
+    }
+
+    const allPlans = await tx.select().from(plans).orderBy(plans.id);
+    const defaultPlan = allPlans.find((p) => p.enforcement !== "hard") ?? allPlans[0];
+    if (!defaultPlan) {
+      throw new Error("No admissible plan exists to attach migrated subscribers");
+    }
+    await assertPlanAdmissible(tx, defaultPlan.id);
+
+    const activeInboundRows = await tx
+      .select({ ib: inbounds })
+      .from(inbounds)
+      .innerJoin(nodes, eq(nodes.id, inbounds.nodeId))
+      .where(and(eq(inbounds.enabled, true), ne(nodes.status, "quarantined")));
+
+    const existingUsers = await tx.select().from(users);
+    const existingSet = new Set(
+      existingUsers.flatMap((u) => [u.name.toLowerCase(), (u.email ?? "").toLowerCase()].filter(Boolean)),
+    );
+
+    const importedUsers: string[] = [];
+    const skippedExistingUsers: string[] = [];
+    const histMap = new Map(report.historicalUsage.map((h) => [h.logicalUserName.toLowerCase(), h]));
+    const [firstNode] = await tx.select({ id: nodes.id }).from(nodes).orderBy(nodes.id).limit(1);
+
+    for (const lu of report.logicalUsers) {
+      const key = lu.name.trim();
+      if (!key || existingSet.has(key.toLowerCase())) {
+        skippedExistingUsers.push(key);
+        continue;
+      }
+      const isEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(key);
+      const displayName = isEmail ? key.split("@")[0].replace(/[^a-zA-Z0-9_-]/g, "-") : key.slice(0, 60);
+
+      const [createdUser] = await tx
+        .insert(users)
+        .values({
+          name: displayName || `migrated-${importedUsers.length + 1}`,
+          email: isEmail ? key : null,
+          planId: defaultPlan.id,
+          status: lu.status === "suspended" ? "suspended" : "active",
+          expiresAt: lu.expiresAt ? new Date(lu.expiresAt) : null,
+        })
+        .returning();
+
+      const subTok = `omni_${randomToken(32)}`;
+      await tx.insert(subscriptionTokens).values({
+        userId: createdUser.id,
+        tokenHash: sha256(subTok),
+        prefix: subTok.slice(0, 9),
+      });
+
+      for (const { ib } of activeInboundRows) {
+        await provisionPrincipal(tx, createdUser, ib);
+      }
+
+      const hist = histMap.get(key.toLowerCase());
+      if (hist && firstNode) {
+        await tx.insert(usageQualityIntervals).values({
+          userId: createdUser.id,
+          nodeId: firstNode.id,
+          kind: "historical_non_billable",
+          note: `Migrated from ${report.sourcePanel} (up=${hist.historicalUpBytes} B, down=${hist.historicalDownBytes} B; non-billable)`,
+        });
+      }
+
+      importedUsers.push(key);
+      existingSet.add(key.toLowerCase());
+
+      if (
+        opts?.injectAfterCountCrash !== undefined &&
+        importedUsers.length >= opts.injectAfterCountCrash
+      ) {
+        throw new Error("Injected mid-batch migration commit failure");
+      }
+    }
+
+    const committedReport: DryRunImportReport = {
+      ...report,
+      mode: "committed",
+    };
+    await setSettingValue(tx, "importer.last_dry_run", JSON.stringify(committedReport));
+
+    await recordAudit(tx, {
+      actor,
+      action: "importer.migration.commit_users",
+      objectType: "importer",
+      objectId: report.migrationJournalDigest.slice(0, 16),
+      detail: {
+        sourcePanel: report.sourcePanel,
+        importedUsers,
+        skippedExistingUsers,
+        historicalUsageClassification: "historical_non_billable",
+        historicalCounters: report.historicalUsage,
+      },
+    });
+
+    return {
       importedUsers,
       skippedExistingUsers,
-      historicalUsageClassification: "historical_non_billable",
-      historicalCounters: report.historicalUsage,
-    },
+      migrationJournalDigest: report.migrationJournalDigest,
+    };
   });
-
-  return {
-    importedUsers,
-    skippedExistingUsers,
-    migrationJournalDigest: report.migrationJournalDigest,
-  };
 }
 
 // ---------------------------------------------------------------------------
 // Interactive Journaled Reconciler & Independent Commit-Confirm Watchdog Simulator
 // ---------------------------------------------------------------------------
 
-export async function getNodeReconcileWatchdogState(nodeId: number): Promise<ReconcileJournalState> {
+export async function getNodeReconcileWatchdogState(
+  nodeId: number,
+): Promise<ReconcileJournalState & { source: EvidenceSource }> {
   const map = await getSettingJson<Record<string, ReconcileJournalState>>("node.reconcile_watchdog", {});
   const existing = map[String(nodeId)];
-  if (existing) return existing;
+  if (existing) return { ...existing, source: "simulated" };
 
   const [node] = await db.select().from(nodes).where(eq(nodes.id, nodeId));
   const [epochRow] = await db.select().from(settings).where(eq(settings.key, "control_plane_epoch"));
@@ -1245,123 +1463,126 @@ export async function getNodeReconcileWatchdogState(nodeId: number): Promise<Rec
     initialAppliedSequence: appliedSeq,
     initialLastKnownGoodDigest: lkgDigest,
   });
-  return w.snapshot();
+  return { ...w.snapshot(), source: "simulated" };
 }
 
 export async function mutateNodeReconcileWatchdogStage(
   actor: string,
   nodeId: number,
   operation: "stage_candidate" | "arm_apply_unverified" | "confirm_verified" | "trigger_watchdog_timeout",
-): Promise<ReconcileJournalState> {
-  const map = await getSettingJson<Record<string, ReconcileJournalState>>("node.reconcile_watchdog", {});
-  const current = await getNodeReconcileWatchdogState(nodeId);
-  const [node] = await db.select().from(nodes).where(eq(nodes.id, nodeId));
-  const [epochRow] = await db.select().from(settings).where(eq(settings.key, "control_plane_epoch"));
-  const epoch = Number(epochRow?.value ?? "1");
+): Promise<ReconcileJournalState & { source: EvidenceSource }> {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(7002)`);
+    const map = await getSettingJson<Record<string, ReconcileJournalState>>("node.reconcile_watchdog", {}, tx);
+    const current = await getNodeReconcileWatchdogState(nodeId);
+    const [node] = await tx.select().from(nodes).where(eq(nodes.id, nodeId));
+    const [epochRow] = await tx.select().from(settings).where(eq(settings.key, "control_plane_epoch"));
+    const epoch = Number(epochRow?.value ?? "1");
 
-  const w = new JournaledReconcileWatchdog({
-    nodeId: current.nodeId,
-    authorizedEpoch: epoch,
-    initialAppliedSequence: current.appliedStructuralSequence,
-    initialLastKnownGoodDigest: current.lastKnownGoodDigest,
+    const w = new JournaledReconcileWatchdog({
+      nodeId: current.nodeId,
+      authorizedEpoch: epoch,
+      initialAppliedSequence: current.appliedStructuralSequence,
+      initialLastKnownGoodDigest: current.lastKnownGoodDigest,
+    });
+
+    let nextState: ReconcileJournalState;
+    const now = new Date();
+
+    if (operation === "stage_candidate") {
+      const nextSeq = Math.max(current.receivedStructuralSequence, node?.structuralSeq ?? 1) + 1;
+      const candidateDigest = sha256(`candidate:${current.nodeId}:e${epoch}:s${nextSeq}:${now.getTime()}`);
+      w.recordReceivedManifest({
+        epoch,
+        structuralSequence: nextSeq,
+        membershipSequence: node?.membershipSeq ?? current.receivedMembershipSequence,
+        manifestDigest: candidateDigest,
+        now,
+      });
+      w.transitionStage("VALIDATED", { reason: "schema_and_secret_refs_verified", now });
+      w.transitionStage("STAGED", { reason: "atomic_staging_dir_fsynced", now });
+      nextState = w.transitionStage("PREFLIGHTED", { reason: "singbox_check_and_port_preflight_ok", now });
+    } else if (operation === "arm_apply_unverified") {
+      const nextSeq = Math.max(current.receivedStructuralSequence, current.appliedStructuralSequence + 1);
+      w.recordReceivedManifest({
+        epoch,
+        structuralSequence: nextSeq,
+        membershipSequence: node?.membershipSeq ?? current.receivedMembershipSequence,
+        manifestDigest:
+          current.candidateDigest && current.candidateDigest !== current.lastKnownGoodDigest
+            ? current.candidateDigest
+            : sha256(`candidate:${current.nodeId}:s${nextSeq}`),
+        now,
+      });
+      w.transitionStage("VALIDATED", { now });
+      w.transitionStage("STAGED", { now });
+      w.transitionStage("PREFLIGHTED", { now });
+      w.transitionStage("APPLYING", { reason: "reloading_runtime_listeners", now });
+      nextState = w.transitionStage("APPLIED_UNVERIFIED", {
+        reason: "commit_confirm_watchdog_armed_60s",
+        watchdogTimeoutSeconds: 60,
+        now,
+      });
+    } else if (operation === "confirm_verified") {
+      const nextSeq = Math.max(current.receivedStructuralSequence, current.appliedStructuralSequence + 1);
+      w.recordReceivedManifest({
+        epoch,
+        structuralSequence: nextSeq,
+        membershipSequence: node?.membershipSeq ?? current.receivedMembershipSequence,
+        manifestDigest:
+          current.candidateDigest && current.candidateDigest !== current.lastKnownGoodDigest
+            ? current.candidateDigest
+            : sha256(`candidate:${current.nodeId}:s${nextSeq}`),
+        now,
+      });
+      w.transitionStage("VALIDATED", { now });
+      w.transitionStage("STAGED", { now });
+      w.transitionStage("PREFLIGHTED", { now });
+      w.transitionStage("APPLYING", { now });
+      w.transitionStage("APPLIED_UNVERIFIED", { watchdogTimeoutSeconds: 60, now });
+      nextState = w.transitionStage("VERIFIED", {
+        reason: "l0_l2_health_and_mgmt_channel_confirmed",
+        now,
+      });
+    } else {
+      const nextSeq = Math.max(current.receivedStructuralSequence, current.appliedStructuralSequence + 1);
+      w.recordReceivedManifest({
+        epoch,
+        structuralSequence: nextSeq,
+        membershipSequence: node?.membershipSeq ?? current.receivedMembershipSequence,
+        manifestDigest: sha256(`unverified-broken-net:${current.nodeId}:s${nextSeq}`),
+        now,
+      });
+      w.transitionStage("VALIDATED", { now });
+      w.transitionStage("STAGED", { now });
+      w.transitionStage("PREFLIGHTED", { now });
+      w.transitionStage("APPLYING", { now });
+      w.transitionStage("APPLIED_UNVERIFIED", { watchdogTimeoutSeconds: 30, now });
+      const expiredTick = new Date(now.getTime() + 35_000);
+      nextState = w.evaluateIndependentWatchdogTick(expiredTick).state;
+    }
+
+    map[String(nodeId)] = nextState;
+    await setSettingValue(tx, "node.reconcile_watchdog", JSON.stringify(map));
+
+    await recordAudit(tx, {
+      actor,
+      action: `node.reconcile_watchdog.${operation}`,
+      objectType: "node",
+      objectId: nodeId,
+      detail: {
+        stage: nextState.stage,
+        receivedStructuralSequence: nextState.receivedStructuralSequence,
+        appliedStructuralSequence: nextState.appliedStructuralSequence,
+        lastKnownGoodSequence: nextState.lastKnownGoodSequence,
+        watchdogArmed: nextState.watchdogArmed,
+        lastTransitionReason: nextState.lastTransitionReason,
+        source: "simulated",
+      },
+    });
+
+    return { ...nextState, source: "simulated" };
   });
-
-  let nextState: ReconcileJournalState;
-  const now = new Date();
-
-  if (operation === "stage_candidate") {
-    const nextSeq = Math.max(current.receivedStructuralSequence, node?.structuralSeq ?? 1) + 1;
-    const candidateDigest = sha256(`candidate:${current.nodeId}:e${epoch}:s${nextSeq}:${now.getTime()}`);
-    w.recordReceivedManifest({
-      epoch,
-      structuralSequence: nextSeq,
-      membershipSequence: node?.membershipSeq ?? current.receivedMembershipSequence,
-      manifestDigest: candidateDigest,
-      now,
-    });
-    w.transitionStage("VALIDATED", { reason: "schema_and_secret_refs_verified", now });
-    w.transitionStage("STAGED", { reason: "atomic_staging_dir_fsynced", now });
-    nextState = w.transitionStage("PREFLIGHTED", { reason: "singbox_check_and_port_preflight_ok", now });
-  } else if (operation === "arm_apply_unverified") {
-    const nextSeq = Math.max(current.receivedStructuralSequence, current.appliedStructuralSequence + 1);
-    w.recordReceivedManifest({
-      epoch,
-      structuralSequence: nextSeq,
-      membershipSequence: node?.membershipSeq ?? current.receivedMembershipSequence,
-      manifestDigest:
-        current.candidateDigest && current.candidateDigest !== current.lastKnownGoodDigest
-          ? current.candidateDigest
-          : sha256(`candidate:${current.nodeId}:s${nextSeq}`),
-      now,
-    });
-    w.transitionStage("VALIDATED", { now });
-    w.transitionStage("STAGED", { now });
-    w.transitionStage("PREFLIGHTED", { now });
-    w.transitionStage("APPLYING", { reason: "reloading_runtime_listeners", now });
-    nextState = w.transitionStage("APPLIED_UNVERIFIED", {
-      reason: "commit_confirm_watchdog_armed_60s",
-      watchdogTimeoutSeconds: 60,
-      now,
-    });
-  } else if (operation === "confirm_verified") {
-    const nextSeq = Math.max(current.receivedStructuralSequence, current.appliedStructuralSequence + 1);
-    w.recordReceivedManifest({
-      epoch,
-      structuralSequence: nextSeq,
-      membershipSequence: node?.membershipSeq ?? current.receivedMembershipSequence,
-      manifestDigest:
-        current.candidateDigest && current.candidateDigest !== current.lastKnownGoodDigest
-          ? current.candidateDigest
-          : sha256(`candidate:${current.nodeId}:s${nextSeq}`),
-      now,
-    });
-    w.transitionStage("VALIDATED", { now });
-    w.transitionStage("STAGED", { now });
-    w.transitionStage("PREFLIGHTED", { now });
-    w.transitionStage("APPLYING", { now });
-    w.transitionStage("APPLIED_UNVERIFIED", { watchdogTimeoutSeconds: 60, now });
-    nextState = w.transitionStage("VERIFIED", {
-      reason: "l0_l2_health_and_mgmt_channel_confirmed",
-      now,
-    });
-  } else {
-    // trigger_watchdog_timeout: simulate commit-confirm deadline expiration and autonomous rollback to LKG
-    const nextSeq = Math.max(current.receivedStructuralSequence, current.appliedStructuralSequence + 1);
-    w.recordReceivedManifest({
-      epoch,
-      structuralSequence: nextSeq,
-      membershipSequence: node?.membershipSeq ?? current.receivedMembershipSequence,
-      manifestDigest: sha256(`unverified-broken-net:${current.nodeId}:s${nextSeq}`),
-      now,
-    });
-    w.transitionStage("VALIDATED", { now });
-    w.transitionStage("STAGED", { now });
-    w.transitionStage("PREFLIGHTED", { now });
-    w.transitionStage("APPLYING", { now });
-    w.transitionStage("APPLIED_UNVERIFIED", { watchdogTimeoutSeconds: 30, now });
-    const expiredTick = new Date(now.getTime() + 35_000);
-    nextState = w.evaluateIndependentWatchdogTick(expiredTick).state;
-  }
-
-  map[String(nodeId)] = nextState;
-  await setSettingValue(db, "node.reconcile_watchdog", JSON.stringify(map));
-
-  await recordAudit(db as any, {
-    actor,
-    action: `node.reconcile_watchdog.${operation}`,
-    objectType: "node",
-    objectId: nodeId,
-    detail: {
-      stage: nextState.stage,
-      receivedStructuralSequence: nextState.receivedStructuralSequence,
-      appliedStructuralSequence: nextState.appliedStructuralSequence,
-      lastKnownGoodSequence: nextState.lastKnownGoodSequence,
-      watchdogArmed: nextState.watchdogArmed,
-      lastTransitionReason: nextState.lastTransitionReason,
-    },
-  });
-
-  return nextState;
 }
 
 // ---------------------------------------------------------------------------
@@ -1369,8 +1590,9 @@ export async function mutateNodeReconcileWatchdogStage(
 // ---------------------------------------------------------------------------
 
 export interface NodeSessionAndMeteringSnapshot {
+  source: EvidenceSource;
   sessions: RuntimeSessionRecord[];
-  lastRevocationSummary: SessionRevocationSummary | null;
+  lastRevocationSummary: (SessionRevocationSummary & { dbPrincipalsRevokedCount?: number }) | null;
   checkpoint: DurableMeteringCheckpointEnvelope;
   lastFlushedBatch: AbsoluteTotalFlushRecord[];
 }
@@ -1387,7 +1609,7 @@ function derivePrincipalTag(user: { id: number; name: string }): string {
 export async function getNodeSessionAndMeteringState(nodeId: number): Promise<NodeSessionAndMeteringSnapshot> {
   const map = await getSettingJson<Record<string, NodeSessionAndMeteringSnapshot>>("node.sessions_metering", {});
   const existing = map[String(nodeId)];
-  if (existing) return existing;
+  if (existing) return { ...existing, source: existing.source ?? "simulated" };
 
   const [node] = await db.select().from(nodes).where(eq(nodes.id, nodeId));
   const nodeName = node?.name ?? `node-${nodeId}`;
@@ -1400,12 +1622,17 @@ export async function getNodeSessionAndMeteringState(nodeId: number): Promise<No
     .where(and(eq(inbounds.nodeId, nodeId), eq(endpointPrincipals.state, "active")))
     .orderBy(users.id);
 
-  const allUsage = await db.select().from(usageAggregates);
-  const usageByUser = new Map<number, { up: number; down: number }>();
-  for (const row of allUsage) {
-    const prev = usageByUser.get(row.userId) ?? { up: 0, down: 0 };
-    usageByUser.set(row.userId, { up: prev.up + row.up, down: prev.down + row.down });
-  }
+  const usageRows = await db
+    .select({
+      userId: usageAggregates.userId,
+      up: sql<number>`coalesce(sum(${usageAggregates.up}), 0)::float8`,
+      down: sql<number>`coalesce(sum(${usageAggregates.down}), 0)::float8`,
+    })
+    .from(usageAggregates)
+    .groupBy(usageAggregates.userId);
+  const usageByUser = new Map<number, { up: number; down: number }>(
+    usageRows.map((r) => [r.userId, { up: r.up, down: r.down }]),
+  );
 
   const reg = new LiveSessionRegistry();
   const acc = new DurableMeteringAccumulator({ nodeId: nodeName });
@@ -1447,6 +1674,7 @@ export async function getNodeSessionAndMeteringState(nodeId: number): Promise<No
   }
 
   return {
+    source: "simulated",
     sessions: reg.snapshot(),
     lastRevocationSummary: null,
     checkpoint: acc.exportCheckpoint(),
@@ -1459,103 +1687,162 @@ export async function mutateNodeSessionAndMetering(
   nodeId: number,
   operation: "accept_sample" | "flush_durable" | "revoke_u1_sessions" | "reset_active_sessions",
 ): Promise<NodeSessionAndMeteringSnapshot> {
-  const map = await getSettingJson<Record<string, NodeSessionAndMeteringSnapshot>>("node.sessions_metering", {});
   const current = await getNodeSessionAndMeteringState(nodeId);
 
-  const acc = DurableMeteringAccumulator.rehydrateFromWal(JSON.stringify(current.checkpoint));
-  let sessions = [...current.sessions];
-  let lastRevocationSummary = current.lastRevocationSummary;
-  let lastFlushedBatch = current.lastFlushedBatch;
-  const primaryPrincipalId = current.checkpoint.trackedUsers[0]?.principalId ?? "u1-elena";
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(7002)`);
+    const map = await getSettingJson<Record<string, NodeSessionAndMeteringSnapshot>>("node.sessions_metering", {}, tx);
 
-  if (operation === "accept_sample") {
-    const primary = current.checkpoint.trackedUsers.find((u) => u.principalId === primaryPrincipalId);
-    const nextSeq = (primary?.lastSequence ?? 1) + 1;
-    const gen = primary?.lastGeneration ?? 1;
-    acc.acceptDurable({
-      principalId: primaryPrincipalId,
-      processGeneration: gen,
-      sequence: nextSeq,
-      cumulativeUplinkBytes: (primary?.lastUplinkBytes ?? 134_217_728) + 33_554_432,
-      cumulativeDownlinkBytes: (primary?.lastDownlinkBytes ?? 536_870_912) + 134_217_728,
-    });
-  } else if (operation === "flush_durable") {
-    lastFlushedBatch = acc.flushDurable((batch) => {
-      if (!batch.length) return;
-    });
-  } else if (operation === "revoke_u1_sessions") {
-    const nowIso = new Date().toISOString();
-    let closedCount = 0;
-    let mutedUnclosableCount = 0;
-    const sessionIds: string[] = [];
-    sessions = sessions.map((s) => {
-      if (s.principalId !== primaryPrincipalId) return s;
-      sessionIds.push(s.sessionId);
-      if (s.hasRuntimeCloser) {
-        closedCount += 1;
+    const acc = DurableMeteringAccumulator.rehydrateFromWal(JSON.stringify(current.checkpoint));
+    let sessions = [...current.sessions];
+    let lastRevocationSummary = current.lastRevocationSummary;
+    let lastFlushedBatch = current.lastFlushedBatch;
+    const primaryPrincipalId = current.checkpoint.trackedUsers[0]?.principalId ?? "u1-elena";
+    const parsedUserIdMatch = /^u(\d+)-/.exec(primaryPrincipalId);
+    const targetUserId = parsedUserIdMatch ? Number(parsedUserIdMatch[1]) : 1;
+
+    if (operation === "accept_sample") {
+      const primary = current.checkpoint.trackedUsers.find((u) => u.principalId === primaryPrincipalId);
+      const nextSeq = (primary?.lastSequence ?? 1) + 1;
+      const gen = primary?.lastGeneration ?? 1;
+      acc.acceptDurable({
+        principalId: primaryPrincipalId,
+        processGeneration: gen,
+        sequence: nextSeq,
+        cumulativeUplinkBytes: (primary?.lastUplinkBytes ?? 134_217_728) + 33_554_432,
+        cumulativeDownlinkBytes: (primary?.lastDownlinkBytes ?? 536_870_912) + 134_217_728,
+      });
+    } else if (operation === "flush_durable") {
+      lastFlushedBatch = acc.flushDurable((batch) => {
+        if (!batch.length) return;
+      });
+      if (lastFlushedBatch.length > 0) {
+        const bucket = periodStart(new Date());
+        for (const rec of lastFlushedBatch) {
+          const m = /^u(\d+)-/.exec(rec.principalId);
+          const uid = m ? Number(m[1]) : targetUserId;
+          const [existingAgg] = await tx
+            .select()
+            .from(usageAggregates)
+            .where(and(eq(usageAggregates.userId, uid), eq(usageAggregates.bucket, bucket)));
+          if (existingAgg) {
+            await tx
+              .update(usageAggregates)
+              .set({
+                up: Math.max(existingAgg.up, rec.totalUplinkBytes),
+                down: Math.max(existingAgg.down, rec.totalDownlinkBytes),
+              })
+              .where(and(eq(usageAggregates.userId, uid), eq(usageAggregates.bucket, bucket)));
+          } else {
+            await tx.insert(usageAggregates).values({
+              userId: uid,
+              bucket,
+              up: rec.totalUplinkBytes,
+              down: rec.totalDownlinkBytes,
+            });
+          }
+        }
+      }
+    } else if (operation === "revoke_u1_sessions") {
+      const now = new Date();
+      const nowIso = now.toISOString();
+      let closedCount = 0;
+      let mutedUnclosableCount = 0;
+      const sessionIds: string[] = [];
+      sessions = sessions.map((s) => {
+        if (s.principalId !== primaryPrincipalId) return s;
+        sessionIds.push(s.sessionId);
+        if (s.hasRuntimeCloser) {
+          closedCount += 1;
+          return {
+            ...s,
+            disposition: "closed" as const,
+            revokedAt: nowIso,
+            revocationReason: "operator_revocation_drill",
+          };
+        }
+        mutedUnclosableCount += 1;
         return {
           ...s,
-          disposition: "closed" as const,
+          disposition: "muted_unclosable" as const,
           revokedAt: nowIso,
-          revocationReason: "operator_revocation_drill",
+          revocationReason: "operator_revocation_drill_quic_no_closer",
         };
+      });
+
+      // Also emit real membership revocation events for active principals of targetUserId on this node
+      const nodePrincipals = await tx
+        .select({ p: endpointPrincipals })
+        .from(endpointPrincipals)
+        .innerJoin(inbounds, eq(inbounds.id, endpointPrincipals.inboundId))
+        .where(
+          and(
+            eq(inbounds.nodeId, nodeId),
+            eq(endpointPrincipals.userId, targetUserId),
+            eq(endpointPrincipals.state, "active"),
+          ),
+        );
+
+      for (const { p } of nodePrincipals) {
+        await emitMembership(tx, "suspend", p);
       }
-      mutedUnclosableCount += 1;
-      return {
-        ...s,
-        disposition: "muted_unclosable" as const,
-        revokedAt: nowIso,
-        revocationReason: "operator_revocation_drill_quic_no_closer",
+      await tx.insert(outboxJobs).values({
+        kind: "session.revoke",
+        payload: { nodeId, userId: targetUserId, principalId: primaryPrincipalId },
+      });
+
+      lastRevocationSummary = {
+        principalId: primaryPrincipalId,
+        closedCount,
+        mutedUnclosableCount,
+        existingStreamsGuaranteedTerminated: mutedUnclosableCount === 0,
+        newAuthenticationBlocked: true,
+        newRoutedFlowsBlocked: true,
+        sessionIds,
+        dbPrincipalsRevokedCount: nodePrincipals.length,
       };
-    });
-    lastRevocationSummary = {
-      principalId: primaryPrincipalId,
-      closedCount,
-      mutedUnclosableCount,
-      existingStreamsGuaranteedTerminated: mutedUnclosableCount === 0,
-      newAuthenticationBlocked: true,
-      newRoutedFlowsBlocked: true,
-      sessionIds,
-    };
-  } else if (operation === "reset_active_sessions") {
-    const nextGen = (sessions[0]?.credentialGeneration ?? 1) + 1;
-    const nowIso = new Date().toISOString();
-    sessions = sessions.map((s, idx) => ({
-      ...s,
-      sessionId: `${s.sessionId.split("-g")[0]}-g${nextGen}-${String(idx + 1).padStart(2, "0")}`,
-      credentialGeneration: nextGen,
-      disposition: "active" as const,
-      establishedAt: nowIso,
-      lastActivityAt: nowIso,
-      revokedAt: null,
-      revocationReason: null,
-    }));
-    lastRevocationSummary = null;
-  }
+    } else if (operation === "reset_active_sessions") {
+      const nextGen = (sessions[0]?.credentialGeneration ?? 1) + 1;
+      const nowIso = new Date().toISOString();
+      sessions = sessions.map((s, idx) => ({
+        ...s,
+        sessionId: `${s.sessionId.split("-g")[0]}-g${nextGen}-${String(idx + 1).padStart(2, "0")}`,
+        credentialGeneration: nextGen,
+        disposition: "active" as const,
+        establishedAt: nowIso,
+        lastActivityAt: nowIso,
+        revokedAt: null,
+        revocationReason: null,
+      }));
+      lastRevocationSummary = null;
+    }
 
-  const nextSnapshot: NodeSessionAndMeteringSnapshot = {
-    sessions,
-    lastRevocationSummary,
-    checkpoint: acc.exportCheckpoint(),
-    lastFlushedBatch,
-  };
-  map[String(nodeId)] = nextSnapshot;
-  await setSettingValue(db, "node.sessions_metering", JSON.stringify(map));
-
-  await recordAudit(db as any, {
-    actor,
-    action: `node.sessions_metering.${operation}`,
-    objectType: "node",
-    objectId: nodeId,
-    detail: {
-      checkpointSequence: nextSnapshot.checkpoint.checkpointSequence,
-      checkpointDigest: nextSnapshot.checkpoint.checkpointDigest,
-      flushedRecords: lastFlushedBatch.length,
+    const nextSnapshot: NodeSessionAndMeteringSnapshot = {
+      source: "simulated",
+      sessions,
       lastRevocationSummary,
-    },
-  });
+      checkpoint: acc.exportCheckpoint(),
+      lastFlushedBatch,
+    };
+    map[String(nodeId)] = nextSnapshot;
+    await setSettingValue(tx, "node.sessions_metering", JSON.stringify(map));
 
-  return nextSnapshot;
+    await recordAudit(tx, {
+      actor,
+      action: `node.sessions_metering.${operation}`,
+      objectType: "node",
+      objectId: nodeId,
+      detail: {
+        source: "simulated",
+        checkpointSequence: nextSnapshot.checkpoint.checkpointSequence,
+        checkpointDigest: nextSnapshot.checkpoint.checkpointDigest,
+        flushedRecords: lastFlushedBatch.length,
+        lastRevocationSummary,
+      },
+    });
+
+    return nextSnapshot;
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1563,6 +1850,7 @@ export async function mutateNodeSessionAndMetering(
 // ---------------------------------------------------------------------------
 
 export interface EnrollmentAuthorityLedgerSnapshot {
+  source: EvidenceSource;
   activeGrantId: string;
   nodeUuid: string;
   tokenSha256: string;
@@ -1587,7 +1875,7 @@ export async function getEnrollmentAuthorityState(): Promise<EnrollmentAuthority
     "enrollment.authority_state",
     null,
   );
-  if (existing) return existing;
+  if (existing) return { ...existing, source: existing.source ?? "simulated" };
 
   const allAdmins = await db.select().from(admins).orderBy(admins.id);
   const ownerAdmins = allAdmins.filter((a) => a.role === "owner");
@@ -1604,6 +1892,7 @@ export async function getEnrollmentAuthorityState(): Promise<EnrollmentAuthority
   });
   const check = limiter.checkAndAdmit(firstNode?.publicAddress ?? "198.51.100.10", new Date());
   return {
+    source: "simulated",
     activeGrantId: `grant-node-${targetNodeId}-baseline`,
     nodeUuid,
     tokenSha256: sha256(`grant-node-${targetNodeId}:${firstNode?.name ?? "node"}`),
@@ -1624,116 +1913,121 @@ export async function runEnrollmentAuthorityDrill(
   operation: "mint_trusted_grant" | "redeem_csr_mtls" | "logout_revoke_unredeemed",
   peerIp = "198.51.100.10",
 ): Promise<EnrollmentAuthorityLedgerSnapshot> {
-  const now = new Date();
-  const allAdmins = await db.select().from(admins).orderBy(admins.id);
-  const ownerAdmins = allAdmins.filter((a) => a.role === "owner");
-  const issuer = ownerAdmins[0] ?? allAdmins[0] ?? { id: 1, email: "owner@omnipanel.internal" };
-  const approver = ownerAdmins[1] ?? { id: 2, email: "reviewer@omnipanel.internal" };
-  const [firstNode] = await db.select().from(nodes).orderBy(nodes.id).limit(1);
-  const targetNodeId = firstNode?.id ?? 1;
-  const nodeUuid = `00000000-0000-4000-8000-${String(targetNodeId).padStart(12, "0")}`;
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(7002)`);
+    const now = new Date();
+    const allAdmins = await tx.select().from(admins).orderBy(admins.id);
+    const ownerAdmins = allAdmins.filter((a) => a.role === "owner");
+    const issuer = ownerAdmins[0] ?? allAdmins[0] ?? { id: 1, email: "owner@omnipanel.internal" };
+    const approver = ownerAdmins[1] ?? { id: 2, email: "reviewer@omnipanel.internal" };
+    const [firstNode] = await tx.select().from(nodes).orderBy(nodes.id).limit(1);
+    const targetNodeId = firstNode?.id ?? 1;
+    const nodeUuid = `00000000-0000-4000-8000-${String(targetNodeId).padStart(12, "0")}`;
 
-  const limiter = new SharedEnrollmentLimiter({
-    hmacKey: crypto.createHash("sha256").update("omnipanel-enrollment-hmac-key").digest(),
-    maxPerPeerPerWindow: 5,
-    maxGlobalPerWindow: 30,
-  });
-  const rateCheck = limiter.checkAndAdmit(peerIp || firstNode?.publicAddress || "198.51.100.10", now);
-
-  const svc = new EnrollmentGrantService();
-  const totpSecret = generateTotpSecret();
-
-  svc.registerSession({
-    sessionId: 501,
-    adminId: issuer.id,
-    adminEmail: issuer.email,
-    role: "owner",
-    sessionTokenHash: sha256(`sess-501-${now.getTime()}`),
-    createdAt: new Date(now.getTime() - 10 * 60_000),
-    lastSeenAt: new Date(now.getTime() - 30_000),
-    expiresAt: new Date(now.getTime() + 4 * 3600_000),
-    canIssueGrant: true,
-    canApproveGrant: true,
-    totpEnabled: true,
-    totpSecretBase32: totpSecret,
-  });
-  svc.setNodeAndOrgState({
-    nodeId: targetNodeId,
-    nodeUuid,
-    organizationId: "org-omni-core",
-    nodeStatus: "pending_enrollment",
-    organizationActive: true,
-    bindingApproved: true,
-  });
-
-  const stepUp = svc.verifyTrustedStepUp({
-    sessionId: 501,
-    totpCode: generateTotp(totpSecret, now.getTime()),
-    now,
-  });
-
-  const minted = svc.issueEnrollmentGrant({
-    issuerSessionId: 501,
-    approverAdminId: approver.id === issuer.id ? issuer.id + 1 : approver.id,
-    approverCanApprove: true,
-    organizationId: "org-omni-core",
-    nodeId: targetNodeId,
-    nodeUuid,
-    ttlSeconds: 900,
-    now,
-  });
-
-  let issuerSessionStatus: EnrollmentAuthorityLedgerSnapshot["issuerSessionStatus"] =
-    "active_within_2h_idle";
-  let grantStatus: EnrollmentAuthorityLedgerSnapshot["grantStatus"] = "ready_for_csr";
-  let issuedCertificate: IssuedNodeCertificate | null = null;
-
-  if (operation === "redeem_csr_mtls") {
-    issuedCertificate = svc.redeemGrantAndIssueCertificate({
-      bearerToken: minted.bearerToken,
-      csrPem: "-----BEGIN CERTIFICATE REQUEST-----\nMIIBMTCB2gIBADBAMQswCQYDVQQGEwJVUz==\n-----END CERTIFICATE REQUEST-----",
-      now: new Date(now.getTime() + 1000),
+    const limiter = new SharedEnrollmentLimiter({
+      hmacKey: crypto.createHash("sha256").update("omnipanel-enrollment-hmac-key").digest(),
+      maxPerPeerPerWindow: 5,
+      maxGlobalPerWindow: 30,
     });
-    grantStatus = "redeemed";
-  } else if (operation === "logout_revoke_unredeemed") {
-    svc.logoutSession(501);
-    issuerSessionStatus = "logged_out_revoked";
-    grantStatus = "invalidated_by_logout";
-  }
+    const rateCheck = limiter.checkAndAdmit(peerIp || firstNode?.publicAddress || "198.51.100.10", now);
 
-  const snapshot: EnrollmentAuthorityLedgerSnapshot = {
-    activeGrantId: minted.grant.grantId,
-    nodeUuid,
-    tokenSha256: minted.grant.tokenSha256,
-    issuerEmail: issuer.email,
-    approverEmail: approver.email,
-    stepUpVerifiedSource: stepUp.verifiedSource as "trusted",
-    stepUpCounter: stepUp.verifiedCounter,
-    issuerSessionStatus,
-    grantStatus,
-    issuedCertificate,
-    lastRateLimitCheck: rateCheck,
-    updatedAt: now.toISOString(),
-  };
+    const svc = new EnrollmentGrantService();
+    const totpSecret = generateTotpSecret();
 
-  await setSettingValue(db, "enrollment.authority_state", JSON.stringify(snapshot));
+    svc.registerSession({
+      sessionId: 501,
+      adminId: issuer.id,
+      adminEmail: issuer.email,
+      role: "owner",
+      sessionTokenHash: sha256(`sess-501-${now.getTime()}`),
+      createdAt: new Date(now.getTime() - 10 * 60_000),
+      lastSeenAt: new Date(now.getTime() - 30_000),
+      expiresAt: new Date(now.getTime() + 4 * 3600_000),
+      canIssueGrant: true,
+      canApproveGrant: true,
+      totpEnabled: true,
+      totpSecretBase32: totpSecret,
+    });
+    svc.setNodeAndOrgState({
+      nodeId: targetNodeId,
+      nodeUuid,
+      organizationId: "org-omni-core",
+      nodeStatus: "pending_enrollment",
+      organizationActive: true,
+      bindingApproved: true,
+    });
 
-  await recordAudit(db as any, {
-    actor,
-    action: `enrollment.authority.${operation}`,
-    objectType: "enrollment_grant",
-    objectId: snapshot.activeGrantId,
-    detail: {
-      nodeUuid: snapshot.nodeUuid,
-      stepUpVerifiedSource: snapshot.stepUpVerifiedSource,
-      stepUpCounter: snapshot.stepUpCounter,
-      grantStatus: snapshot.grantStatus,
-      issuedCertSerial: snapshot.issuedCertificate?.serial ?? null,
-      peerDigestHex: snapshot.lastRateLimitCheck.peerDigestHex,
-    },
+    const stepUp = svc.verifyTrustedStepUp({
+      sessionId: 501,
+      totpCode: generateTotp(totpSecret, now.getTime()),
+      now,
+    });
+
+    const minted = svc.issueEnrollmentGrant({
+      issuerSessionId: 501,
+      approverAdminId: approver.id === issuer.id ? issuer.id + 1 : approver.id,
+      approverCanApprove: true,
+      organizationId: "org-omni-core",
+      nodeId: targetNodeId,
+      nodeUuid,
+      ttlSeconds: 900,
+      now,
+    });
+
+    let issuerSessionStatus: EnrollmentAuthorityLedgerSnapshot["issuerSessionStatus"] =
+      "active_within_2h_idle";
+    let grantStatus: EnrollmentAuthorityLedgerSnapshot["grantStatus"] = "ready_for_csr";
+    let issuedCertificate: IssuedNodeCertificate | null = null;
+
+    if (operation === "redeem_csr_mtls") {
+      issuedCertificate = svc.redeemGrantAndIssueCertificate({
+        bearerToken: minted.bearerToken,
+        csrPem: "-----BEGIN CERTIFICATE REQUEST-----\nMIIBMTCB2gIBADBAMQswCQYDVQQGEwJVUz==\n-----END CERTIFICATE REQUEST-----",
+        now: new Date(now.getTime() + 1000),
+      });
+      grantStatus = "redeemed";
+    } else if (operation === "logout_revoke_unredeemed") {
+      svc.logoutSession(501);
+      issuerSessionStatus = "logged_out_revoked";
+      grantStatus = "invalidated_by_logout";
+    }
+
+    const snapshot: EnrollmentAuthorityLedgerSnapshot = {
+      source: "simulated",
+      activeGrantId: minted.grant.grantId,
+      nodeUuid,
+      tokenSha256: minted.grant.tokenSha256,
+      issuerEmail: issuer.email,
+      approverEmail: approver.email,
+      stepUpVerifiedSource: stepUp.verifiedSource as "trusted",
+      stepUpCounter: stepUp.verifiedCounter,
+      issuerSessionStatus,
+      grantStatus,
+      issuedCertificate,
+      lastRateLimitCheck: rateCheck,
+      updatedAt: now.toISOString(),
+    };
+
+    await setSettingValue(tx, "enrollment.authority_state", JSON.stringify(snapshot));
+
+    await recordAudit(tx, {
+      actor,
+      action: `enrollment.authority.${operation}`,
+      objectType: "enrollment_grant",
+      objectId: snapshot.activeGrantId,
+      detail: {
+        source: "simulated",
+        nodeUuid: snapshot.nodeUuid,
+        stepUpVerifiedSource: snapshot.stepUpVerifiedSource,
+        stepUpCounter: snapshot.stepUpCounter,
+        grantStatus: snapshot.grantStatus,
+        issuedCertSerial: snapshot.issuedCertificate?.serial ?? null,
+        peerDigestHex: snapshot.lastRateLimitCheck.peerDigestHex,
+      },
+    });
+
+    return snapshot;
   });
-
-  return snapshot;
 }
 
 

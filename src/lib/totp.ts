@@ -38,7 +38,7 @@ function base32Decode(s: string): Buffer {
 export const newTotpSecret = () => base32Encode(crypto.randomBytes(20));
 export const generateTotpSecret = newTotpSecret;
 
-function hotp(secret: string, counter: number) {
+export function hotp(secret: string, counter: number) {
   const buf = Buffer.alloc(8);
   buf.writeBigUInt64BE(BigInt(counter));
   const h = crypto.createHmac("sha1", base32Decode(secret)).update(buf).digest();
@@ -51,11 +51,21 @@ export function generateTotp(secret: string, now = Date.now()): string {
   return hotp(secret, Math.floor(now / 30_000));
 }
 
-export function verifyTotp(secret: string, code: string, now = Date.now()) {
+export function verifyTotpMatchedStep(secret: string, code: string, now = Date.now()): number | null {
   const c = code.replace(/\s/g, "");
-  if (!/^\d{6}$/.test(c)) return false;
+  if (!/^\d{6}$/.test(c)) return null;
   const step = Math.floor(now / 30_000);
-  return [-1, 0, 1].some((d) => crypto.timingSafeEqual(Buffer.from(hotp(secret, step + d)), Buffer.from(c)));
+  for (const d of [-1, 0, 1]) {
+    const candidateStep = step + d;
+    if (crypto.timingSafeEqual(Buffer.from(hotp(secret, candidateStep)), Buffer.from(c))) {
+      return candidateStep;
+    }
+  }
+  return null;
+}
+
+export function verifyTotp(secret: string, code: string, now = Date.now()): boolean {
+  return verifyTotpMatchedStep(secret, code, now) !== null;
 }
 
 export const otpauthUri = (email: string, secret: string) =>

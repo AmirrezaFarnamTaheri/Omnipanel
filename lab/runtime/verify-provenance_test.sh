@@ -86,33 +86,33 @@ assert_failure() {
 }
 
 : > "$MOCK_COSIGN_LOG"
-"$verifier" "$artifact" "$metadata" "$artifact_bundle" "$metadata_bundle" >/dev/null
+bash "$verifier" "$artifact" "$metadata" "$artifact_bundle" "$metadata_bundle" >/dev/null
 [[ "$(wc -l < "$MOCK_COSIGN_LOG" | tr -d ' ')" == "2" ]]
 echo "PASS: valid artifact and metadata signatures verified"
 
 printf 'tampered runtime\n' >> "$artifact"
-assert_failure "artifact digest mismatch" "$verifier" "$artifact" "$metadata" "$artifact_bundle" "$metadata_bundle"
+assert_failure "artifact digest mismatch" bash "$verifier" "$artifact" "$metadata" "$artifact_bundle" "$metadata_bundle"
 printf 'runtime binary fixture\n' > "$artifact"
 
 node -e 'const fs = require("node:fs"); const d = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); d.version = "latest"; fs.writeFileSync(process.argv[2], JSON.stringify(d));' "$metadata" "$temp_dir/invalid-metadata.json"
-assert_failure "unapproved runtime version" "$verifier" "$artifact" "$temp_dir/invalid-metadata.json" "$artifact_bundle" "$metadata_bundle"
+assert_failure "unapproved runtime version" bash "$verifier" "$artifact" "$temp_dir/invalid-metadata.json" "$artifact_bundle" "$metadata_bundle"
 
 # Regression: runtime startup previously failed because a signed custom build
 # declared only the V2Ray statistics API and lacked required Reality/uTLS.
 node -e 'const fs = require("node:fs"); const d = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); d.buildTags = "with_v2ray_api,badlinkname,tfogo_checklinkname0"; fs.writeFileSync(process.argv[2], JSON.stringify(d));' "$metadata" "$temp_dir/missing-utls.json"
-assert_failure "missing required Reality uTLS build tag" "$verifier" "$artifact" "$temp_dir/missing-utls.json" "$artifact_bundle" "$metadata_bundle"
+assert_failure "missing required Reality uTLS build tag" bash "$verifier" "$artifact" "$temp_dir/missing-utls.json" "$artifact_bundle" "$metadata_bundle"
 
 node -e 'const fs = require("node:fs"); const d = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); d.buildTags = "with_utls,badlinkname,tfogo_checklinkname0"; fs.writeFileSync(process.argv[2], JSON.stringify(d));' "$metadata" "$temp_dir/missing-stats.json"
-assert_failure "missing required per-user stats build tag" "$verifier" "$artifact" "$temp_dir/missing-stats.json" "$artifact_bundle" "$metadata_bundle"
+assert_failure "missing required per-user stats build tag" bash "$verifier" "$artifact" "$temp_dir/missing-stats.json" "$artifact_bundle" "$metadata_bundle"
 
-assert_failure "missing artifact bundle" "$verifier" "$artifact" "$metadata" "$temp_dir/missing.bundle" "$metadata_bundle"
+assert_failure "missing artifact bundle" bash "$verifier" "$artifact" "$metadata" "$temp_dir/missing.bundle" "$metadata_bundle"
 
-assert_failure "invalid artifact signature" env MOCK_COSIGN_FAIL="$artifact" "$verifier" "$artifact" "$metadata" "$artifact_bundle" "$metadata_bundle"
+assert_failure "invalid artifact signature" env MOCK_COSIGN_FAIL="$artifact" bash "$verifier" "$artifact" "$metadata" "$artifact_bundle" "$metadata_bundle"
 
-assert_failure "unexpected workflow identity" env GITHUB_REF="refs/heads/untrusted" "$verifier" "$artifact" "$metadata" "$artifact_bundle" "$metadata_bundle"
+assert_failure "unexpected workflow identity" env GITHUB_REF="refs/heads/untrusted" bash "$verifier" "$artifact" "$metadata" "$artifact_bundle" "$metadata_bundle"
 
 ln -s "$artifact" "$temp_dir/artifact-link"
-assert_failure "symlinked artifact" "$verifier" "$temp_dir/artifact-link" "$metadata" "$artifact_bundle" "$metadata_bundle"
+assert_failure "symlinked artifact" bash "$verifier" "$temp_dir/artifact-link" "$metadata" "$artifact_bundle" "$metadata_bundle"
 
-assert_failure "missing arguments" "$verifier"
+assert_failure "missing arguments" bash "$verifier"
 echo "All provenance verifier tests passed."

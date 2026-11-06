@@ -51,50 +51,51 @@ export async function destroySession() {
   });
 }
 
+export async function resolveAuthenticatedAdminFromToken(
+  token: string | undefined | null,
+  now: Date = new Date(),
+): Promise<AdminSession | null> {
+  if (!token || typeof token !== "string" || token.trim().length === 0) {
+    return null;
+  }
+  const [row] = await db
+    .select({
+      sid: adminSessions.id,
+      lastSeenAt: adminSessions.lastSeenAt,
+      id: admins.id,
+      email: admins.email,
+      role: admins.role,
+    })
+    .from(adminSessions)
+    .innerJoin(admins, eq(admins.id, adminSessions.adminId))
+    .where(and(eq(adminSessions.tokenHash, sha256(token)), gt(adminSessions.expiresAt, now)));
+
+  if (!row) {
+    return null;
+  }
+  if (now.getTime() - row.lastSeenAt.getTime() > IDLE_MS) {
+    await db.delete(adminSessions).where(eq(adminSessions.id, row.sid));
+    return null;
+  }
+  if (now.getTime() - row.lastSeenAt.getTime() > 60_000) {
+    await db.update(adminSessions).set({ lastSeenAt: now }).where(eq(adminSessions.id, row.sid));
+  }
+  return { id: row.id, email: row.email, role: row.role as Role };
+}
+
 export async function getAdmin(): Promise<AdminSession | null> {
   const jar = await cookies();
   const token = jar.get(COOKIE)?.value;
-  if (token) {
-    const now = new Date();
-    const [row] = await db
-      .select({
-        sid: adminSessions.id,
-        lastSeenAt: adminSessions.lastSeenAt,
-        id: admins.id,
-        email: admins.email,
-        role: admins.role,
-      })
-      .from(adminSessions)
-      .innerJoin(admins, eq(admins.id, adminSessions.adminId))
-      .where(and(eq(adminSessions.tokenHash, sha256(token)), gt(adminSessions.expiresAt, now)));
-    if (row) {
-      if (now.getTime() - row.lastSeenAt.getTime() > IDLE_MS) {
-        await db.delete(adminSessions).where(eq(adminSessions.id, row.sid));
-        return null;
-      }
-      if (now.getTime() - row.lastSeenAt.getTime() > 60_000) {
-        await db.update(adminSessions).set({ lastSeenAt: now }).where(eq(adminSessions.id, row.sid));
-      }
-      return { id: row.id, email: row.email, role: row.role as Role };
+  const resolved = await resolveAuthenticatedAdminFromToken(token, new Date());
+  if (resolved) return resolved;
+
+  const signedOut = jar.get(SIGNED_OUT_COOKIE)?.value === "1";
+  if (!signedOut && process.env.NODE_ENV !== "production" && !process.env.DATABASE_URL && process.env.OMNI_REQUIRE_LOGIN !== "1") {
+    const [owner] = await db.select().from(admins).orderBy(admins.id).limit(1);
+    if (owner) {
+      return { id: owner.id, email: owner.email, role: owner.role as Role };
     }
   }
-
-  // In embedded preview mode (no external DATABASE_URL), default to the active seeded operator
-  // unless the user explicitly clicked Sign Out.
-  if (!process.env.DATABASE_URL && jar.get(SIGNED_OUT_COOKIE)?.value !== "1") {
-    const { settings } = await import("@/db/schema");
-    const [activeSetting] = await db.select().from(settings).where(eq(settings.key, "embedded.active_admin_id"));
-    const targetId = Number(activeSetting?.value ?? "1") || 1;
-    const [fallbackAdmin] = await db.select().from(admins).where(eq(admins.id, targetId));
-    if (fallbackAdmin) {
-      return {
-        id: fallbackAdmin.id,
-        email: fallbackAdmin.email,
-        role: fallbackAdmin.role as Role,
-      };
-    }
-  }
-
   return null;
 }
 

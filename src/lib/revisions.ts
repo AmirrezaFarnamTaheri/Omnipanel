@@ -210,6 +210,75 @@ export async function publishStructuralRevision(nodeId: number, actorLabel: stri
   });
 }
 
+/**
+ * Publishes an exact dual-approved desired-state manifest inside the caller's transaction.
+ * Refuses publication if any inbound or egress configuration on the node was modified
+ * after the proposal envelope was signed (preventing content substitution).
+ */
+export async function publishApprovedManifest(
+  tx: Tx,
+  nodeId: number,
+  actor: Actor,
+  approvedManifest: Manifest,
+  expectedSequence: number,
+  expectedEpoch: number,
+) {
+  const [node] = await tx.select().from(nodes).where(eq(nodes.id, nodeId));
+  if (!node) throw notFound("Node");
+
+  const epoch = await getEpoch(tx);
+  if (epoch !== expectedEpoch) {
+    throw new Error(`Proposal epoch #${expectedEpoch} does not match current control-plane epoch #${epoch}`);
+  }
+  if (node.structuralSeq + 1 !== expectedSequence) {
+    throw new Error(
+      `Signed publication sequence #${expectedSequence} is not next after head #${node.structuralSeq}`,
+    );
+  }
+
+  const liveCandidateManifest = await buildManifest(tx, nodeId);
+  const approvedDigest = digestOf(approvedManifest);
+  const liveCandidateDigest = digestOf(liveCandidateManifest);
+  if (liveCandidateDigest !== approvedDigest) {
+    throw new Error(
+      `CANDIDATE_MANIFEST_DRIFT: Node #${nodeId} candidate configuration changed after signing (approved sha256:${approvedDigest.slice(0, 16)}… vs live sha256:${liveCandidateDigest.slice(0, 16)}…). Stage and approve a fresh proposal.`,
+    );
+  }
+
+  const latest = await latestRevision(tx, nodeId);
+  const { disruption } = diffManifests((latest?.manifest as Manifest) ?? null, approvedManifest);
+
+  const [bumped] = await tx
+    .update(nodes)
+    .set({ structuralSeq: sql`${nodes.structuralSeq} + 1` })
+    .where(eq(nodes.id, nodeId))
+    .returning({ seq: nodes.structuralSeq });
+
+  const [rev] = await tx
+    .insert(structuralRevisions)
+    .values({
+      nodeId,
+      epoch,
+      sequence: bumped.seq,
+      digest: approvedDigest,
+      manifest: approvedManifest,
+      disruption: latest ? disruption : "listener_restart",
+      rollbackOf: null,
+      createdBy: actor.label,
+    })
+    .returning();
+
+  await audit(tx, actor, "revision.publish", "node", nodeId, {
+    sequence: rev.sequence,
+    epoch,
+    digest: approvedDigest,
+    disruption: rev.disruption,
+    dualApproved: true,
+  });
+
+  return rev;
+}
+
 /* ---------- Membership stream ---------- */
 
 export async function emitMembership(

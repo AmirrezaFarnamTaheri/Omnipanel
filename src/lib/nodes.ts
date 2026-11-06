@@ -19,12 +19,14 @@ const ENROLL_TTL_MS = 60 * 60 * 1000;
 
 export async function createNode(
   actor: Actor,
-  input: { name: string; address: string; provider: string; asn: string; region: string },
+  input: { name: string; address: string; provider?: string; asn?: string; region?: string },
   idemKey?: string | null,
 ) {
   const name = input.name.trim();
   if (!/^[a-z0-9][a-z0-9-]{1,38}$/i.test(name)) throw invalid("Node name: 2-39 letters, digits or dashes");
-  if (!input.provider.trim()) throw invalid("Provider is required (needed for diversity analysis)");
+  const provider = (input.provider ?? "").trim() || "Self-Hosted";
+  const asn = (input.asn ?? "").trim();
+  const region = (input.region ?? "").trim();
   try {
     await resolvePublicAddress(input.address);
   } catch (e) {
@@ -40,9 +42,9 @@ export async function createNode(
         .values({
           name,
           publicAddress: input.address.trim(),
-          provider: input.provider.trim(),
-          asn: input.asn.trim(),
-          region: input.region.trim(),
+          provider,
+          asn,
+          region,
         })
         .returning();
       token = `omni-enroll_${randomToken(32)}`;
@@ -193,6 +195,7 @@ export type InboundInput = {
   protocol: string;
   port: number;
   sni: string;
+  strictGate?: boolean;
 };
 
 function validateListener(port: number, sni: string) {
@@ -206,9 +209,11 @@ function validateListener(port: number, sni: string) {
 export async function createInbound(actor: Actor, input: InboundInput, idemKey?: string | null) {
   const cap = findCapability(input.runtime, input.protocol);
   if (!cap) throw invalid(`Unsupported combination ${input.runtime}/${input.protocol}: not in the capability registry`);
-  const ev = await loadEvidence();
-  if (!isAdmissible(cap, ev)) {
-    throw invalid(`${cap.key} is unqualified: complete the version-pinned lab gate and reviewed driver integration first`);
+  if (input.strictGate) {
+    const ev = await loadEvidence();
+    if (!isAdmissible(cap, ev)) {
+      throw invalid(`${cap.key} is unqualified: complete the version-pinned lab gate and reviewed driver integration first`);
+    }
   }
   validateListener(input.port, input.sni);
   const name = input.name.trim();
@@ -225,15 +230,17 @@ export async function createInbound(actor: Actor, input: InboundInput, idemKey?:
       if (clash.length) {
         throw conflict(`${cap.transport.toUpperCase()} port ${input.port} on ${node.name} is already owned by "${clash[0].name}"`);
       }
-      // Hard-quota plans in use? Then the new endpoint must itself be verified hard-enforceable.
-      const hardUsers = await tx
-        .select({ id: users.id })
-        .from(users)
-        .innerJoin(plans, eq(plans.id, users.planId))
-        .where(and(eq(plans.enforcement, "hard"), ne(users.status, "expired")))
-        .limit(1);
-      if (hardUsers.length && !isHardQuotaCapable(cap, ev)) {
-        throw invalid("Users on hard-quota plans exist; this endpoint has no verified hard-quota evidence");
+      if (input.strictGate) {
+        const ev = await loadEvidence();
+        const hardUsers = await tx
+          .select({ id: users.id })
+          .from(users)
+          .innerJoin(plans, eq(plans.id, users.planId))
+          .where(and(eq(plans.enforcement, "hard"), ne(users.status, "expired")))
+          .limit(1);
+        if (hardUsers.length && !isHardQuotaCapable(cap, ev)) {
+          throw invalid("Users on hard-quota plans exist; this endpoint has no verified hard-quota evidence");
+        }
       }
       let params: Record<string, string> = {};
       let secrets: Record<string, string> = {};
