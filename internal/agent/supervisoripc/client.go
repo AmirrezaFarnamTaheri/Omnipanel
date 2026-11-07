@@ -60,7 +60,7 @@ func ownedBy(info os.FileInfo, uid uint32) bool {
 func (c *Client) verifySocket() error {
 	if c == nil || c.socketPath == "" ||
 		!filepath.IsAbs(c.socketPath) || filepath.Clean(c.socketPath) != c.socketPath ||
-		strings.IndexByte(c.socketPath, 0) >= 0 || len(c.socketPath) >= 100 {
+		strings.IndexByte(c.socketPath, 0) >= 0 || len(c.socketPath) >= 108 {
 		return ErrUntrustedSupervisor
 	}
 	parent, err := os.Lstat(filepath.Dir(c.socketPath))
