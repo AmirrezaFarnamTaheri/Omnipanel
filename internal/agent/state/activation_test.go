@@ -118,14 +118,18 @@ func TestActivationGuardRejectsAmbiguousDigestsReplaysAndDeadlines(t *testing.T)
 	s, _, rev, _ := withVerifiedRollbackBaseline(t)
 	defer s.Close()
 	cases := []struct {
-		name string
+		name   string
 		modify func(*manifest.Verified, *string, *time.Time)
 	}{
 		{"wrong manifest digest", func(v *manifest.Verified, _ *string, _ *time.Time) { v.Digest = strings.Repeat("d", 64) }},
 		{"wrong membership", func(v *manifest.Verified, _ *string, _ *time.Time) { v.Manifest.MembershipSequence++ }},
 		{"wrong structural", func(v *manifest.Verified, _ *string, _ *time.Time) { v.Manifest.StructuralSequence++ }},
-		{"wrong node", func(v *manifest.Verified, _ *string, _ *time.Time) { v.Manifest.NodeID = "a2f5a88e-3cc3-4a4c-81f6-45719fb131bc" }},
-		{"wrong epoch", func(v *manifest.Verified, _ *string, _ *time.Time) { v.Manifest.ControlPlaneEpoch = "a2f5a88e-3cc3-4a4c-81f6-45719fb131bc" }},
+		{"wrong node", func(v *manifest.Verified, _ *string, _ *time.Time) {
+			v.Manifest.NodeID = "a2f5a88e-3cc3-4a4c-81f6-45719fb131bc"
+		}},
+		{"wrong epoch", func(v *manifest.Verified, _ *string, _ *time.Time) {
+			v.Manifest.ControlPlaneEpoch = "a2f5a88e-3cc3-4a4c-81f6-45719fb131bc"
+		}},
 		{"unverified decision", func(v *manifest.Verified, _ *string, _ *time.Time) { v.Decision = "" }},
 		{"candidate path not digest", func(_ *manifest.Verified, d *string, _ *time.Time) { *d = "../root/config.json" }},
 		{"expired deadline", func(_ *manifest.Verified, _ *string, d *time.Time) { *d = time.Now().Add(-time.Second) }},
@@ -149,12 +153,12 @@ func TestActivationGuardRejectsAmbiguousDigestsReplaysAndDeadlines(t *testing.T)
 }
 
 type fakeRestorer struct {
-	mu sync.Mutex
-	refs []string
-	checks []string
+	mu         sync.Mutex
+	refs       []string
+	checks     []string
 	restoreErr error
 	observeErr error
-	healthy bool
+	healthy    bool
 }
 
 func (f *fakeRestorer) RestoreLastKnownGood(_ context.Context, ref string) error {
