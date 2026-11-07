@@ -15,7 +15,6 @@ import {
   updateNodeAddress,
 } from "@/lib/nodes";
 import { probeNodeNow } from "@/lib/health";
-import { db } from "@/db";
 import { ProblemError } from "@/lib/problem";
 
 const refresh = () => revalidatePath("/", "layout");
@@ -82,9 +81,8 @@ export async function rotateSecretsAction(_p: ActionState, fd: FormData): Promis
     const me = await requireRole("owner");
     const nodeId = int(fd, "nodeId");
     const n = await rotateNodeSecrets(actorOf(me), nodeId);
-    await db.transaction((tx) => publishStructural(tx, nodeId, actorOf(me)));
     refresh();
-    return { message: `Rotated ${n} credentials and Reality keys, and published new revision.` };
+    return { message: `Rotated ${n} credentials and Reality keys, and staged rotation; submit an independently approved proposal to publish.` };
   });
 }
 
@@ -125,7 +123,6 @@ export async function updateInboundAction(_p: ActionState, fd: FormData): Promis
     const me = await requireRole("operator");
     const inboundId = int(fd, "inboundId");
     await updateInbound(actorOf(me), inboundId, int(fd, "port"), str(fd, "sni"));
-    const nodeId = int(fd, "nodeId");
     // Changes are staged until an independent approved signed publication.
     refresh();
     return { message: "Endpoint updated and staged; submit an independently approved proposal to publish." };
