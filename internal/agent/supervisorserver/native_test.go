@@ -207,9 +207,12 @@ func TestNativeRootRollbackRejectsMutatedPinnedExecutablesAndUnsafeProvisioning(
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := fixture.cfg
+			// Use an untampered fixture for each invalid-input case so rejection
+			// cannot be attributed to the executable mutation tested above.
+			fresh, _ := makeNativeFixture(t, "", "")
+			cfg := fresh.cfg
 			tc.change(&cfg)
-			if _, err := newNativeBackend(cfg, map[string]bool{fixture.ref: true}, uint32(os.Geteuid())); err == nil {
+			if _, err := newNativeBackend(cfg, map[string]bool{fresh.ref: true}, uint32(os.Geteuid())); err == nil {
 				t.Fatal("untrusted root-side local generation/probe configuration accepted")
 			}
 		})
