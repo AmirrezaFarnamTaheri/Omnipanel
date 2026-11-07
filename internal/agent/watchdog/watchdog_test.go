@@ -11,11 +11,11 @@ import (
 )
 
 type testGuardStore struct {
-	mu sync.Mutex
-	guard *state.ActivationGuard
+	mu          sync.Mutex
+	guard       *state.ActivationGuard
 	recoveryErr error
-	readErr error
-	recoveries int
+	readErr     error
+	recoveries  int
 }
 
 func (s *testGuardStore) UnconfirmedActivation(_ context.Context) (*state.ActivationGuard, error) {
@@ -71,7 +71,7 @@ func TestWatchdogNeverRollsBackUnexpiredLeaseAndDoesNotTreatIdleAsHealth(t *test
 	}
 	store.guard = &state.ActivationGuard{
 		StructuralSequence: 2,
-		Deadline: now.Add(time.Minute),
+		Deadline:           now.Add(time.Minute),
 	}
 	result, err = watcher.Check(context.Background(), now)
 	if err != nil || result != Armed || store.recoverCount() != 0 {
@@ -84,7 +84,7 @@ func TestWatchdogRollsBackExpiredLeaseAndRetriesUntilObservedRecovery(t *testing
 	store := &testGuardStore{
 		guard: &state.ActivationGuard{
 			StructuralSequence: 2,
-			Deadline: now.Add(-time.Second),
+			Deadline:           now.Add(-time.Second),
 		},
 		recoveryErr: errors.New("health witness unavailable"),
 	}
@@ -114,7 +114,7 @@ func TestWatchdogRunRetriesAcrossFailuresAndStopsOnShutdown(t *testing.T) {
 	store := &testGuardStore{
 		guard: &state.ActivationGuard{
 			StructuralSequence: 3,
-			Deadline: time.Now().Add(-time.Second),
+			Deadline:           time.Now().Add(-time.Second),
 		},
 		recoveryErr: errors.New("supervisor temporarily unavailable"),
 	}
@@ -150,16 +150,16 @@ func TestWatchdogRunRetriesAcrossFailuresAndStopsOnShutdown(t *testing.T) {
 func TestWatchdogRejectsMissingDependenciesAndInvalidSchedule(t *testing.T) {
 	store := &testGuardStore{}
 	for _, tc := range []struct {
-		name string
-		store GuardStore
-		op state.RecoveryOperator
+		name     string
+		store    GuardStore
+		op       state.RecoveryOperator
 		interval time.Duration
 	}{
 		{"nil journal", nil, testRestorer{}, time.Second},
 		{"nil supervisor", store, nil, time.Second},
 		{"zero period", store, testRestorer{}, 0},
 		{"fast busy-spin", store, testRestorer{}, time.Nanosecond},
-		{"unbounded interval", store, testRestorer{}, 2*time.Minute},
+		{"unbounded interval", store, testRestorer{}, 2 * time.Minute},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if _, err := New(tc.store, tc.op, tc.interval, nil); err == nil {
