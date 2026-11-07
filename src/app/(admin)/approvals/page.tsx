@@ -188,6 +188,12 @@ export default async function ApprovalsPage() {
                         >
                           <input type="hidden" name="proposalId" value={p.proposalId} />
                           <input type="hidden" name="expectedSha256" value={p.envelopeSha256} />
+                          <Field label="Current password">
+                            <Input type="password" name="password" autoComplete="current-password" required />
+                          </Field>
+                          <Field label="Authenticator code (if enrolled)">
+                            <Input name="code" inputMode="numeric" pattern="[0-9]{6}" placeholder="123456" />
+                          </Field>
                           <input type="hidden" name="autoPublish" value="1" />
                         </ActionForm>
                       </div>
@@ -206,6 +212,12 @@ export default async function ApprovalsPage() {
                         size="sm"
                       >
                         <input type="hidden" name="proposalId" value={p.proposalId} />
+                        <Field label="Current password">
+                          <Input type="password" name="password" autoComplete="current-password" required />
+                        </Field>
+                        <Field label="Authenticator code (if enrolled)">
+                          <Input name="code" inputMode="numeric" pattern="[0-9]{6}" placeholder="123456" />
+                        </Field>
                       </ActionForm>
                     </div>
                   )}
