@@ -90,10 +90,75 @@ func ReadPrivatePEM(path string) ([]byte, error) {
 	return privateRead(path, maxPrivatePEMBytes)
 }
 
+// rejectDuplicateJSONKeys rejects ambiguous objects before the typed decoder
+// can silently replace locally provisioned identity or signer/build authority.
+// Fold ASCII case to cover Go's case-insensitive struct field matching as well.
+func rejectDuplicateJSONKeys(raw []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	var visit func() error
+	visit = func() error {
+		token, err := decoder.Token()
+		if err != nil {
+			return ErrInvalidBootstrap
+		}
+		delim, ok := token.(json.Delim)
+		if !ok {
+			return nil
+		}
+		switch delim {
+		case '{':
+			seen := make(map[string]struct{})
+			for decoder.More() {
+				token, err := decoder.Token()
+				key, ok := token.(string)
+				if err != nil || !ok {
+					return ErrInvalidBootstrap
+				}
+				folded := strings.ToLower(key)
+				if _, duplicate := seen[folded]; duplicate {
+					return ErrInvalidBootstrap
+				}
+				seen[folded] = struct{}{}
+				if err := visit(); err != nil {
+					return err
+				}
+			}
+			end, err := decoder.Token()
+			if err != nil || end != json.Delim('}') {
+				return ErrInvalidBootstrap
+			}
+			return nil
+		case '[':
+			for decoder.More() {
+				if err := visit(); err != nil {
+					return err
+				}
+			}
+			end, err := decoder.Token()
+			if err != nil || end != json.Delim(']') {
+				return ErrInvalidBootstrap
+			}
+			return nil
+		default:
+			return ErrInvalidBootstrap
+		}
+	}
+	if err := visit(); err != nil {
+		return err
+	}
+	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
+		return ErrInvalidBootstrap
+	}
+	return nil
+}
+
 // Load refuses missing, unknown, repeated or trailing bootstrap JSON values.
 func Load(path string) (Config, error) {
 	raw, err := privateRead(path, maxBootstrapBytes)
 	if err != nil {
+		return Config{}, err
+	}
+	if err := rejectDuplicateJSONKeys(raw); err != nil {
 		return Config{}, err
 	}
 	var cfg Config
