@@ -184,3 +184,32 @@ func TestPrivateCredentialReadRejectsSymlinksAndLoosePermissions(t *testing.T) {
 		t.Fatal("symlinked TLS key accepted")
 	}
 }
+
+
+func TestBootstrapRejectsDuplicateTrustAuthorityKeys(t *testing.T) {
+	path, cfg := setupConfig(t)
+	raw, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	duplicateTop := append(append([]byte(nil), raw[:len(raw)-1]...), []byte(`,"nodeId":"`+testNode+`"}`)...)
+	if err := os.WriteFile(path, duplicateTop, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(path); err == nil {
+		t.Fatal("duplicate node identity field accepted")
+	}
+
+	original := []byte(`"Driver":"singbox"`)
+	repeated := []byte(`"Driver":"singbox","Driver":"singbox"`)
+	if !bytes.Contains(raw, original) {
+		t.Fatal("expected trusted build fixture key missing")
+	}
+	duplicateNested := bytes.Replace(raw, original, repeated, 1)
+	if err := os.WriteFile(path, duplicateNested, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(path); err == nil {
+		t.Fatal("duplicate nested qualified build identity accepted")
+	}
+}
