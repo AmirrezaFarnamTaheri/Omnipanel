@@ -5,6 +5,7 @@ import { assertProductionDatabaseConfig, db } from "../../src/db";
 import { admins, inbounds, nodes, settings, users } from "../../src/db/schema";
 import { resolveAuthenticatedAdminFromToken } from "../../src/lib/auth";
 import * as systemActions from "../../src/app/actions/system";
+import { GET as getMetrics } from "../../src/app/api/metrics/route";
 import { verifyAuditChain, recordAudit } from "../../src/lib/audit";
 import {
   approveDesiredStateProposal,
@@ -18,6 +19,15 @@ import {
 import { createInbound } from "../../src/lib/nodes";
 import { hotp, verifyTotpMatchedStep } from "../../src/lib/totp";
 import { processAgentReportPayload } from "../../src/lib/agent-report";
+
+test("P0: administrative metrics refuse requests without a valid login session", async () => {
+  const absent = await getMetrics(new Request("http://localhost/api/metrics"));
+  assert.equal(absent.status, 401);
+  const bogus = await getMetrics(new Request("http://localhost/api/metrics", {
+    headers: { cookie: "omni_session=invalid-session-token" },
+  }));
+  assert.equal(bogus.status, 401);
+});
 
 test("P0: production cannot bypass PostgreSQL and KEK checks via embedded preview flag", () => {
   assert.throws(
