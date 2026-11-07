@@ -151,8 +151,6 @@ export function verifySignedEnvelope(
     expectedEpoch: string;
     publicKeyPem: string;
     now?: Date;
-    /** @deprecated Ignored: self-approval is never authorized. */
-    allowSelfApproval?: boolean;
   },
 ): { envelope: SignedDesiredEnvelope; envelopeSha256: string } {
   if (!envelopeJson || Buffer.byteLength(envelopeJson, "utf8") > MAX_ENVELOPE_BYTES) {
@@ -224,6 +222,8 @@ export function validateDualOperatorApproval(
     approverRole: string;
     expectedSha256: string;
     now?: Date;
+    /** @deprecated Ignored: a proposer can never approve their own proposal. */
+    allowSelfApproval?: boolean;
   },
 ): NonNullable<ProposalRecord["decision"]> {
   const now = input.now ?? new Date();
