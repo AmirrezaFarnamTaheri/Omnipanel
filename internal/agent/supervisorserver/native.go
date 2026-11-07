@@ -18,35 +18,35 @@ import (
 )
 
 const (
-	maxGenerationBytes = 2 << 20
+	maxGenerationBytes   = 2 << 20
 	maxPinnedBinaryBytes = 256 << 20
 	nativeCommandTimeout = 8 * time.Second
-	activeFilename = "active.json"
-	fixedSingBoxUnit = "omnipanel-singbox.service"
+	activeFilename       = "active.json"
+	fixedSingBoxUnit     = "omnipanel-singbox.service"
 )
 
 var (
 	ErrNativeRejected = errors.New("root native rollback generation or host trust rejected")
-	ErrNativeFailed = errors.New("root native rollback, service restart or observation failed")
+	ErrNativeFailed   = errors.New("root native rollback, service restart or observation failed")
 )
 
 // NativeConfig is provisioned locally from a separately protected, root-owned
 // policy file. Nothing in the Unix client's JSON request can modify it.
 type NativeConfig struct {
-	GenerationDirectory string
-	ActiveConfigPath string
-	SingBoxBinary string
-	SingBoxBinaryDigest string
-	SystemctlBinary string
+	GenerationDirectory   string
+	ActiveConfigPath      string
+	SingBoxBinary         string
+	SingBoxBinaryDigest   string
+	SystemctlBinary       string
 	SystemctlBinaryDigest string
-	HealthAddress string
+	HealthAddress         string
 }
 
 type NativeBackend struct {
-	cfg NativeConfig
-	allowed map[string]bool
+	cfg      NativeConfig
+	allowed  map[string]bool
 	ownerUID uint32
-	mu sync.Mutex
+	mu       sync.Mutex
 }
 
 func NewNativeBackend(cfg NativeConfig, generations map[string]bool) (*NativeBackend, error) {
@@ -104,7 +104,7 @@ func (b *NativeBackend) checkedFile(path string, limit int64, executable bool) (
 }
 
 func (b *NativeBackend) checkPinnedBinary(path, expectedDigest string) error {
-	if !generationPattern.MatchString("sha256:"+expectedDigest) {
+	if !generationPattern.MatchString("sha256:" + expectedDigest) {
 		return ErrNativeRejected
 	}
 	resolved, err := filepath.EvalSymlinks(path)
@@ -137,7 +137,7 @@ func newNativeBackend(cfg NativeConfig, generations map[string]bool, trustedUID 
 	if err != nil || portErr != nil || host != "127.0.0.1" || port <= 0 || port > 65535 {
 		return nil, ErrNativeRejected
 	}
-	b := &NativeBackend{cfg:cfg,ownerUID:trustedUID,allowed:make(map[string]bool,len(generations))}
+	b := &NativeBackend{cfg: cfg, ownerUID: trustedUID, allowed: make(map[string]bool, len(generations))}
 	for ref, allowed := range generations {
 		if !allowed || !generationPattern.MatchString(ref) {
 			return nil, ErrNativeRejected
@@ -150,50 +150,58 @@ func newNativeBackend(cfg NativeConfig, generations map[string]bool, trustedUID 
 	if err := b.protectedDir(filepath.Dir(cfg.ActiveConfigPath)); err != nil {
 		return nil, err
 	}
-	if err := b.checkPinnedBinary(cfg.SingBoxBinary,cfg.SingBoxBinaryDigest); err != nil {
+	if err := b.checkPinnedBinary(cfg.SingBoxBinary, cfg.SingBoxBinaryDigest); err != nil {
 		return nil, err
 	}
-	if err := b.checkPinnedBinary(cfg.SystemctlBinary,cfg.SystemctlBinaryDigest); err != nil {
+	if err := b.checkPinnedBinary(cfg.SystemctlBinary, cfg.SystemctlBinaryDigest); err != nil {
 		return nil, err
 	}
-	return b,nil
+	return b, nil
 }
 
-func (b *NativeBackend) generationBytes(ref string) ([]byte,error) {
+func (b *NativeBackend) generationBytes(ref string) ([]byte, error) {
 	if b == nil || !generationPattern.MatchString(ref) || !b.allowed[ref] {
 		return nil, ErrNativeRejected
 	}
 	if err := b.protectedDir(b.cfg.GenerationDirectory); err != nil {
 		return nil, err
 	}
-	filename:=filepath.Join(b.cfg.GenerationDirectory,strings.TrimPrefix(ref,"sha256:")+".json")
-	file,info,err:=b.checkedFile(filename,maxGenerationBytes,false)
-	if err != nil {return nil,err}
+	filename := filepath.Join(b.cfg.GenerationDirectory, strings.TrimPrefix(ref, "sha256:")+".json")
+	file, info, err := b.checkedFile(filename, maxGenerationBytes, false)
+	if err != nil {
+		return nil, err
+	}
 	defer file.Close()
-	raw,err:=io.ReadAll(io.LimitReader(file,maxGenerationBytes+1))
-	if err!=nil || len(raw)==0 || int64(len(raw))!=info.Size() || len(raw)>maxGenerationBytes {
-		return nil,ErrNativeRejected
+	raw, err := io.ReadAll(io.LimitReader(file, maxGenerationBytes+1))
+	if err != nil || len(raw) == 0 || int64(len(raw)) != info.Size() || len(raw) > maxGenerationBytes {
+		return nil, ErrNativeRejected
 	}
-	sum:=sha256.Sum256(raw)
-	if "sha256:"+hex.EncodeToString(sum[:])!=ref {
-		return nil,ErrNativeRejected
+	sum := sha256.Sum256(raw)
+	if "sha256:"+hex.EncodeToString(sum[:]) != ref {
+		return nil, ErrNativeRejected
 	}
-	return raw,nil
+	return raw, nil
 }
 
 func (b *NativeBackend) runPinned(ctx context.Context, executable string, args ...string) error {
-	if ctx==nil {
+	if ctx == nil {
 		return ErrNativeRejected
 	}
-	if err:=ctx.Err();err!=nil{return err}
-	checkCtx,cancel:=context.WithTimeout(ctx,nativeCommandTimeout)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	checkCtx, cancel := context.WithTimeout(ctx, nativeCommandTimeout)
 	defer cancel()
-	cmd:=exec.CommandContext(checkCtx,executable,args...)
-	cmd.Env=[]string{"HOME=/nonexistent","LANG=C","PATH=/usr/bin:/bin","TZ=UTC"}
-	cmd.Stdout=io.Discard
-	cmd.Stderr=io.Discard
-	if err:=cmd.Run();err!=nil{return ErrNativeFailed}
-	if err:=checkCtx.Err();err!=nil{return ErrNativeFailed}
+	cmd := exec.CommandContext(checkCtx, executable, args...)
+	cmd.Env = []string{"HOME=/nonexistent", "LANG=C", "PATH=/usr/bin:/bin", "TZ=UTC"}
+	cmd.Stdout = io.Discard
+	cmd.Stderr = io.Discard
+	if err := cmd.Run(); err != nil {
+		return ErrNativeFailed
+	}
+	if err := checkCtx.Err(); err != nil {
+		return ErrNativeFailed
+	}
 	return nil
 }
 
@@ -203,63 +211,115 @@ func (b *NativeBackend) runPinned(ctx context.Context, executable string, args .
 // the fixed systemd service is restarted afterwards. Restart failure NEVER
 // counts as restoration success, and the watchdog keeps the durable guard.
 func (b *NativeBackend) RestoreKnownGood(ctx context.Context, ref string) error {
-	if b==nil || ctx==nil {return ErrNativeRejected}
-	if err:=ctx.Err();err!=nil{return err}
+	if b == nil || ctx == nil {
+		return ErrNativeRejected
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if err:=b.protectedDir(filepath.Dir(b.cfg.ActiveConfigPath));err!=nil{return err}
-	raw,err:=b.generationBytes(ref)
-	if err!=nil{return err}
-	if err:=b.checkPinnedBinary(b.cfg.SingBoxBinary,b.cfg.SingBoxBinaryDigest);err!=nil{return err}
-	if err:=b.checkPinnedBinary(b.cfg.SystemctlBinary,b.cfg.SystemctlBinaryDigest);err!=nil{return err}
+	if err := b.protectedDir(filepath.Dir(b.cfg.ActiveConfigPath)); err != nil {
+		return err
+	}
+	raw, err := b.generationBytes(ref)
+	if err != nil {
+		return err
+	}
+	if err := b.checkPinnedBinary(b.cfg.SingBoxBinary, b.cfg.SingBoxBinaryDigest); err != nil {
+		return err
+	}
+	if err := b.checkPinnedBinary(b.cfg.SystemctlBinary, b.cfg.SystemctlBinaryDigest); err != nil {
+		return err
+	}
 
-	dirPath:=filepath.Dir(b.cfg.ActiveConfigPath)
-	file,err:=os.CreateTemp(dirPath,".rollback-")
-	if err!=nil{return ErrNativeFailed}
-	tmp:=file.Name()
+	dirPath := filepath.Dir(b.cfg.ActiveConfigPath)
+	file, err := os.CreateTemp(dirPath, ".rollback-")
+	if err != nil {
+		return ErrNativeFailed
+	}
+	tmp := file.Name()
 	defer os.Remove(tmp)
 	defer file.Close()
-	if err:=file.Chmod(0o600);err!=nil{return ErrNativeFailed}
-	n,err:=file.Write(raw)
-	if err!=nil || n!=len(raw) {return ErrNativeFailed}
-	if err:=file.Sync();err!=nil{return ErrNativeFailed}
-	if err:=file.Close();err!=nil{return ErrNativeFailed}
-	if err:=b.runPinned(ctx,b.cfg.SingBoxBinary,"check","-c",tmp);err!=nil{return err}
-	if err:=ctx.Err();err!=nil{return err}
-	if err:=os.Rename(tmp,b.cfg.ActiveConfigPath);err!=nil{return ErrNativeFailed}
-	dir,err:=os.Open(dirPath)
-	if err!=nil{return ErrNativeFailed}
-	syncErr:=dir.Sync()
-	closeErr:=dir.Close()
-	if syncErr!=nil || closeErr!=nil{return ErrNativeFailed}
-	return b.runPinned(ctx,b.cfg.SystemctlBinary,"restart",fixedSingBoxUnit)
+	if err := file.Chmod(0o600); err != nil {
+		return ErrNativeFailed
+	}
+	n, err := file.Write(raw)
+	if err != nil || n != len(raw) {
+		return ErrNativeFailed
+	}
+	if err := file.Sync(); err != nil {
+		return ErrNativeFailed
+	}
+	if err := file.Close(); err != nil {
+		return ErrNativeFailed
+	}
+	if err := b.runPinned(ctx, b.cfg.SingBoxBinary, "check", "-c", tmp); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, b.cfg.ActiveConfigPath); err != nil {
+		return ErrNativeFailed
+	}
+	dir, err := os.Open(dirPath)
+	if err != nil {
+		return ErrNativeFailed
+	}
+	syncErr := dir.Sync()
+	closeErr := dir.Close()
+	if syncErr != nil || closeErr != nil {
+		return ErrNativeFailed
+	}
+	return b.runPinned(ctx, b.cfg.SystemctlBinary, "restart", fixedSingBoxUnit)
 }
 
 // ObserveKnownGood is a separately executed host-level witness. It compares
 // active config bytes to the approved digest, checks a fixed systemd unit is
 // running and requires an actual loopback TCP listener. This is process/port
 // health ONLY: external VPN egress and policy acceptance still need real labs.
-func (b *NativeBackend) ObserveKnownGood(ctx context.Context, ref string) (bool,error) {
-	if b==nil || ctx==nil {return false,ErrNativeRejected}
-	if err:=ctx.Err();err!=nil{return false,err}
+func (b *NativeBackend) ObserveKnownGood(ctx context.Context, ref string) (bool, error) {
+	if b == nil || ctx == nil {
+		return false, ErrNativeRejected
+	}
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if _,err:=b.generationBytes(ref);err!=nil{return false,err}
-	if err:=b.protectedDir(filepath.Dir(b.cfg.ActiveConfigPath));err!=nil{return false,err}
-	file,info,err:=b.checkedFile(b.cfg.ActiveConfigPath,maxGenerationBytes,false)
-	if err!=nil{return false,err}
-	raw,err:=io.ReadAll(io.LimitReader(file,maxGenerationBytes+1))
+	if _, err := b.generationBytes(ref); err != nil {
+		return false, err
+	}
+	if err := b.protectedDir(filepath.Dir(b.cfg.ActiveConfigPath)); err != nil {
+		return false, err
+	}
+	file, info, err := b.checkedFile(b.cfg.ActiveConfigPath, maxGenerationBytes, false)
+	if err != nil {
+		return false, err
+	}
+	raw, err := io.ReadAll(io.LimitReader(file, maxGenerationBytes+1))
 	file.Close()
-	if err!=nil || int64(len(raw))!=info.Size(){return false,ErrNativeRejected}
-	sum:=sha256.Sum256(raw)
-	if "sha256:"+hex.EncodeToString(sum[:])!=ref {return false,ErrNativeRejected}
-	if err:=b.checkPinnedBinary(b.cfg.SystemctlBinary,b.cfg.SystemctlBinaryDigest);err!=nil{return false,err}
-	if err:=b.runPinned(ctx,b.cfg.SystemctlBinary,"is-active","--quiet",fixedSingBoxUnit);err!=nil{return false,err}
-	probeCtx,cancel:=context.WithTimeout(ctx,500*time.Millisecond)
+	if err != nil || int64(len(raw)) != info.Size() {
+		return false, ErrNativeRejected
+	}
+	sum := sha256.Sum256(raw)
+	if "sha256:"+hex.EncodeToString(sum[:]) != ref {
+		return false, ErrNativeRejected
+	}
+	if err := b.checkPinnedBinary(b.cfg.SystemctlBinary, b.cfg.SystemctlBinaryDigest); err != nil {
+		return false, err
+	}
+	if err := b.runPinned(ctx, b.cfg.SystemctlBinary, "is-active", "--quiet", fixedSingBoxUnit); err != nil {
+		return false, err
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
 	defer cancel()
-	dialer:=net.Dialer{Timeout:500*time.Millisecond}
-	conn,err:=dialer.DialContext(probeCtx,"tcp",b.cfg.HealthAddress)
-	if err!=nil{return false,ErrNativeFailed}
+	dialer := net.Dialer{Timeout: 500 * time.Millisecond}
+	conn, err := dialer.DialContext(probeCtx, "tcp", b.cfg.HealthAddress)
+	if err != nil {
+		return false, ErrNativeFailed
+	}
 	conn.Close()
-	return true,nil
+	return true, nil
 }
