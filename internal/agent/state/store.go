@@ -160,7 +160,15 @@ func Open(path, nodeID, epoch string) (*Store, error) {
 	const meteringSQL = "CREATE TABLE IF NOT EXISTS metering_checkpoint (" +
 		" singleton INTEGER PRIMARY KEY CHECK (singleton = 1)," +
 		" payload BLOB NOT NULL CHECK (length(payload) BETWEEN 1 AND 2097152))"
-	for _, statement := range []string{scopeSQL, journalSQL, meteringSQL} {
+	// A single durable rollback lease must be written before any later
+	// supervisor-mediated activation. No APPLIED transition is added here.
+	const activationSQL = "CREATE TABLE IF NOT EXISTS activation_guard (" +
+		" singleton INTEGER PRIMARY KEY CHECK (singleton = 1)," +
+		" epoch TEXT NOT NULL, structural INTEGER NOT NULL CHECK(structural > 0)," +
+		" membership INTEGER NOT NULL CHECK(membership >= 0)," +
+		" manifest_digest TEXT NOT NULL, candidate_digest TEXT NOT NULL," +
+		" rollback_ref TEXT NOT NULL, deadline_ns INTEGER NOT NULL)"
+	for _, statement := range []string{scopeSQL, journalSQL, meteringSQL, activationSQL} {
 		if _, err := db.Exec(statement); err != nil {
 			return fail(fmt.Errorf("initialize protected node journal: %w", err))
 		}
