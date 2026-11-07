@@ -222,7 +222,6 @@ export function validateDualOperatorApproval(
     approverRole: string;
     expectedSha256: string;
     now?: Date;
-    allowSelfApproval?: boolean;
   },
 ): NonNullable<ProposalRecord["decision"]> {
   const now = input.now ?? new Date();
@@ -281,7 +280,6 @@ export function validateApprovedPublicationWindow(
     currentMembershipSeq: number;
   },
   now: Date = new Date(),
-  opts?: { allowSelfApproval?: boolean },
 ): void {
   if (!proposal.decision) {
     throw new PublicationApprovalError("UNAUTHORIZED", "Proposal has no independent second-owner approval decision");
