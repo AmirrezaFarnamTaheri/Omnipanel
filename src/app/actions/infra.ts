@@ -15,7 +15,6 @@ import {
   updateNodeAddress,
 } from "@/lib/nodes";
 import { probeNodeNow } from "@/lib/health";
-import { publishStructural } from "@/lib/revisions";
 import { db } from "@/db";
 import { ProblemError } from "@/lib/problem";
 
@@ -98,16 +97,11 @@ export async function probeAction(_p: ActionState, fd: FormData): Promise<Action
   });
 }
 
-export async function publishAction(_p: ActionState, fd: FormData): Promise<ActionState> {
+/** Direct structural publication is forbidden without independent approval. */
+export async function publishAction(_p: ActionState, _fd: FormData): Promise<ActionState> {
   return act(async () => {
-    const me = await requireRole("operator");
-    const nodeId = int(fd, "nodeId");
-    const rollback = int(fd, "rollbackOf");
-    const rev = await db.transaction((tx) =>
-      publishStructural(tx, nodeId, actorOf(me), Number.isFinite(rollback) && rollback > 0 ? { rollbackOfSequence: rollback } : {}),
-    );
-    refresh();
-    return { message: rev ? `Published revision #${rev.sequence} (${rev.disruption}).` : "Already up to date." };
+    await requireRole("owner");
+    throw new ProblemError(403, "Forbidden", "Direct publication is disabled; submit a signed proposal for independent second-owner approval.");
   });
 }
 
@@ -121,13 +115,8 @@ export async function createInboundAction(_p: ActionState, fd: FormData): Promis
       { nodeId, name: str(fd, "name"), runtime, protocol, port: int(fd, "port"), sni: str(fd, "sni") || "www.cloudflare.com" },
       str(fd, "idemKey"),
     );
-    const rev = await db.transaction((tx) => publishStructural(tx, nodeId, actorOf(me)));
     refresh();
-    return {
-      message: rev
-        ? `Endpoint created, credentials provisioned, and revision #${rev.sequence} published.`
-        : "Endpoint created and credentials provisioned for existing users.",
-    };
+    return { message: "Endpoint staged. Submit a signed proposal for independent second-owner approval before publication." };
   });
 }
 
@@ -137,11 +126,9 @@ export async function updateInboundAction(_p: ActionState, fd: FormData): Promis
     const inboundId = int(fd, "inboundId");
     await updateInbound(actorOf(me), inboundId, int(fd, "port"), str(fd, "sni"));
     const nodeId = int(fd, "nodeId");
-    if (Number.isFinite(nodeId) && nodeId > 0) {
-      await db.transaction((tx) => publishStructural(tx, nodeId, actorOf(me)));
-    }
+    // Changes are staged until an independent approved signed publication.
     refresh();
-    return { message: "Endpoint updated and published." };
+    return { message: "Endpoint updated and staged; submit an independently approved proposal to publish." };
   });
 }
 
@@ -151,10 +138,8 @@ export async function toggleInboundAction(_p: ActionState, fd: FormData): Promis
     const inboundId = int(fd, "inboundId");
     await setInboundEnabled(actorOf(me), inboundId, str(fd, "enabled") === "1");
     const nodeId = int(fd, "nodeId");
-    if (Number.isFinite(nodeId) && nodeId > 0) {
-      await db.transaction((tx) => publishStructural(tx, nodeId, actorOf(me)));
-    }
+    // Changes are staged until an independent approved signed publication.
     refresh();
-    return { message: "Endpoint status updated and published." };
+    return { message: "Endpoint status updated and staged; submit an independently approved proposal to publish." };
   });
 }
