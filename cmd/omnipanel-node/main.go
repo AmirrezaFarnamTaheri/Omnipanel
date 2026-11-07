@@ -23,23 +23,37 @@ import (
 
 func pollOnce(ctx context.Context, c bootstrap.Config) (reconcile.Report, error) {
 	verifier, err := c.Verifier()
-	if err != nil { return reconcile.Report{}, err }
+	if err != nil {
+		return reconcile.Report{}, err
+	}
 	ca, err := bootstrap.ReadPrivatePEM(c.RootCAFile)
-	if err != nil { return reconcile.Report{}, err }
+	if err != nil {
+		return reconcile.Report{}, err
+	}
 	cert, err := bootstrap.ReadPrivatePEM(c.ClientCertFile)
-	if err != nil { return reconcile.Report{}, err }
+	if err != nil {
+		return reconcile.Report{}, err
+	}
 	key, err := bootstrap.ReadPrivatePEM(c.ClientKeyFile)
-	if err != nil { return reconcile.Report{}, err }
+	if err != nil {
+		return reconcile.Report{}, err
+	}
 	client, err := gateway.New(gateway.Config{
 		Origin: c.GatewayOrigin, NodeID: c.NodeID, RootCAPEM: ca,
 		ClientCertificatePEM: cert, ClientPrivateKeyPEM: key,
 	})
-	if err != nil { return reconcile.Report{}, fmt.Errorf("gateway trust verification failed: %w", err) }
+	if err != nil {
+		return reconcile.Report{}, fmt.Errorf("gateway trust verification failed: %w", err)
+	}
 	journal, err := state.Open(c.JournalPath, c.NodeID, c.ControlPlaneEpoch)
-	if err != nil { return reconcile.Report{}, fmt.Errorf("node journal unavailable: %w", err) }
+	if err != nil {
+		return reconcile.Report{}, fmt.Errorf("node journal unavailable: %w", err)
+	}
 	defer journal.Close()
 	processor, err := reconcile.New(journal, verifier)
-	if err != nil { return reconcile.Report{}, err }
+	if err != nil {
+		return reconcile.Report{}, err
+	}
 	return processor.PollOnce(ctx, client)
 }
 
@@ -47,26 +61,36 @@ func run(ctx context.Context, c bootstrap.Config, once bool) error {
 	if os.Geteuid() == 0 {
 		return errors.New("node polling service must run as an unprivileged OS user")
 	}
-	if _, err := c.Verifier(); err != nil { return err }
+	if _, err := c.Verifier(); err != nil {
+		return err
+	}
 	for {
 		if err := ctx.Err(); err != nil {
-			if errors.Is(err, context.Canceled) { return nil }
+			if errors.Is(err, context.Canceled) {
+				return nil
+			}
 			return err
 		}
 		report, err := pollOnce(ctx, c)
 		if err != nil {
-			if once { return fmt.Errorf("node desired-state poll failed: %w", err) }
+			if once {
+				return fmt.Errorf("node desired-state poll failed: %w", err)
+			}
 			log.Printf("desired-state poll denied: %v", err)
 		} else {
 			log.Printf("desired-state outcome=%s structural=%d membership=%d pending_native_apply=%t",
 				report.Outcome, report.StructuralSequence, report.MembershipSequence,
 				report.Outcome == reconcile.PendingApplication)
 		}
-		if once { return nil }
+		if once {
+			return nil
+		}
 		timer := time.NewTimer(time.Duration(c.PollSeconds) * time.Second)
 		select {
 		case <-ctx.Done():
-			if !timer.Stop() { <-timer.C }
+			if !timer.Stop() {
+				<-timer.C
+			}
 			return nil
 		case <-timer.C:
 		}
@@ -81,7 +105,9 @@ func main() {
 		log.Fatal("--config is required and no positional arguments are accepted")
 	}
 	c, err := bootstrap.Load(*configPath)
-	if err != nil { log.Fatalf("node bootstrap rejected: %v", err) }
+	if err != nil {
+		log.Fatalf("node bootstrap rejected: %v", err)
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := run(ctx, c, *once); err != nil {
