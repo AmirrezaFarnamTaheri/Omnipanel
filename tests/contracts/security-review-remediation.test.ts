@@ -100,28 +100,37 @@ test("P1-4: publication detects candidate manifest drift, rolls back consumption
   );
 });
 
-test("Personal usability: createInbound allows all registered protocols by default while strictGate preserves lab gating", async () => {
+test("P0: unqualified inbound creation is denied even without a strictGate opt-in", async () => {
   const allAdmins = await db.select().from(admins).orderBy(admins.id);
   const owner = allAdmins[0]!;
   const [node] = await db.select().from(nodes).orderBy(nodes.id).limit(1);
   assert.ok(node);
 
-  // Default personal mode allows creating hysteria2 without lab-gate error
-  const created = await createInbound(
-    { label: `admin:${owner.email}` },
-    {
-      nodeId: node.id,
-      name: `personal-hy2-${Date.now()}`,
-      runtime: "hysteria2",
-      protocol: "hysteria2",
-      port: 18443,
-      sni: "www.cloudflare.com",
-    },
+  await assert.rejects(
+    () => createInbound(
+      { label: `admin:${owner.email}` },
+      {
+        nodeId: node.id,
+        name: `unqualified-hy2-${Date.now()}`,
+        runtime: "hysteria2",
+        protocol: "hysteria2",
+        port: 18443,
+        sni: "www.cloudflare.com",
+      },
+    ),
+    /unqualified|lab gate/i,
   );
-  assert.ok(created.inboundId > 0);
+});
 
-  // Clean up test inbound so other tests see original node state
-  await db.delete(inbounds).where(eq(inbounds.id, created.inboundId));
+test("P0: governance store must refuse single-owner approval even when old bypass flag is requested", async () => {
+  const [owner] = await db.select().from(admins).where(eq(admins.role, "owner")).limit(1);
+  const [node] = await db.select().from(nodes).orderBy(nodes.id).limit(1);
+  assert.ok(owner && node);
+  const proposal = await createDesiredStateProposal(owner, node.id, "self-approval must be denied", 300);
+  await assert.rejects(
+    () => approveDesiredStateProposal(owner, proposal.proposalId, proposal.envelopeSha256, { allowSelfApproval: true }),
+    /Self-approval refused|distinct second owner/i,
+  );
 });
 
 test("P1-5: transactional audit entries preserve unbroken hash-chain integrity", async () => {
