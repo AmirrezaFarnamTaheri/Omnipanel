@@ -232,7 +232,7 @@ export function validateDualOperatorApproval(
   if (input.approverRole !== "owner") {
     throw new PublicationApprovalError("UNAUTHORIZED", "Publication approval requires owner role");
   }
-  if (!input.allowSelfApproval && input.approverAdminId === proposal.proposerAdminId) {
+  if (input.approverAdminId === proposal.proposerAdminId) {
     throw new PublicationApprovalError(
       "UNAUTHORIZED",
       "Self-approval refused: a distinct second owner administrator must review and approve",
@@ -289,7 +289,7 @@ export function validateApprovedPublicationWindow(
   if (proposal.decision.consumedAt !== null) {
     throw new PublicationApprovalError("UNAUTHORIZED", "Publication approval has already been consumed (replay refused)");
   }
-  if (!opts?.allowSelfApproval && proposal.proposerAdminId === proposal.decision.approverAdminId) {
+  if (proposal.proposerAdminId === proposal.decision.approverAdminId) {
     throw new PublicationApprovalError("UNAUTHORIZED", "Dual-operator separation invariant violated");
   }
   const proposalExp = new Date(proposal.expiresAt);
