@@ -90,7 +90,7 @@ export async function getAdmin(): Promise<AdminSession | null> {
   if (resolved) return resolved;
 
   const signedOut = jar.get(SIGNED_OUT_COOKIE)?.value === "1";
-  if (!signedOut && process.env.NODE_ENV !== "production" && !process.env.DATABASE_URL && process.env.OMNI_REQUIRE_LOGIN !== "1") {
+  if (!signedOut && process.env.NODE_ENV !== "production" && !process.env.DATABASE_URL && process.env.OMNI_ALLOW_LOCAL_DEV_AUTOLOGIN === "1") {
     const [owner] = await db.select().from(admins).orderBy(admins.id).limit(1);
     if (owner) {
       return { id: owner.id, email: owner.email, role: owner.role as Role };
