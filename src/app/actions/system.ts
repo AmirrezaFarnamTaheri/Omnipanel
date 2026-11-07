@@ -69,10 +69,10 @@ export async function recordEvidenceAction(_p: ActionState, fd: FormData): Promi
   });
 }
 
-/** Optional step-up verification when password is provided: verifies password (and TOTP when enabled, with matched-counter anti-replay). */
+/** Mandatory step-up verification for recovery operations: verifies password (and TOTP when enabled, with matched-counter anti-replay). */
 async function stepUp(adminId: number, fd: FormData) {
   const pw = String(fd.get("password") ?? "");
-  if (!pw) return;
+  if (!pw) throw new ProblemError(401, "Unauthorized", "Step-up required: current password is mandatory");
   const [a] = await db.select().from(admins).where(eq(admins.id, adminId));
   if (!verifyPassword(pw, a.passwordHash)) {
     throw new ProblemError(401, "Unauthorized", "Step-up failed: wrong password");
@@ -206,17 +206,7 @@ export async function approveProposalAction(_p: ActionState, fd: FormData): Prom
     const me = await requireRole("owner");
     const proposalId = str(fd, "proposalId");
     const expectedSha256 = str(fd, "expectedSha256") || undefined;
-    const autoPublish = str(fd, "autoPublish") === "1";
-    const updated = await approveDesiredStateProposal(me, proposalId, expectedSha256, {
-      allowSelfApproval: true,
-    });
-    if (autoPublish) {
-      const pub = await publishApprovedDesiredStateProposal(me, proposalId, { allowSelfApproval: true });
-      refresh();
-      return {
-        message: `Approved & published revision #${pub.decision?.publishedRevisionSeq} for ${pub.nodeName}.`,
-      };
-    }
+    const updated = await approveDesiredStateProposal(me, proposalId, expectedSha256);
     refresh();
     return {
       message: `Proposal ${updated.proposalId} approved. Ready to publish.`,
@@ -228,7 +218,7 @@ export async function publishProposalAction(_p: ActionState, fd: FormData): Prom
   return act(async () => {
     const me = await requireRole("owner");
     const proposalId = str(fd, "proposalId");
-    const updated = await publishApprovedDesiredStateProposal(me, proposalId, { allowSelfApproval: true });
+    const updated = await publishApprovedDesiredStateProposal(me, proposalId);
     refresh();
     return {
       message: `Published revision #${updated.decision?.publishedRevisionSeq} for ${updated.nodeName}.`,
