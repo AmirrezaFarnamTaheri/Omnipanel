@@ -126,49 +126,12 @@ jobs:
             "$SING_BOX_BUNDLE" \
             "$SING_BOX_METADATA_BUNDLE"
 
-      # This check uses the same signed binary that passed Sigstore verification.
-      # A private staged deny-all config is not a live or M0-qualified network apply.
+      # Check the same exact binary only after its Sigstore proof has passed.
+      # This deny-all candidate does not imply a live or M0-qualified apply.
       - name: Native Sing-box pinned-binary preflight and private staging
         run: |
           OMNI_NATIVE_TEST_SING_BOX_BIN="$SING_BOX_BIN" \
-            go test -count=1 -run '^TestPinnedSingBoxBinaryNativePreflight
-        if: steps.verify-provenance.outcome == 'success'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: sing-box-1.14.4-omni-provenance-${{ github.run_id }}
-          path: |
-            .data/lab-runtime/sing-box
-            .data/lab-runtime/build-metadata.json
-            .data/lab-runtime/provenance/sing-box.sigstore.json
-            .data/lab-runtime/provenance/build-metadata.sigstore.json
-          if-no-files-found: error
-          retention-days: 14
-          include-hidden-files: true
-          compression-level: 0
-
-      - name: Install pinned gRPC statistics client
-        run: |
-          go install github.com/fullstorydev/grpcurl/cmd/grpcurl@v1.9.3
-          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-
-      - name: Run the isolated Reality/Vision and accounting test
-        run: |
-          sudo env \
-            "PATH=$PATH" \
-            "SING_BOX_BIN=$SING_BOX_BIN" \
-            "SING_BOX_METADATA=$SING_BOX_METADATA" \
-            "EVIDENCE_DIR=$EVIDENCE_DIR" \
-            make test-runtime
-
-      - name: Publish sanitized smoke report
-        if: always()
-        run: |
-          if [ -s "$EVIDENCE_DIR/local-reality-smoke.json" ]; then
-            cat "$EVIDENCE_DIR/local-reality-smoke.json" >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "No runtime report was produced; inspect the failed step logs." >> "$GITHUB_STEP_SUMMARY"
-          fi
- ./internal/drivers/singbox
+            go test -count=1 -run '^TestPinnedSingBoxBinaryNativePreflight$' ./internal/drivers/singbox
 
       - name: Retain signed runtime and Sigstore verification bundles
         if: steps.verify-provenance.outcome == 'success'
