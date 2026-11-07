@@ -108,8 +108,7 @@ func rpcRaw(t *testing.T,socket string,payload string) ([]byte,error) {
 
 func rpcJSON(t *testing.T,socket,operation,reference string) (wireReply,error) {
 	t.Helper()
-	payload:=`{"version":1,"operation":"`+operation+`","reference":"`+reference+`"}`+"
-"
+	payload:=`{"version":1,"operation":"`+operation+`","reference":"`+reference+`"}`+"\n"
 	data,err:=rpcRaw(t,socket,payload)
 	if err!=nil {return wireReply{},err}
 	var reply wireReply
@@ -141,14 +140,10 @@ func TestRootSupervisorRejectsUnknownGenerationOrArbitraryOperationBeforeBackend
 	cfg,srv:=serverTestConfig(t,backend)
 	socket:=startTestServer(t,cfg,srv)
 	for _,request:=range []string{
-		`{"version":1,"operation":"restore-known-good","reference":"`+unknownGeneration+`"}`+"
-",
-		`{"version":1,"operation":"exec-shell","reference":"`+knownGeneration+`"}`+"
-",
-		`{"version":1,"operation":"restore-known-good","reference":"../../etc/shadow"}`+"
-",
-		`{"version":2,"operation":"observe-known-good","reference":"`+knownGeneration+`"}`+"
-",
+		`{"version":1,"operation":"restore-known-good","reference":"`+unknownGeneration+`"}`+"\n",
+		`{"version":1,"operation":"exec-shell","reference":"`+knownGeneration+`"}`+"\n",
+		`{"version":1,"operation":"restore-known-good","reference":"../../etc/shadow"}`+"\n",
+		`{"version":2,"operation":"observe-known-good","reference":"`+knownGeneration+`"}`+"\n",
 	} {
 		data,err:=rpcRaw(t,socket,request)
 		if err==nil {
@@ -168,8 +163,7 @@ func TestRootSupervisorRejectsUntrustedPeerUID(t *testing.T) {
 	srv,err:=newServer(cfg,backend,uint32(os.Geteuid()))
 	if err!=nil {t.Fatal(err)}
 	socket:=startTestServer(t,cfg,srv)
-	data,err:=rpcRaw(t,socket,`{"version":1,"operation":"restore-known-good","reference":"`+knownGeneration+`"}`+"
-")
+	data,err:=rpcRaw(t,socket,`{"version":1,"operation":"restore-known-good","reference":"`+knownGeneration+`"}`+"\n")
 	if err==nil {
 		var reply wireReply
 		if json.Unmarshal(data,&reply)==nil && reply.OK {
@@ -184,16 +178,11 @@ func TestRootSupervisorStrictlyBoundsFramingAndRejectsDuplicateOrUnknownKeys(t *
 	cfg,srv:=serverTestConfig(t,backend)
 	socket:=startTestServer(t,cfg,srv)
 	for _,payload:=range []string{
-		`{"version":1,"operation":"restore-known-good","reference":"`+knownGeneration+`","operation":"restore-known-good"}`+"
-",
-		`{"version":1,"operation":"restore-known-good","reference":"`+knownGeneration+`","command":"id"}`+"
-",
-		`{"version":1,"operation":"restore-known-good","reference":"`+knownGeneration+`"} {"another":1}`+"
-",
-		`{"version":1,"operation":{"nested":"restore-known-good"},"reference":"`+knownGeneration+`"}`+"
-",
-		strings.Repeat(" ",8192)+"
-",
+		`{"version":1,"operation":"restore-known-good","reference":"`+knownGeneration+`","operation":"restore-known-good"}`+"\n",
+		`{"version":1,"operation":"restore-known-good","reference":"`+knownGeneration+`","command":"id"}`+"\n",
+		`{"version":1,"operation":"restore-known-good","reference":"`+knownGeneration+`"} {"another":1}`+"\n",
+		`{"version":1,"operation":{"nested":"restore-known-good"},"reference":"`+knownGeneration+`"}`+"\n",
+		strings.Repeat(" ",8192)+"\n",
 		"not-json
 ",
 	} {
@@ -211,8 +200,7 @@ func TestRootSupervisorDoesNotReportHealthyOnBackendFailure(t *testing.T) {
 	cfg,srv:=serverTestConfig(t,backend)
 	socket:=startTestServer(t,cfg,srv)
 	for _,verb:=range []string{"restore-known-good","observe-known-good"} {
-		data,err:=rpcRaw(t,socket,`{"version":1,"operation":"`+verb+`","reference":"`+knownGeneration+`"}`+"
-")
+		data,err:=rpcRaw(t,socket,`{"version":1,"operation":"`+verb+`","reference":"`+knownGeneration+`"}`+"\n")
 		if err!=nil{t.Fatal(err)}
 		if strings.Contains(string(data),"secret runtime diagnostics")||strings.Contains(string(data),"readiness not observed") {
 			t.Fatal("privileged runtime diagnostics leaked to unprivileged client")
