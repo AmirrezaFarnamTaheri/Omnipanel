@@ -26,9 +26,9 @@ BEGIN
     ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind IN ('r','p','v','m','f')
     AND (pg_catalog.has_any_column_privilege(role_name,c.oid,'SELECT,INSERT,UPDATE,REFERENCES')
       OR pg_catalog.has_table_privilege(role_name,c.oid,'DELETE,TRUNCATE,TRIGGER')))
-   OR EXISTS(SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n
-    ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='S'
-    AND pg_catalog.has_sequence_privilege(role_name,c.oid,'USAGE,SELECT,UPDATE')) THEN
+   OR EXISTS(SELECT 1 FROM pg_catalog.pg_sequences seq
+     WHERE seq.schemaname='public' AND pg_catalog.has_sequence_privilege(role_name,
+       pg_catalog.format('%I.%I',seq.schemaname,seq.sequencename),'USAGE,SELECT,UPDATE')) THEN
    RAISE EXCEPTION 'administrator role % has preexisting privileges',role_name;
   END IF;
  END LOOP;
@@ -93,7 +93,13 @@ GRANT SELECT(proposal_id,organization_id,node_id,control_plane_epoch,structural_
  membership_sequence,envelope_sha256,envelope,proposer_admin_id,proposer_session_id,
  proposer_session_hash,proposer_stepup_counter,expires_at,created_at)
  ON public.agent_desired_publish_proposals TO omni_desired_reviewer;
--- The migration's immutability trigger rejects proposal UPDATE.
+-- PostgreSQL requires UPDATE privilege to lock rows FOR UPDATE.
+-- The migration's row-level immutability trigger cannot reject UPDATE statements
+-- affecting zero rows. A statement-level guard ensures this lock-only grant
+-- cannot be used to issue any proposal UPDATE, even on an empty table.
+CREATE TRIGGER omni_runtime_immutable_proposal_update_deny
+ BEFORE UPDATE ON public.agent_desired_publish_proposals
+ FOR EACH STATEMENT EXECUTE FUNCTION public.omni_deny_runtime_lockonly_updates();
 GRANT UPDATE(proposal_id) ON public.agent_desired_publish_proposals TO omni_desired_reviewer;
 GRANT SELECT(proposal_id) ON public.agent_desired_publish_decisions TO omni_desired_reviewer;
 GRANT INSERT(approval_id,organization_id,node_id,control_plane_epoch,

@@ -6,7 +6,7 @@ import { requirePage } from "@/lib/auth";
 import { CLIENT_REGISTRY, RUNTIME_CAPABILITIES, loadEvidence, hasEvidence } from "@/lib/capabilities";
 import { decryptSecret } from "@/lib/crypto";
 import { GATE_QUALIFICATION_MATRIX, renderRuntimeConfigFragment } from "@/lib/runtime-renderers";
-import { generateSlsaProvenanceAndSbom, runChaosFaultInjectionSuite } from "@/lib/enterprise-hardening";
+import { runChaosFaultInjectionSuite } from "@/lib/enterprise-hardening";
 import { ago } from "@/lib/format";
 import { recordEvidenceAction } from "@/app/actions/system";
 import { ActionForm } from "@/components/ActionForm";
@@ -57,7 +57,6 @@ export default async function CapabilitiesPage() {
   );
 
   const chaosSuite = runChaosFaultInjectionSuite();
-  const releaseAttestation = generateSlsaProvenanceAndSbom();
 
   return (
     <div className="space-y-6">
@@ -364,11 +363,11 @@ export default async function CapabilitiesPage() {
                 Fault-Injection Chaos Suite
               </CardTitle>
               <Badge variant={chaosSuite.allPassed ? "success" : "error"}>
-                {chaosSuite.allPassed ? `${chaosSuite.scenarios.length}/${chaosSuite.scenarios.length} PASS` : "FAIL"}
+                {chaosSuite.allPassed ? `${chaosSuite.scenarios.length}/${chaosSuite.scenarios.length} PASS` : "NOT RUN"}
               </Badge>
             </div>
             <CardDescription>
-              Deterministic verification of watchdog rollback, corrupted WAL frame isolation, JCS signature rejection, and NTP skew fail-closed behavior.
+              Planned scenarios, not executed fault injection. No release gate evidence is available.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2 text-xs">
@@ -381,7 +380,7 @@ export default async function CapabilitiesPage() {
                   <div className="font-mono font-semibold text-slate-900">{s.scenarioId}</div>
                   <div className="text-slate-600">{s.expectedInvariant}</div>
                 </div>
-                <Badge variant={s.passed ? "success" : "error"}>{s.passed ? "PASS" : "FAIL"}</Badge>
+                <Badge variant={s.passed ? "success" : "error"}>{s.passed ? "PASS" : "NOT RUN"}</Badge>
               </div>
             ))}
           </CardContent>
@@ -392,39 +391,16 @@ export default async function CapabilitiesPage() {
             <div className="flex items-center justify-between gap-2">
               <CardTitle className="flex items-center gap-2 text-base">
                 <FileCheck2 className="h-4 w-4 text-indigo-600" />
-                SLSA Level 3 Provenance & CycloneDX 1.5 SBOM
+                Release Provenance & SBOM (Not Generated)
               </CardTitle>
-              <Badge variant="info" className="font-mono text-xs">
-                {releaseAttestation.slsaLevel}
-              </Badge>
+              <Badge variant="error" className="font-mono text-xs">NOT VERIFIED</Badge>
             </div>
             <CardDescription>
-              Signed in-toto v1 statement and CycloneDX 1.5 component inventory for release artifacts.
+              Real signed build provenance, artifact digests and an inspected CycloneDX SBOM are required before any SLSA claim.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-2.5 text-xs font-mono">
-            <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-2.5 space-y-1">
-              <div className="flex justify-between">
-                <span className="font-sans text-slate-500">Builder ID:</span>
-                <span className="truncate max-w-[240px] text-slate-900" title={releaseAttestation.builderId}>
-                  {releaseAttestation.builderId}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="font-sans text-slate-500">Bundle Digest:</span>
-                <span className="text-emerald-700">{releaseAttestation.bundleDigest.slice(0, 24)}…</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="font-sans text-slate-500">SBOM Format:</span>
-                <span className="text-indigo-700">
-                  {releaseAttestation.sbomFormat} ({releaseAttestation.sbomComponentsCount} components)
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="font-sans text-slate-500">Attested Subjects:</span>
-                <span className="text-slate-900">{releaseAttestation.binarySubjects.length} release binaries</span>
-              </div>
-            </div>
+          <CardContent className="space-y-2.5 text-xs">
+            No attested subjects or component counts are available from this dashboard.
           </CardContent>
         </Card>
       </div>

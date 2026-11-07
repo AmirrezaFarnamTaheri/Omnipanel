@@ -44,14 +44,14 @@ export default async function ApprovalsPage() {
     <>
       <PageHeader
         title="Revisions & Signed Snapshots"
-        subtitle="Endpoint changes auto-publish by default. You can also stage and publish Ed25519-signed desired-state snapshots in one click."
+        subtitle="Endpoint changes are staged until a distinct owner reviews the signed proposal. Publication is a separate, one-time action."
       />
 
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Stat
           label="Staged Snapshots"
           value={awaitingReview.length}
-          hint="Ready for 1-click approve & publish"
+          hint="Requires a different owner to review"
         />
         <Stat
           label="Approved · Ready"
@@ -174,20 +174,26 @@ export default async function ApprovalsPage() {
                     </div>
                   </div>
 
-                  {isPending && me.role === "owner" && (
+                  {isPending && me.role === "owner" && me.id !== p.proposerAdminId && (
                     <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
                       <p className="text-xs text-slate-600">
-                        Ready to sign off and publish revision <strong>#{p.structuralSequence}</strong> to{" "}
+                        Review signed revision <strong>#{p.structuralSequence}</strong> to{" "}
                         <strong>{p.nodeName}</strong>.
                       </p>
                       <div className="flex flex-wrap items-center gap-2">
                         <ActionForm
                           action={approveProposalAction}
-                          submitLabel={`Approve & Publish Revision #${p.structuralSequence}`}
+                          submitLabel={`Approve Revision #${p.structuralSequence}`}
                           size="sm"
                         >
                           <input type="hidden" name="proposalId" value={p.proposalId} />
                           <input type="hidden" name="expectedSha256" value={p.envelopeSha256} />
+                          <Field label="Current password">
+                            <Input type="password" name="password" autoComplete="current-password" required />
+                          </Field>
+                          <Field label="Authenticator code (if enrolled)">
+                            <Input name="code" inputMode="numeric" pattern="[0-9]{6}" placeholder="123456" />
+                          </Field>
                           <input type="hidden" name="autoPublish" value="1" />
                         </ActionForm>
                       </div>
@@ -206,6 +212,12 @@ export default async function ApprovalsPage() {
                         size="sm"
                       >
                         <input type="hidden" name="proposalId" value={p.proposalId} />
+                        <Field label="Current password">
+                          <Input type="password" name="password" autoComplete="current-password" required />
+                        </Field>
+                        <Field label="Authenticator code (if enrolled)">
+                          <Input name="code" inputMode="numeric" pattern="[0-9]{6}" placeholder="123456" />
+                        </Field>
                       </ActionForm>
                     </div>
                   )}

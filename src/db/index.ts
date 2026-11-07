@@ -7,8 +7,7 @@ import path from "node:path";
 export function assertProductionDatabaseConfig(env: NodeJS.ProcessEnv = process.env): void {
   const isProdRuntime =
     env.NODE_ENV === "production" &&
-    env.NEXT_PHASE !== "phase-production-build" &&
-    env.OMNI_ALLOW_EMBEDDED_PREVIEW !== "1";
+    env.NEXT_PHASE !== "phase-production-build";
 
   if (!isProdRuntime) return;
 

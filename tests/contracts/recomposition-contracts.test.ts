@@ -236,6 +236,20 @@ test("dual-operator desired-state approval enforces Ed25519 signature, distinct 
     (err: unknown) => err instanceof PublicationApprovalError && err.code === "UNAUTHORIZED",
   );
 
+  // A caller-controlled legacy bypass must not override independent approval.
+  assert.throws(
+    () =>
+      validateDualOperatorApproval(proposal, {
+        approverAdminId: 1,
+        approverEmail: "owner1@omnipanel.internal",
+        approverRole: "owner",
+        expectedSha256: built.envelopeSha256,
+        now,
+        allowSelfApproval: true,
+      }),
+    (err: unknown) => err instanceof PublicationApprovalError && err.code === "UNAUTHORIZED",
+  );
+
   // Wrong digest is refused
   assert.throws(
     () =>
@@ -264,6 +278,22 @@ test("dual-operator desired-state approval enforces Ed25519 signature, distinct 
     proposal,
     { authorizedEpoch: 1, currentStructuralSeq: 1, currentMembershipSeq: 5 },
     now,
+  );
+
+  // Even with the old opt-in flag, self-reviewed decisions must never publish.
+  const forgedSelfDecision: ProposalRecord = {
+    ...proposal,
+    decision: { ...decision, approverAdminId: proposal.proposerAdminId },
+  };
+  assert.throws(
+    () =>
+      validateApprovedPublicationWindow(
+        forgedSelfDecision,
+        { authorizedEpoch: 1, currentStructuralSeq: 1, currentMembershipSeq: 5 },
+        now,
+        { allowSelfApproval: true },
+      ),
+    (err: unknown) => err instanceof PublicationApprovalError && err.code === "UNAUTHORIZED",
   );
 
   // Sequence conflict if head is already #2

@@ -2,10 +2,10 @@
 
 ## 1. Executive Summary
 
-OmniPanel v2 enforces a fail-closed control-plane and node-reconciliation baseline across both its Go packages (`internal/...`, `cmd/omnipanel-admin`) and its TypeScript/Next.js + PostgreSQL control plane (`src/...`, `contracts/...`, `db/migrations/...`).
+OmniPanel v2 contains partially integrated fail-closed control-plane and node-reconciliation contracts across its Go packages (`internal/...`, `cmd/omnipanel-admin`) and its TypeScript/Next.js + PostgreSQL control plane (`src/...`, `contracts/...`, `db/migrations/...`).
 
-- **Fail-Closed Runtime Admission**: `QUALIFIED_BUILDS` in `src/lib/capability-policy.ts` remains empty (`{}`) until external multi-host lab evidence (`make gate-lab`) is supplied and reviewed. No unqualified runtime build can be admitted for new endpoints or emitted in subscriber configurations.
-- **Deterministic Contract & Unit Verification**: All 7 JSON Schemas + OpenAPI (`npm run check:contracts`), 100 TypeScript contract tests (`npm run test:contracts`), Go manifest/driver/agent/control-plane packages (`make test-go`), and Sigstore/Cosign provenance tests (`make test-provenance`) are verified in-repo.
+- **Fail-Closed Runtime Admission**: `QUALIFIED_BUILDS` in `src/lib/capability-policy.ts` remains empty (`{}`) until external multi-host lab evidence (`make gate-lab`) is supplied and reviewed. The qualification map remains empty, so new endpoints must fail closed. Existing legacy data and external deployment paths require separate audit; this is not production qualification.
+- **Deterministic Contract & Unit Verification**: The project defines `npm run check:contracts`, `npm run test:contracts`, `npm run typecheck`, `npm run lint`, `npm run build`, `make test-go`, and `make test-provenance`. Verify each against the current commit's CI run; previous green runs do not qualify changed code.
 - **Clean-Room Four-Panel Recomposition**: Lessons from S-UI, 3X-UI, Hiddify Manager, and 1Panel are implemented as pure, auditable contracts with zero copied third-party code and zero raw host shell execution.
 
 ---
@@ -32,10 +32,10 @@ OmniPanel v2 enforces a fail-closed control-plane and node-reconciliation baseli
 
 | Target | Milestone | In-Repo Contract Suite | External Lab Gate | Remaining External Requirement |
 | --- | --- | --- | --- | --- |
-| `make gate-lab` | M0 | PASS | **BLOCKED** | Public VPS + external client transcript + reviewed runtime build entry in `QUALIFIED_BUILDS` |
-| `make gate-m1-security` | M1 | PASS | **BLOCKED** | End-to-end live Go daemon mTLS + step-up penetration test transcript |
-| `make gate-m1-rollback` | M1 | PASS | **BLOCKED** | Root Linux `nftables` / `systemd` fault-injection rollback transcript |
-| `make gate-m1-metering` | M1 | PASS | **BLOCKED** | Live 1 GiB Sing-box + Hysteria2 transfer soak within ±0.5% accuracy |
-| `make gate-m1-dr` | M1 | PASS | **BLOCKED** | External PostgreSQL `pg_wal` archive restore & live mTLS agent epoch cutover |
-| `make gate-m1-migration` | M1 | PASS | **BLOCKED** | Live S-UI / 3X-UI SQLite database cutover verification |
-| `make gate-m2` | M2 | PASS | **BLOCKED** | All M0 and M1 external hardware gates completed |
+| `make gate-lab` | M0 | Contract suite only | **BLOCKED** | Public VPS + external client transcript + reviewed runtime build entry in `QUALIFIED_BUILDS` |
+| `make gate-security` | M1 | Contract suite only | **BLOCKED** | End-to-end live Go daemon mTLS + step-up penetration test transcript |
+| `make gate-agent` / `make gate-resilience` | M1 | Contract suite only | **BLOCKED** | Root Linux `nftables` / `systemd` fault-injection rollback transcript |
+| `make gate-subscription` | M1 | Contract suite only | **BLOCKED** | Live real-client subscription/revocation and 1 GiB Sing-box + Hysteria2 metering within ±0.5% accuracy |
+| `make gate-dr` | M1 | Contract suite only | **BLOCKED** | External PostgreSQL `pg_wal` archive restore & live mTLS agent epoch cutover |
+| `make gate-control` | M1 | Contract suite only | **BLOCKED** | End-to-end Go control-to-agent commit and live S-UI / 3X-UI SQLite cutover verification |
+| M2 acceptance (not implemented as a Make target) | M2 | Not qualified | **BLOCKED** | All M0 and M1 external gates and production migration completed |

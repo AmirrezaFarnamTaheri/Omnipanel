@@ -1,10 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { eq } from "drizzle-orm";
-import { db } from "../../src/db";
+import { assertProductionDatabaseConfig, db } from "../../src/db";
 import { admins, inbounds, nodes, settings, users } from "../../src/db/schema";
 import { resolveAuthenticatedAdminFromToken } from "../../src/lib/auth";
 import * as systemActions from "../../src/app/actions/system";
+import { GET as getMetrics } from "../../src/app/api/metrics/route";
 import { verifyAuditChain, recordAudit } from "../../src/lib/audit";
 import {
   approveDesiredStateProposal,
@@ -18,6 +19,33 @@ import {
 import { createInbound } from "../../src/lib/nodes";
 import { hotp, verifyTotpMatchedStep } from "../../src/lib/totp";
 import { processAgentReportPayload } from "../../src/lib/agent-report";
+
+test("P0: administrative metrics refuse requests without a valid login session", async () => {
+  const absent = await getMetrics(new Request("http://localhost/api/metrics"));
+  assert.equal(absent.status, 401);
+  const bogus = await getMetrics(new Request("http://localhost/api/metrics", {
+    headers: { cookie: "omni_session=invalid-session-token" },
+  }));
+  assert.equal(bogus.status, 401);
+});
+
+test("P0: production cannot bypass PostgreSQL and KEK checks via embedded preview flag", () => {
+  assert.throws(
+    () => assertProductionDatabaseConfig({
+      NODE_ENV: "production",
+      OMNI_ALLOW_EMBEDDED_PREVIEW: "1",
+    }),
+    /Production startup requires a configured PostgreSQL DATABASE_URL/,
+  );
+  assert.throws(
+    () => assertProductionDatabaseConfig({
+      NODE_ENV: "production",
+      OMNI_ALLOW_EMBEDDED_PREVIEW: "1",
+      DATABASE_URL: "postgres://admin@db.example.com:5432/omnipanel",
+    }),
+    /Production startup requires OMNI_KEK/,
+  );
+});
 
 test("P0-1: switchOperatorIdentityAction is removed and missing/invalid tokens return null", async () => {
   assert.equal(
@@ -54,7 +82,7 @@ test("P1-3: control-plane Ed25519 private key is encrypted at rest under KEK", a
   assert.ok(parsed.privateKeyEnc && parsed.privateKeyEnc.length > 32);
 });
 
-test("P1-4: publication detects candidate manifest drift, rolls back consumption on error, and supports 1-click personal self-approval", async () => {
+test("P1-4: publication detects candidate manifest drift, rolls back consumption on error, and requires independent approval", async () => {
   const allAdmins = await db.select().from(admins).orderBy(admins.id);
   const owner1 = allAdmins[0]!;
   const owner2 = allAdmins[1] ?? owner1;
@@ -63,9 +91,7 @@ test("P1-4: publication detects candidate manifest drift, rolls back consumption
 
   // 1. Create proposal and approve
   const propDrift = await createDesiredStateProposal(owner1, node.id, "Test drift detection", 300);
-  await approveDesiredStateProposal(owner2, propDrift.proposalId, propDrift.envelopeSha256, {
-    allowSelfApproval: true,
-  });
+  await approveDesiredStateProposal(owner2, propDrift.proposalId, propDrift.envelopeSha256);
 
   // Mutate an inbound port on the node before publishing to trigger CANDIDATE_MANIFEST_DRIFT
   const [ib] = await db.select().from(inbounds).where(eq(inbounds.nodeId, node.id)).limit(1);
@@ -75,7 +101,7 @@ test("P1-4: publication detects candidate manifest drift, rolls back consumption
 
   try {
     await assert.rejects(
-      () => publishApprovedDesiredStateProposal(owner1, propDrift.proposalId, { allowSelfApproval: true }),
+      () => publishApprovedDesiredStateProposal(owner1, propDrift.proposalId),
       /CANDIDATE_MANIFEST_DRIFT/,
     );
   } finally {
@@ -86,42 +112,49 @@ test("P1-4: publication detects candidate manifest drift, rolls back consumption
   const afterDrift = (await listDesiredStateProposals()).find((p) => p.proposalId === propDrift.proposalId);
   assert.equal(afterDrift?.decision?.consumedAt, null, "failed publication must not leave decision consumed");
 
-  // 2. Now that port is restored to originalPort, 1-click personal self-approved publish succeeds and consumes once
-  const published = await publishApprovedDesiredStateProposal(owner1, propDrift.proposalId, {
-    allowSelfApproval: true,
-  });
+  // 2. Now that port is restored to originalPort, independently approved publish succeeds and consumes once
+  const published = await publishApprovedDesiredStateProposal(owner1, propDrift.proposalId);
   assert.ok(published.decision?.consumedAt, "successful publication must mark decision consumed");
   assert.ok(published.decision?.publishedRevisionSeq);
 
   // 3. Re-publishing an already consumed proposal must fail closed
   await assert.rejects(
-    () => publishApprovedDesiredStateProposal(owner1, propDrift.proposalId, { allowSelfApproval: true }),
+    () => publishApprovedDesiredStateProposal(owner1, propDrift.proposalId),
     /already been consumed/i,
   );
 });
 
-test("Personal usability: createInbound allows all registered protocols by default while strictGate preserves lab gating", async () => {
+test("P0: unqualified inbound creation is denied even without a strictGate opt-in", async () => {
   const allAdmins = await db.select().from(admins).orderBy(admins.id);
   const owner = allAdmins[0]!;
   const [node] = await db.select().from(nodes).orderBy(nodes.id).limit(1);
   assert.ok(node);
 
-  // Default personal mode allows creating hysteria2 without lab-gate error
-  const created = await createInbound(
-    { label: `admin:${owner.email}` },
-    {
-      nodeId: node.id,
-      name: `personal-hy2-${Date.now()}`,
-      runtime: "hysteria2",
-      protocol: "hysteria2",
-      port: 18443,
-      sni: "www.cloudflare.com",
-    },
+  await assert.rejects(
+    () => createInbound(
+      { label: `admin:${owner.email}` },
+      {
+        nodeId: node.id,
+        name: `unqualified-hy2-${Date.now()}`,
+        runtime: "hysteria2",
+        protocol: "hysteria2",
+        port: 18443,
+        sni: "www.cloudflare.com",
+      },
+    ),
+    /unqualified|lab gate/i,
   );
-  assert.ok(created.inboundId > 0);
+});
 
-  // Clean up test inbound so other tests see original node state
-  await db.delete(inbounds).where(eq(inbounds.id, created.inboundId));
+test("P0: governance store must refuse single-owner approval even when old bypass flag is requested", async () => {
+  const [owner] = await db.select().from(admins).where(eq(admins.role, "owner")).limit(1);
+  const [node] = await db.select().from(nodes).orderBy(nodes.id).limit(1);
+  assert.ok(owner && node);
+  const proposal = await createDesiredStateProposal(owner, node.id, "self-approval must be denied", 300);
+  await assert.rejects(
+    () => approveDesiredStateProposal(owner, proposal.proposalId, proposal.envelopeSha256, { allowSelfApproval: true }),
+    /Self-approval refused|distinct second owner/i,
+  );
 });
 
 test("P1-5: transactional audit entries preserve unbroken hash-chain integrity", async () => {

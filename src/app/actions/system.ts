@@ -18,6 +18,8 @@ import { audit } from "@/lib/audit";
 import { actorOf, requireRole } from "@/lib/auth";
 import { decryptSecret, verifyPassword } from "@/lib/crypto";
 import { act, int, str, type ActionState } from "@/lib/action-helpers";
+import { requireStepUpPassword } from "@/lib/stepup-input";
+import { consumeTotpCounter } from "@/lib/totp-replay";
 import { declareRecoveryEpoch } from "@/lib/revisions";
 import { ProblemError } from "@/lib/problem";
 import { verifyTotpMatchedStep } from "@/lib/totp";
@@ -69,29 +71,20 @@ export async function recordEvidenceAction(_p: ActionState, fd: FormData): Promi
   });
 }
 
-/** Optional step-up verification when password is provided: verifies password (and TOTP when enabled, with matched-counter anti-replay). */
+/** Mandatory step-up verification for recovery operations: verifies password (and TOTP when enabled, with matched-counter anti-replay). */
 async function stepUp(adminId: number, fd: FormData) {
-  const pw = String(fd.get("password") ?? "");
-  if (!pw) return;
+  const pw = requireStepUpPassword(fd);
   const [a] = await db.select().from(admins).where(eq(admins.id, adminId));
   if (!verifyPassword(pw, a.passwordHash)) {
     throw new ProblemError(401, "Unauthorized", "Step-up failed: wrong password");
   }
-  if (a.totpEnabled && a.totpSecretEnc) {
+  if (a.totpEnabled) {
+    if (!a.totpSecretEnc) throw new ProblemError(401, "Unauthorized", "Step-up failed: authenticator enrollment is missing");
     const matchedStep = verifyTotpMatchedStep(decryptSecret(a.totpSecretEnc), str(fd, "code"));
     if (matchedStep === null) {
       throw new ProblemError(401, "Unauthorized", "Step-up failed: invalid authenticator code");
     }
-    const counterKey = `totp.last_counter.${adminId}`;
-    const [existingCounter] = await db.select().from(settings).where(eq(settings.key, counterKey));
-    const lastStep = existingCounter ? Number(existingCounter.value) : -1;
-    if (matchedStep <= lastStep) {
-      throw new ProblemError(401, "Unauthorized", "Step-up failed: authenticator code was already used (replay refused)");
-    }
-    await db
-      .insert(settings)
-      .values({ key: counterKey, value: String(matchedStep) })
-      .onConflictDoUpdate({ target: settings.key, set: { value: String(matchedStep) } });
+    await consumeTotpCounter(adminId, matchedStep);
   }
 }
 
@@ -204,19 +197,10 @@ export async function createProposalAction(_p: ActionState, fd: FormData): Promi
 export async function approveProposalAction(_p: ActionState, fd: FormData): Promise<ActionState> {
   return act(async () => {
     const me = await requireRole("owner");
+    await stepUp(me.id, fd);
     const proposalId = str(fd, "proposalId");
     const expectedSha256 = str(fd, "expectedSha256") || undefined;
-    const autoPublish = str(fd, "autoPublish") === "1";
-    const updated = await approveDesiredStateProposal(me, proposalId, expectedSha256, {
-      allowSelfApproval: true,
-    });
-    if (autoPublish) {
-      const pub = await publishApprovedDesiredStateProposal(me, proposalId, { allowSelfApproval: true });
-      refresh();
-      return {
-        message: `Approved & published revision #${pub.decision?.publishedRevisionSeq} for ${pub.nodeName}.`,
-      };
-    }
+    const updated = await approveDesiredStateProposal(me, proposalId, expectedSha256);
     refresh();
     return {
       message: `Proposal ${updated.proposalId} approved. Ready to publish.`,
@@ -227,8 +211,9 @@ export async function approveProposalAction(_p: ActionState, fd: FormData): Prom
 export async function publishProposalAction(_p: ActionState, fd: FormData): Promise<ActionState> {
   return act(async () => {
     const me = await requireRole("owner");
+    await stepUp(me.id, fd);
     const proposalId = str(fd, "proposalId");
-    const updated = await publishApprovedDesiredStateProposal(me, proposalId, { allowSelfApproval: true });
+    const updated = await publishApprovedDesiredStateProposal(me, proposalId);
     refresh();
     return {
       message: `Published revision #${updated.decision?.publishedRevisionSeq} for ${updated.nodeName}.`,

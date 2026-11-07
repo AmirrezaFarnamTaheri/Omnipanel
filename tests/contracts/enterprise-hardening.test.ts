@@ -294,14 +294,13 @@ test("Domain 5: Adaptive client balancer tuning and differential subscription ET
   assert.equal(matchesIfNoneMatch('"different-etag"', etag), false);
 });
 
-test("Domain 6: Automated Chaos Fault-Injection Suite, SLSA Level 3 Provenance & Property-Based Fuzzing", () => {
+test("Domain 6: Unexecuted chaos and fabricated provenance never count as release evidence", () => {
   const chaos = runChaosFaultInjectionSuite();
-  assert.equal(chaos.allPassed, true);
+  assert.equal(chaos.allPassed, false, "unexecuted fault injection must not be reported PASS");
   assert.equal(chaos.scenarios.length, 4);
+  assert.ok(chaos.scenarios.every((scenario) => scenario.passed === false));
 
-  const slsa = generateSlsaProvenanceAndSbom();
-  assert.equal(slsa.slsaLevel, "SLSA_BUILD_LEVEL_3");
-  assert.equal(slsa.sbomFormat, "CycloneDX-1.5");
+  assert.throws(() => generateSlsaProvenanceAndSbom(), /real signed artifacts|not implemented|requires verified/i);
 
   // Property-based fuzzing over JCS canonicalization, balancer compilation, and S-UI/3X-UI importer
   for (let seed = 1; seed <= 25; seed++) {

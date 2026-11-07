@@ -737,7 +737,7 @@ export async function approveDesiredStateProposal(
   approverAdmin: { id: number; email: string; role: string },
   proposalId: string,
   expectedSha256?: string,
-  opts?: { allowSelfApproval?: boolean },
+  _opts?: { allowSelfApproval?: boolean },
 ): Promise<EnrichedProposalRecord> {
   return db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(7003)`);
@@ -764,7 +764,6 @@ export async function approveDesiredStateProposal(
       approverRole: approverAdmin.role,
       expectedSha256: digestToConfirm,
       now: new Date(),
-      allowSelfApproval: opts?.allowSelfApproval ?? false,
     });
 
     const updated: EnrichedProposalRecord = {
@@ -841,7 +840,6 @@ export async function publishApprovedDesiredStateProposal(
           currentMembershipSeq: node.membershipSeq,
         },
         new Date(),
-        { allowSelfApproval: opts?.allowSelfApproval ?? false },
       );
 
       const rawPayload = verified.envelope.manifest.payload as Record<string, unknown>;

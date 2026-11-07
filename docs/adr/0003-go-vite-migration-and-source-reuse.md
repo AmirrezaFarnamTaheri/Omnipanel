@@ -5,11 +5,11 @@
 
 ## Context
 
-OmniPanel's current unified PR #2 contains a Next.js/Drizzle prototype, contract schemas, Go manifest verification, a runtime-neutral session registry and a local Sing-box laboratory. The accepted v2 target is Go control-plane and agent with separate trust-zone processes, PostgreSQL canonical state, SQLite-WAL node state and a static React/Vite UI. S-UI, 3X-UI, Hiddify Manager and 1Panel contain useful patterns but cannot replace that trust model.
+OmniPanel's merged foundation PR #2 contains a Next.js/Drizzle prototype, contract schemas, Go manifest verification, a runtime-neutral session registry and a local Sing-box laboratory. The accepted v2 target is Go control-plane and agent with separate trust-zone processes, PostgreSQL canonical state, SQLite-WAL node state and a static React/Vite UI. S-UI, 3X-UI, Hiddify Manager and 1Panel contain useful patterns but cannot replace that trust model.
 
 ## Decision
 
-1. Preserve [unified PR #2](https://github.com/AmirrezaFarnamTaheri/Omnipanel/pull/2) as the single unmerged foundation. Do not create another overlapping foundation PR. Subsequent independent work is reviewed in focused increments after this prerequisite is approved, or explicitly stacked on it when necessary.
+1. Preserve the merged [unified PR #2](https://github.com/AmirrezaFarnamTaheri/Omnipanel/pull/2) baseline (merged 2026-11-05). Introduce further work as focused, independently reviewed PRs with CI validation. Do not resurrect the older unmerged foundation branch.
 2. Use a measured strangler cutover, not two simultaneously writable control planes. Move authorization and persistence to Go APIs before removing Next.js actions, then retire the server/Drizzle only after operator workflow parity passes.
 3. Implement separately evidenced drivers and a durable agent before adopting operational conveniences. No protocol is guaranteed solely because an upstream panel supports it.
 4. Selectively adopt the source-project features mapped in `docs/plans/2026-11-04-omnipanel-v2-rollout.md`, without wholesale vendoring, application-marketplace expansion or generic privileged shell access.

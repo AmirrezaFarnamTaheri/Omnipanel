@@ -195,7 +195,6 @@ export type InboundInput = {
   protocol: string;
   port: number;
   sni: string;
-  strictGate?: boolean;
 };
 
 function validateListener(port: number, sni: string) {
@@ -209,11 +208,9 @@ function validateListener(port: number, sni: string) {
 export async function createInbound(actor: Actor, input: InboundInput, idemKey?: string | null) {
   const cap = findCapability(input.runtime, input.protocol);
   if (!cap) throw invalid(`Unsupported combination ${input.runtime}/${input.protocol}: not in the capability registry`);
-  if (input.strictGate) {
-    const ev = await loadEvidence();
-    if (!isAdmissible(cap, ev)) {
-      throw invalid(`${cap.key} is unqualified: complete the version-pinned lab gate and reviewed driver integration first`);
-    }
+  const ev = await loadEvidence();
+  if (!isAdmissible(cap, ev)) {
+    throw invalid(`${cap.key} is unqualified: complete the version-pinned lab gate and reviewed driver integration first`);
   }
   validateListener(input.port, input.sni);
   const name = input.name.trim();
@@ -230,8 +227,7 @@ export async function createInbound(actor: Actor, input: InboundInput, idemKey?:
       if (clash.length) {
         throw conflict(`${cap.transport.toUpperCase()} port ${input.port} on ${node.name} is already owned by "${clash[0].name}"`);
       }
-      if (input.strictGate) {
-        const ev = await loadEvidence();
+      {
         const hardUsers = await tx
           .select({ id: users.id })
           .from(users)
