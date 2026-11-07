@@ -183,8 +183,7 @@ func TestRootSupervisorStrictlyBoundsFramingAndRejectsDuplicateOrUnknownKeys(t *
 		`{"version":1,"operation":"restore-known-good","reference":"`+knownGeneration+`"} {"another":1}`+"\n",
 		`{"version":1,"operation":{"nested":"restore-known-good"},"reference":"`+knownGeneration+`"}`+"\n",
 		strings.Repeat(" ",8192)+"\n",
-		"not-json
-",
+		"not-json\n",
 	} {
 		data,err:=rpcRaw(t,socket,payload)
 		if err==nil {
