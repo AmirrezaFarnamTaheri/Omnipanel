@@ -51,6 +51,17 @@ jobs:
           fi
       - name: Link standalone non-root watchdog executable
         run: go build -o "$RUNNER_TEMP/omnipanel-watchdog" ./cmd/omnipanel-watchdog
+      - name: Check root supervisor service, native backend and CLI gofmt
+        run: |
+          unformatted="$(gofmt -l internal/agent/supervisorserver/*.go cmd/omnipanel-supervisor/*.go)"
+          if [ -n "$unformatted" ]; then
+            echo "Unformatted root supervisor source:" >&2
+            printf '%s\n' "$unformatted" >&2
+            gofmt -d internal/agent/supervisorserver/*.go cmd/omnipanel-supervisor/*.go >&2
+            exit 1
+          fi
+      - name: Link root-owned native rollback supervisor executable
+        run: go build -o "$RUNNER_TEMP/omnipanel-supervisor" ./cmd/omnipanel-supervisor
       - run: make test-go
       # The pre-existing agent/session registry is covered by the full Go
       # tests; formatting that older package is a separate cleanup change.
