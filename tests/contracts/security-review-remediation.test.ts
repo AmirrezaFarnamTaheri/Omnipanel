@@ -54,7 +54,7 @@ test("P1-3: control-plane Ed25519 private key is encrypted at rest under KEK", a
   assert.ok(parsed.privateKeyEnc && parsed.privateKeyEnc.length > 32);
 });
 
-test("P1-4: publication detects candidate manifest drift, rolls back consumption on error, and supports 1-click personal self-approval", async () => {
+test("P1-4: publication detects candidate manifest drift, rolls back consumption on error, and requires independent approval", async () => {
   const allAdmins = await db.select().from(admins).orderBy(admins.id);
   const owner1 = allAdmins[0]!;
   const owner2 = allAdmins[1] ?? owner1;
@@ -63,9 +63,7 @@ test("P1-4: publication detects candidate manifest drift, rolls back consumption
 
   // 1. Create proposal and approve
   const propDrift = await createDesiredStateProposal(owner1, node.id, "Test drift detection", 300);
-  await approveDesiredStateProposal(owner2, propDrift.proposalId, propDrift.envelopeSha256, {
-    allowSelfApproval: true,
-  });
+  await approveDesiredStateProposal(owner2, propDrift.proposalId, propDrift.envelopeSha256);
 
   // Mutate an inbound port on the node before publishing to trigger CANDIDATE_MANIFEST_DRIFT
   const [ib] = await db.select().from(inbounds).where(eq(inbounds.nodeId, node.id)).limit(1);
@@ -75,7 +73,7 @@ test("P1-4: publication detects candidate manifest drift, rolls back consumption
 
   try {
     await assert.rejects(
-      () => publishApprovedDesiredStateProposal(owner1, propDrift.proposalId, { allowSelfApproval: true }),
+      () => publishApprovedDesiredStateProposal(owner1, propDrift.proposalId),
       /CANDIDATE_MANIFEST_DRIFT/,
     );
   } finally {
@@ -86,16 +84,14 @@ test("P1-4: publication detects candidate manifest drift, rolls back consumption
   const afterDrift = (await listDesiredStateProposals()).find((p) => p.proposalId === propDrift.proposalId);
   assert.equal(afterDrift?.decision?.consumedAt, null, "failed publication must not leave decision consumed");
 
-  // 2. Now that port is restored to originalPort, 1-click personal self-approved publish succeeds and consumes once
-  const published = await publishApprovedDesiredStateProposal(owner1, propDrift.proposalId, {
-    allowSelfApproval: true,
-  });
+  // 2. Now that port is restored to originalPort, independently approved publish succeeds and consumes once
+  const published = await publishApprovedDesiredStateProposal(owner1, propDrift.proposalId);
   assert.ok(published.decision?.consumedAt, "successful publication must mark decision consumed");
   assert.ok(published.decision?.publishedRevisionSeq);
 
   // 3. Re-publishing an already consumed proposal must fail closed
   await assert.rejects(
-    () => publishApprovedDesiredStateProposal(owner1, propDrift.proposalId, { allowSelfApproval: true }),
+    () => publishApprovedDesiredStateProposal(owner1, propDrift.proposalId),
     /already been consumed/i,
   );
 });
