@@ -27,17 +27,17 @@ const (
 )
 
 var (
-	ErrUntrustedServer = errors.New("root supervisor socket, credentials or generation policy rejected")
+	ErrUntrustedServer   = errors.New("root supervisor socket, credentials or generation policy rejected")
 	ErrServerUnavailable = errors.New("root supervisor server unavailable")
-	generationPattern = regexp.MustCompile("^sha256:[a-f0-9]{64}$")
+	generationPattern    = regexp.MustCompile("^sha256:[a-f0-9]{64}$")
 )
 
 // Config is root-provisioned; the request must never contain or influence it.
 // Only one exact non-root UID/GID may issue rollback and health requests.
 type Config struct {
-	SocketPath string
-	WatchdogUID uint32
-	WatchdogGID uint32
+	SocketPath         string
+	WatchdogUID        uint32
+	WatchdogGID        uint32
 	AllowedGenerations map[string]bool
 }
 
@@ -49,7 +49,7 @@ type Backend interface {
 }
 
 type Server struct {
-	cfg Config
+	cfg     Config
 	backend Backend
 	rootUID uint32
 	allowed map[string]bool
@@ -129,7 +129,7 @@ func peerCredentials(conn *net.UnixConn) (uint32, uint32, error) {
 }
 
 type request struct {
-	version int
+	version   int
 	operation string
 	reference string
 }
@@ -219,11 +219,11 @@ func (s *Server) handle(ctx context.Context, conn *net.UnixConn) {
 	// No backend error text, runtime logs, private config, or OS path is ever
 	// transmitted to a lower-trust watchdog.
 	_ = json.NewEncoder(conn).Encode(map[string]any{
-		"version": protocolVersion,
+		"version":   protocolVersion,
 		"operation": req.operation,
 		"reference": req.reference,
-		"ok": ok,
-		"healthy": healthy && ok && req.operation == "observe-known-good",
+		"ok":        ok,
+		"healthy":   healthy && ok && req.operation == "observe-known-good",
 	})
 }
 
