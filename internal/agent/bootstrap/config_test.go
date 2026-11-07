@@ -185,7 +185,6 @@ func TestPrivateCredentialReadRejectsSymlinksAndLoosePermissions(t *testing.T) {
 	}
 }
 
-
 func TestBootstrapRejectsDuplicateTrustAuthorityKeys(t *testing.T) {
 	path, cfg := setupConfig(t)
 	raw, err := json.Marshal(cfg)
