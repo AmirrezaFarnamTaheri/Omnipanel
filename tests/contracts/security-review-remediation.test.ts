@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { eq } from "drizzle-orm";
-import { db } from "../../src/db";
+import { assertProductionDatabaseConfig, db } from "../../src/db";
 import { admins, inbounds, nodes, settings, users } from "../../src/db/schema";
 import { resolveAuthenticatedAdminFromToken } from "../../src/lib/auth";
 import * as systemActions from "../../src/app/actions/system";
@@ -18,6 +18,24 @@ import {
 import { createInbound } from "../../src/lib/nodes";
 import { hotp, verifyTotpMatchedStep } from "../../src/lib/totp";
 import { processAgentReportPayload } from "../../src/lib/agent-report";
+
+test("P0: production cannot bypass PostgreSQL and KEK checks via embedded preview flag", () => {
+  assert.throws(
+    () => assertProductionDatabaseConfig({
+      NODE_ENV: "production",
+      OMNI_ALLOW_EMBEDDED_PREVIEW: "1",
+    }),
+    /Production startup requires a configured PostgreSQL DATABASE_URL/,
+  );
+  assert.throws(
+    () => assertProductionDatabaseConfig({
+      NODE_ENV: "production",
+      OMNI_ALLOW_EMBEDDED_PREVIEW: "1",
+      DATABASE_URL: "postgres://admin@db.example.com:5432/omnipanel",
+    }),
+    /Production startup requires OMNI_KEK/,
+  );
+});
 
 test("P0-1: switchOperatorIdentityAction is removed and missing/invalid tokens return null", async () => {
   assert.equal(
