@@ -25,16 +25,16 @@ const (
 )
 
 var (
-	ErrUntrustedSupervisor = errors.New("root supervisor IPC identity or response refused")
+	ErrUntrustedSupervisor   = errors.New("root supervisor IPC identity or response refused")
 	ErrSupervisorUnavailable = errors.New("root supervisor IPC unavailable")
-	refPattern = regexp.MustCompile("^sha256:[a-f0-9]{64}$")
+	refPattern               = regexp.MustCompile("^sha256:[a-f0-9]{64}$")
 )
 
 // Client trusts only the peer UID assigned locally at construction. Production
 // always requires UID 0; tests exercise the same Unix transport using the
 // test runner's UID without weakening New's production trust requirement.
 type Client struct {
-	socketPath string
+	socketPath  string
 	expectedUID uint32
 }
 
@@ -99,17 +99,17 @@ func peerUID(conn *net.UnixConn) (uint32, error) {
 }
 
 type request struct {
-	Version int `json:"version"`
+	Version   int    `json:"version"`
 	Operation string `json:"operation"`
 	Reference string `json:"reference"`
 }
 
 type response struct {
-	Version int `json:"version"`
+	Version   int    `json:"version"`
 	Operation string `json:"operation"`
 	Reference string `json:"reference"`
-	OK bool `json:"ok"`
-	Healthy bool `json:"healthy"`
+	OK        bool   `json:"ok"`
+	Healthy   bool   `json:"healthy"`
 }
 
 // exchange sends one bounded, fixed-schema request on one Unix connection.
