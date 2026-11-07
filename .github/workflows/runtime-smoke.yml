@@ -86,8 +86,22 @@ jobs:
       - name: Sign runtime binary and build metadata with Sigstore
         run: |
           mkdir -p "$(dirname "$SING_BOX_BUNDLE")"
-          cosign sign-blob --yes --bundle "$SING_BOX_BUNDLE" "$SING_BOX_BIN"
-          cosign sign-blob --yes --bundle "$SING_BOX_METADATA_BUNDLE" "$SING_BOX_METADATA"
+          # Rekor may return transient HTTP 5xx; retry signing, never skip verification.
+          sign_with_retry() {
+            local subject="$1" bundle="$2" attempt
+            for attempt in 1 2 3 4; do
+              if cosign sign-blob --yes --bundle "$bundle" "$subject"; then
+                return 0
+              fi
+              if [ "$attempt" -eq 4 ]; then
+                echo "FAIL: Sigstore signing unavailable after 4 attempts: $subject" >&2
+                return 1
+              fi
+              sleep "$((attempt * 5))"
+            done
+          }
+          sign_with_retry "$SING_BOX_BIN" "$SING_BOX_BUNDLE"
+          sign_with_retry "$SING_BOX_METADATA" "$SING_BOX_METADATA_BUNDLE"
 
       - name: Verify signatures, signer identity and build metadata
         id: verify-provenance
