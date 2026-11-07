@@ -40,7 +40,13 @@ jobs:
             gofmt -d internal/agent/state/*.go internal/agent/reconcile/*.go internal/agent/gateway/*.go internal/agent/gateway/desiredapi/*.go internal/control/desiredpublish/*.go internal/control/desiredapproval/*.go internal/control/desiredapproval/httpapi/*.go internal/control/adminruntime/*.go cmd/omnipanel-admin/*.go internal/agent/metering/*.go internal/agent/syncfeed/*.go internal/backup/*.go internal/observability/*.go internal/networking/*.go internal/certificates/*.go internal/importers/*.go internal/pki/enrollment/*.go internal/pki/enrollment/httpapi/*.go internal/pki/enrollment/grants/*.go >&2
             exit 1
           fi
+      - name: Require gofmt for new node bootstrap and polling command
+        run: |
+          gofmt -d internal/agent/bootstrap/*.go cmd/omnipanel-node/*.go
+          test -z "$(gofmt -l internal/agent/bootstrap/*.go cmd/omnipanel-node/*.go)"
       - run: make test-go
+      - name: Link unprivileged node polling executable
+        run: go build -o "$RUNNER_TEMP/omnipanel-node" ./cmd/omnipanel-node
       # The pre-existing agent/session registry is covered by the full Go
       # tests; formatting that older package is a separate cleanup change.
       # A valid signature is not evidence of an applied node configuration.
