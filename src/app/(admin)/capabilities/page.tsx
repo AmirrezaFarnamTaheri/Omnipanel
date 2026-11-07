@@ -380,7 +380,7 @@ export default async function CapabilitiesPage() {
                   <div className="font-mono font-semibold text-slate-900">{s.scenarioId}</div>
                   <div className="text-slate-600">{s.expectedInvariant}</div>
                 </div>
-                <Badge variant={s.passed ? "success" : "error"}>{s.passed ? "PASS" : "FAIL"}</Badge>
+                <Badge variant={s.passed ? "success" : "error"}>{s.passed ? "PASS" : "NOT RUN"}</Badge>
               </div>
             ))}
           </CardContent>
