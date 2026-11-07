@@ -26,9 +26,9 @@ BEGIN
     ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind IN ('r','p','v','m','f')
     AND (pg_catalog.has_any_column_privilege(role_name,c.oid,'SELECT,INSERT,UPDATE,REFERENCES')
       OR pg_catalog.has_table_privilege(role_name,c.oid,'DELETE,TRUNCATE,TRIGGER')))
-   OR EXISTS(SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n
-    ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='S'
-    AND pg_catalog.has_sequence_privilege(role_name,c.oid,'USAGE,SELECT,UPDATE')) THEN
+   OR EXISTS(SELECT 1 FROM pg_catalog.pg_sequences seq
+     WHERE seq.schemaname='public' AND pg_catalog.has_sequence_privilege(role_name,
+       pg_catalog.format('%I.%I',seq.schemaname,seq.sequencename),'USAGE,SELECT,UPDATE')) THEN
    RAISE EXCEPTION 'administrator role % has preexisting privileges',role_name;
   END IF;
  END LOOP;
