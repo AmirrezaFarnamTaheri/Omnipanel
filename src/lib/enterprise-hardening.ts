@@ -712,29 +712,29 @@ export function runChaosFaultInjectionSuite(): {
       scenarioId: "chaos-netem-packet-loss-15pct",
       faultInjected: "tc netem loss 15% delay 45ms on veth pair during Sing-box + Hysteria2 transfer",
       expectedInvariant: "WAL metering counters remain monotonic; zero negative deltas or duplicate flushes",
-      passed: true,
-      detail: "DurableMeteringAccumulator preserved exact cumulative sequence checkpoints across 15% loss",
+      passed: false,
+      detail: "NOT EXECUTED: no network fault injection evidence available",
     },
     {
       scenarioId: "chaos-corrupted-sqlite-wal-frame",
       faultInjected: "Bit-flip in serialized WAL checkpoint JSON digest before agent restart",
       expectedInvariant: "rehydrateFromWal fails closed with digest mismatch and refuses silent counter reset",
-      passed: true,
-      detail: "Corrupted WAL frame deterministically rejected; accounting gap recorded without false overage",
+      passed: false,
+      detail: "NOT EXECUTED: no WAL corruption experiment evidence available",
     },
     {
       scenarioId: "chaos-truncated-jcs-envelope",
       faultInjected: "Truncated Ed25519 signature and mismatched manifestDigest on /api/agent/desired",
       expectedInvariant: "Node verifier rejects candidate before staging; LKG configuration remains active",
-      passed: true,
-      detail: "verifySignedEnvelope rejected malformed envelope; appliedStructuralSequence unchanged",
+      passed: false,
+      detail: "NOT EXECUTED: no live agent fault-injection evidence available",
     },
     {
       scenarioId: "chaos-clock-skew-expired-proposal",
       faultInjected: "+610s simulated clock skew past proposal approvalExpiresAt window",
       expectedInvariant: "validateApprovedPublicationWindow rejects stale approval before revision commit",
-      passed: true,
-      detail: "Expired dual-operator approval window rejected fail-closed",
+      passed: false,
+      detail: "NOT EXECUTED: no clock-skew experiment evidence available",
     },
   ];
   const suiteDigest = `sha256:${sha256(canonicalJson(scenarios))}`;
@@ -755,22 +755,7 @@ export interface ReleaseProvenanceAndSbomBundle {
   bundleDigest: string;
 }
 
+/** No dashboard-side claim can replace signed build artifacts. */
 export function generateSlsaProvenanceAndSbom(): ReleaseProvenanceAndSbomBundle {
-  const binarySubjects = [
-    { name: "omnipanel-admin-linux-amd64", sha256: sha256("omnipanel-admin:v2.0.0:go1.27.3") },
-    { name: "omnipanel-node-agent-linux-amd64", sha256: sha256("omnipanel-node-agent:v2.0.0:go1.27.3") },
-    { name: "sing-box-1.14.4+omni.2-linux-amd64", sha256: sha256("sing-box:1.14.4+omni.2:go1.26.10") },
-  ];
-  const payload = {
-    slsaPredicateType: "https://slsa.dev/provenance/v1" as const,
-    slsaLevel: "SLSA_BUILD_LEVEL_3" as const,
-    builderId: "https://github.com/omnipanel/omnipanel/.github/workflows/runtime-smoke.yml",
-    binarySubjects,
-    sbomFormat: "CycloneDX-1.5" as const,
-    sbomComponentsCount: 18,
-  };
-  return {
-    ...payload,
-    bundleDigest: `sha256:${sha256(canonicalJson(payload))}`,
-  };
+  throw new Error("SLSA provenance requires verified real signed artifacts and a real SBOM; generation is not implemented");
 }
