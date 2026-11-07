@@ -21,9 +21,9 @@ const (
 )
 
 var (
-	ErrActivationDenied = errors.New("activation guard denied: verified intent, approved baseline or exclusive lease missing")
+	ErrActivationDenied   = errors.New("activation guard denied: verified intent, approved baseline or exclusive lease missing")
 	ErrRollbackUnverified = errors.New("known-good runtime restoration is not independently observed")
-	knownGoodRefPattern = regexp.MustCompile("^sha256:[a-f0-9]{64}$")
+	knownGoodRefPattern   = regexp.MustCompile("^sha256:[a-f0-9]{64}$")
 )
 
 // ActivationGuard is an owner-private, durable safety lease. It records the
