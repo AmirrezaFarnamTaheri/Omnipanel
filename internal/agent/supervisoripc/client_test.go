@@ -17,7 +17,7 @@ import (
 const testRef = "sha256:" + "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 
 type testRequest struct {
-	Version int `json:"version"`
+	Version   int    `json:"version"`
 	Operation string `json:"operation"`
 	Reference string `json:"reference"`
 }
@@ -113,11 +113,11 @@ func TestSupervisorIPCRejectsUnsafeSocketPathsAndUntrustedPeers(t *testing.T) {
 
 func TestSupervisorIPCRejectsMalformedRepliesAndWrongEcho(t *testing.T) {
 	cases := map[string]string{
-		"wrong digest": `{"version":1,"operation":"restore-known-good","reference":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","ok":true,"healthy":true}`,
+		"wrong digest":    `{"version":1,"operation":"restore-known-good","reference":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","ok":true,"healthy":true}`,
 		"wrong operation": `{"version":1,"operation":"observe-known-good","reference":"` + testRef + `","ok":true,"healthy":true}`,
-		"trailing data": `{"version":1,"operation":"restore-known-good","reference":"` + testRef + `","ok":true,"healthy":true} 123`,
-		"oversized": strings.Repeat("X", 5000),
-		"unacknowledged": `{"version":1,"operation":"restore-known-good","reference":"` + testRef + `","ok":false,"healthy":true}`,
+		"trailing data":   `{"version":1,"operation":"restore-known-good","reference":"` + testRef + `","ok":true,"healthy":true} 123`,
+		"oversized":       strings.Repeat("X", 5000),
+		"unacknowledged":  `{"version":1,"operation":"restore-known-good","reference":"` + testRef + `","ok":false,"healthy":true}`,
 	}
 	for name, reply := range cases {
 		t.Run(name, func(t *testing.T) {
