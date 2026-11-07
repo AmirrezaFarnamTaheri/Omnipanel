@@ -3,6 +3,7 @@ import { count, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { inboundHealth, nodes, users } from "@/db/schema";
 import { verifyAuditChain } from "@/lib/audit";
+import { resolveAuthenticatedAdminFromToken } from "@/lib/auth";
 import { listDesiredStateProposals } from "@/lib/governance-store";
 import { getEpoch } from "@/lib/revisions";
 import { renderOpenTelemetryPrometheusMetrics } from "@/lib/enterprise-hardening";
@@ -10,6 +11,19 @@ import { renderOpenTelemetryPrometheusMetrics } from "@/lib/enterprise-hardening
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
+  // This endpoint exposes administrative health and subscriber counts. Fail closed
+  // before issuing any database queries when the session cookie is absent or invalid.
+  const sessionCookie = req.headers.get("cookie")
+    ?.split(";")
+    .map((pair) => pair.trim())
+    .find((pair) => pair.startsWith("omni_session="));
+  const sessionToken = sessionCookie?.slice("omni_session=".length);
+  if (!(await resolveAuthenticatedAdminFromToken(sessionToken))) {
+    return new Response("Unauthorized", {
+      status: 401,
+      headers: { "cache-control": "no-store" },
+    });
+  }
   const epoch = await getEpoch();
   const auditChain = await verifyAuditChain();
   const [{ nn }] = await db.select({ nn: count() }).from(nodes);
