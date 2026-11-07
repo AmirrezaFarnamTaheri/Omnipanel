@@ -19,6 +19,7 @@ import { actorOf, requireRole } from "@/lib/auth";
 import { decryptSecret, verifyPassword } from "@/lib/crypto";
 import { act, int, str, type ActionState } from "@/lib/action-helpers";
 import { requireStepUpPassword } from "@/lib/stepup-input";
+import { consumeTotpCounter } from "@/lib/totp-replay";
 import { declareRecoveryEpoch } from "@/lib/revisions";
 import { ProblemError } from "@/lib/problem";
 import { verifyTotpMatchedStep } from "@/lib/totp";
@@ -83,16 +84,7 @@ async function stepUp(adminId: number, fd: FormData) {
     if (matchedStep === null) {
       throw new ProblemError(401, "Unauthorized", "Step-up failed: invalid authenticator code");
     }
-    const counterKey = `totp.last_counter.${adminId}`;
-    const [existingCounter] = await db.select().from(settings).where(eq(settings.key, counterKey));
-    const lastStep = existingCounter ? Number(existingCounter.value) : -1;
-    if (matchedStep <= lastStep) {
-      throw new ProblemError(401, "Unauthorized", "Step-up failed: authenticator code was already used (replay refused)");
-    }
-    await db
-      .insert(settings)
-      .values({ key: counterKey, value: String(matchedStep) })
-      .onConflictDoUpdate({ target: settings.key, set: { value: String(matchedStep) } });
+    await consumeTotpCounter(adminId, matchedStep);
   }
 }
 
