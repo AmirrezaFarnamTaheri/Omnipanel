@@ -737,7 +737,6 @@ export async function approveDesiredStateProposal(
   approverAdmin: { id: number; email: string; role: string },
   proposalId: string,
   expectedSha256?: string,
-  opts?: { allowSelfApproval?: boolean },
 ): Promise<EnrichedProposalRecord> {
   return db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(7003)`);
@@ -796,7 +795,7 @@ const activeProposalPublications = new Set<string>();
 export async function publishApprovedDesiredStateProposal(
   publisherAdmin: { id: number; email: string; role: string },
   proposalId: string,
-  opts?: { injectBeforeConsumeCrash?: () => void; allowSelfApproval?: boolean },
+  opts?: { injectBeforeConsumeCrash?: () => void },
 ): Promise<EnrichedProposalRecord> {
   if (publisherAdmin.role !== "owner") {
     throw new Error("Publishing an approved desired-state revision requires owner role");
