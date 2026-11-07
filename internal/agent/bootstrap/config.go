@@ -27,29 +27,29 @@ const maxPrivatePEMBytes = 64 << 10
 
 var (
 	ErrInvalidBootstrap = errors.New("invalid protected node bootstrap configuration")
-	identifier = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9._-]{0,63}$`)
-	capabilityName = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}$`)
-	uuid = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
-	digest = regexp.MustCompile(`^[0-9a-f]{64}$`)
-	version = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+(?:\+[a-zA-Z0-9._-]+)?$`)
+	identifier          = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9._-]{0,63}$`)
+	capabilityName      = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}$`)
+	uuid                = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+	digest              = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	version             = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+(?:\+[a-zA-Z0-9._-]+)?$`)
 )
 
 // Config is provisioned out-of-band by a trusted node operator. Declaring a
 // qualified build in a file is NOT evidence that external qualification ran.
 // An installer must independently verify the build and approved signer first.
 type Config struct {
-	GatewayOrigin string `json:"gatewayOrigin"`
-	NodeID string `json:"nodeId"`
-	ControlPlaneEpoch string `json:"controlPlaneEpoch"`
-	JournalPath string `json:"journalPath"`
-	RootCAFile string `json:"rootCAFile"`
-	ClientCertFile string `json:"clientCertFile"`
-	ClientKeyFile string `json:"clientKeyFile"`
-	TrustedSigners map[string]string `json:"trustedSigners"`
-	AllowedCapabilities []string `json:"allowedCapabilities"`
-	QualifiedBuilds map[string]manifest.Build `json:"qualifiedBuilds"`
-	PollSeconds int `json:"pollSeconds"`
-	MaxClockSkewSeconds int `json:"maxClockSkewSeconds"`
+	GatewayOrigin       string                    `json:"gatewayOrigin"`
+	NodeID              string                    `json:"nodeId"`
+	ControlPlaneEpoch   string                    `json:"controlPlaneEpoch"`
+	JournalPath         string                    `json:"journalPath"`
+	RootCAFile          string                    `json:"rootCAFile"`
+	ClientCertFile      string                    `json:"clientCertFile"`
+	ClientKeyFile       string                    `json:"clientKeyFile"`
+	TrustedSigners      map[string]string         `json:"trustedSigners"`
+	AllowedCapabilities []string                  `json:"allowedCapabilities"`
+	QualifiedBuilds     map[string]manifest.Build `json:"qualifiedBuilds"`
+	PollSeconds         int                       `json:"pollSeconds"`
+	MaxClockSkewSeconds int                       `json:"maxClockSkewSeconds"`
 }
 
 // privateRead refuses symlinks, non-owner files and group/world access before
@@ -63,7 +63,9 @@ func privateRead(path string, max int64) ([]byte, error) {
 		return nil, ErrInvalidBootstrap
 	}
 	fd, err := syscall.Open(path, syscall.O_RDONLY|syscall.O_CLOEXEC|syscall.O_NOFOLLOW, 0)
-	if err != nil { return nil, ErrInvalidBootstrap }
+	if err != nil {
+		return nil, ErrInvalidBootstrap
+	}
 	file := os.NewFile(uintptr(fd), path)
 	defer file.Close()
 	info, err := file.Stat()
@@ -91,14 +93,22 @@ func ReadPrivatePEM(path string) ([]byte, error) {
 // Load refuses missing, unknown, repeated or trailing bootstrap JSON values.
 func Load(path string) (Config, error) {
 	raw, err := privateRead(path, maxBootstrapBytes)
-	if err != nil { return Config{}, err }
+	if err != nil {
+		return Config{}, err
+	}
 	var cfg Config
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&cfg); err != nil { return Config{}, ErrInvalidBootstrap }
+	if err := decoder.Decode(&cfg); err != nil {
+		return Config{}, ErrInvalidBootstrap
+	}
 	var extra any
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) { return Config{}, ErrInvalidBootstrap }
-	if err := cfg.validate(); err != nil { return Config{}, err }
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		return Config{}, ErrInvalidBootstrap
+	}
+	if err := cfg.validate(); err != nil {
+		return Config{}, err
+	}
 	return cfg, nil
 }
 
@@ -120,13 +130,19 @@ func (c Config) validate() error {
 		return ErrInvalidBootstrap
 	}
 	for id, key := range c.TrustedSigners {
-		if !identifier.MatchString(id) { return ErrInvalidBootstrap }
+		if !identifier.MatchString(id) {
+			return ErrInvalidBootstrap
+		}
 		raw, err := base64.RawURLEncoding.DecodeString(key)
-		if err != nil || len(raw) != ed25519.PublicKeySize || base64.RawURLEncoding.EncodeToString(raw) != key { return ErrInvalidBootstrap }
+		if err != nil || len(raw) != ed25519.PublicKeySize || base64.RawURLEncoding.EncodeToString(raw) != key {
+			return ErrInvalidBootstrap
+		}
 	}
 	allowed := make(map[string]bool, len(c.AllowedCapabilities))
 	for _, capability := range c.AllowedCapabilities {
-		if !capabilityName.MatchString(capability) || allowed[capability] { return ErrInvalidBootstrap }
+		if !capabilityName.MatchString(capability) || allowed[capability] {
+			return ErrInvalidBootstrap
+		}
 		allowed[capability] = true
 	}
 	qualified := make(map[string]bool)
@@ -136,13 +152,17 @@ func (c Config) validate() error {
 		}
 		seen := map[string]bool{}
 		for _, capability := range build.Capabilities {
-			if !allowed[capability] || seen[capability] { return ErrInvalidBootstrap }
+			if !allowed[capability] || seen[capability] {
+				return ErrInvalidBootstrap
+			}
 			seen[capability] = true
 			qualified[capability] = true
 		}
 	}
 	for capability := range allowed {
-		if !qualified[capability] { return ErrInvalidBootstrap }
+		if !qualified[capability] {
+			return ErrInvalidBootstrap
+		}
 	}
 	return nil
 }
@@ -150,20 +170,26 @@ func (c Config) validate() error {
 // Verifier returns defensive copies of the locally authorized Ed25519 signers
 // and exact build identities; no remote input can add authority to this map.
 func (c Config) Verifier() (manifest.Verifier, error) {
-	if err := c.validate(); err != nil { return manifest.Verifier{}, err }
+	if err := c.validate(); err != nil {
+		return manifest.Verifier{}, err
+	}
 	v := manifest.Verifier{
 		NodeID: c.NodeID, AuthorizedEpoch: c.ControlPlaneEpoch,
-		TrustedSigners: make(map[string]ed25519.PublicKey, len(c.TrustedSigners)),
+		TrustedSigners:      make(map[string]ed25519.PublicKey, len(c.TrustedSigners)),
 		AllowedCapabilities: make(map[string]bool, len(c.AllowedCapabilities)),
-		QualifiedBuilds: make(map[string]manifest.Build, len(c.QualifiedBuilds)),
-		MaxClockSkew: time.Duration(c.MaxClockSkewSeconds) * time.Second,
+		QualifiedBuilds:     make(map[string]manifest.Build, len(c.QualifiedBuilds)),
+		MaxClockSkew:        time.Duration(c.MaxClockSkewSeconds) * time.Second,
 	}
 	for id, encoded := range c.TrustedSigners {
 		key, err := base64.RawURLEncoding.DecodeString(encoded)
-		if err != nil { return manifest.Verifier{}, fmt.Errorf("%w: signer", ErrInvalidBootstrap) }
+		if err != nil {
+			return manifest.Verifier{}, fmt.Errorf("%w: signer", ErrInvalidBootstrap)
+		}
 		v.TrustedSigners[id] = append(ed25519.PublicKey(nil), key...)
 	}
-	for _, capability := range c.AllowedCapabilities { v.AllowedCapabilities[capability] = true }
+	for _, capability := range c.AllowedCapabilities {
+		v.AllowedCapabilities[capability] = true
+	}
 	for id, b := range c.QualifiedBuilds {
 		b.Capabilities = append([]string(nil), b.Capabilities...)
 		v.QualifiedBuilds[id] = b
