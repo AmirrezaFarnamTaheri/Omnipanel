@@ -151,6 +151,8 @@ export function verifySignedEnvelope(
     expectedEpoch: string;
     publicKeyPem: string;
     now?: Date;
+    /** @deprecated Ignored: self-approval is never authorized. */
+    allowSelfApproval?: boolean;
   },
 ): { envelope: SignedDesiredEnvelope; envelopeSha256: string } {
   if (!envelopeJson || Buffer.byteLength(envelopeJson, "utf8") > MAX_ENVELOPE_BYTES) {
@@ -280,6 +282,7 @@ export function validateApprovedPublicationWindow(
     currentMembershipSeq: number;
   },
   now: Date = new Date(),
+  _opts?: { allowSelfApproval?: boolean },
 ): void {
   if (!proposal.decision) {
     throw new PublicationApprovalError("UNAUTHORIZED", "Proposal has no independent second-owner approval decision");
