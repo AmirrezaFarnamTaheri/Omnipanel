@@ -93,7 +93,13 @@ GRANT SELECT(proposal_id,organization_id,node_id,control_plane_epoch,structural_
  membership_sequence,envelope_sha256,envelope,proposer_admin_id,proposer_session_id,
  proposer_session_hash,proposer_stepup_counter,expires_at,created_at)
  ON public.agent_desired_publish_proposals TO omni_desired_reviewer;
--- The migration's immutability trigger rejects proposal UPDATE.
+-- PostgreSQL requires UPDATE privilege to lock rows FOR UPDATE.
+-- The migration's row-level immutability trigger cannot reject UPDATE statements
+-- affecting zero rows. A statement-level guard ensures this lock-only grant
+-- cannot be used to issue any proposal UPDATE, even on an empty table.
+CREATE TRIGGER omni_runtime_immutable_proposal_update_deny
+ BEFORE UPDATE ON public.agent_desired_publish_proposals
+ FOR EACH STATEMENT EXECUTE FUNCTION public.omni_deny_runtime_lockonly_updates();
 GRANT UPDATE(proposal_id) ON public.agent_desired_publish_proposals TO omni_desired_reviewer;
 GRANT SELECT(proposal_id) ON public.agent_desired_publish_decisions TO omni_desired_reviewer;
 GRANT INSERT(approval_id,organization_id,node_id,control_plane_epoch,
