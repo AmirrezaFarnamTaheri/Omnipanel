@@ -15,11 +15,11 @@ func validOptions(t *testing.T) options {
 		t.Fatal(err)
 	}
 	return options{
-		NodeID: "62c478bb-47c3-4dc6-a363-a2fbde813810",
-		Epoch: "ea2429da-7540-4e40-ae70-38fd3f19794b",
-		JournalPath: filepath.Join(dir, "journal.sqlite"),
+		NodeID:           "62c478bb-47c3-4dc6-a363-a2fbde813810",
+		Epoch:            "ea2429da-7540-4e40-ae70-38fd3f19794b",
+		JournalPath:      filepath.Join(dir, "journal.sqlite"),
 		SupervisorSocket: "/run/omnipanel/root-supervisor.sock",
-		Interval: 250 * time.Millisecond,
+		Interval:         250 * time.Millisecond,
 	}
 }
 
@@ -29,7 +29,7 @@ func TestWatchdogCLIValidatesLocalScopeAndFiniteRetryInterval(t *testing.T) {
 		t.Fatalf("valid nonsecret scope rejected: %v", err)
 	}
 	cases := []struct {
-		name string
+		name   string
 		change func(*options)
 	}{
 		{"empty node", func(o *options) { o.NodeID = "" }},
