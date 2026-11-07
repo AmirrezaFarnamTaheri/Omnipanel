@@ -16,10 +16,10 @@ var ErrActivationUnavailable = errors.New("activation guard is not yet implement
 type ActivationGuard struct {
 	StructuralSequence uint64
 	MembershipSequence uint64
-	ManifestDigest string
-	CandidateDigest string
-	RollbackRef string
-	Deadline time.Time
+	ManifestDigest     string
+	CandidateDigest    string
+	RollbackRef        string
+	Deadline           time.Time
 }
 
 // RecoveryOperator must be a separately qualified, trustworthy local supervisor.
