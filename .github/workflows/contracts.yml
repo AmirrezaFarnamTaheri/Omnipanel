@@ -20,6 +20,10 @@ jobs:
       - run: make check-contracts test-contracts test-provenance
       - run: npm run typecheck
       - run: npm run lint
+      - name: Compile production Next.js application
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+        run: npm run build
       # Real gate-lab requires protected external networking evidence.
       # Passing this workflow is deliberately not an M0/M1/M2 release gate.
 
