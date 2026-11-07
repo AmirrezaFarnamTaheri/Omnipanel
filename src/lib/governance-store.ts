@@ -764,7 +764,6 @@ export async function approveDesiredStateProposal(
       approverRole: approverAdmin.role,
       expectedSha256: digestToConfirm,
       now: new Date(),
-      allowSelfApproval: opts?.allowSelfApproval ?? false,
     });
 
     const updated: EnrichedProposalRecord = {
@@ -841,7 +840,6 @@ export async function publishApprovedDesiredStateProposal(
           currentMembershipSeq: node.membershipSeq,
         },
         new Date(),
-        { allowSelfApproval: opts?.allowSelfApproval ?? false },
       );
 
       const rawPayload = verified.envelope.manifest.payload as Record<string, unknown>;
