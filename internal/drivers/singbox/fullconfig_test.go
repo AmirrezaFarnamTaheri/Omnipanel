@@ -19,7 +19,29 @@ func compiledTestPlan() (drivers.BuildIdentity, drivers.ComponentPlan) {
 	build, plan := approvedTestPlan()
 	plan.Revision.Manifest.StructuralSequence = 3
 	plan.Revision.Manifest.MembershipSequence = 1
+	adapter, err := New(build)
+	if err != nil {
+		panic("broken test build identity")
+	}
+	fragment, err := adapter.Render(context.Background(), plan)
+	if err != nil {
+		panic("broken Reality compiler fixture")
+	}
+	plan.Revision.Manifest.Components[0].ConfigurationDigest = fragment.SHA256
 	return build, plan
+}
+
+func fragmentDigest(t *testing.T, build drivers.BuildIdentity, plan drivers.ComponentPlan) string {
+	t.Helper()
+	adapter, err := New(build)
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifact, err := adapter.Render(context.Background(), plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return artifact.SHA256
 }
 
 func parseCompiledDocument(t *testing.T, artifact drivers.ConfigArtifact) map[string]any {
@@ -144,6 +166,8 @@ func TestFullConfigIsDeterministicAcrossPlanOrdering(t *testing.T) {
 	secondReality.Listen = secondComponent.Listeners[0]
 	secondReality.Users = []drivers.Principal{{ID: "user-three", UUID: "cca0f909-af54-4c6d-8a2f-695f0a7ab127"}}
 	second.Reality = &secondReality
+	first.Revision.Manifest.Components[1].ConfigurationDigest = fragmentDigest(t, build, second)
+	second.Revision = first.Revision
 
 	policy := ProtectedPolicy{Mode: EgressBlockAll}
 	a, err := CompileFull(context.Background(), []drivers.ComponentPlan{second, first}, policy, build)
@@ -204,6 +228,12 @@ func TestFullConfigRejectsInvalidPlansOrUntrustedEgressPolicy(t *testing.T) {
 		{"zero structural sequence", func(_ *drivers.BuildIdentity, p *[]drivers.ComponentPlan, _ *ProtectedPolicy) {
 			(*p)[0].Revision.Manifest.StructuralSequence = 0
 		}},
+		{"configuration digest not bound to signed component", func(_ *drivers.BuildIdentity, p *[]drivers.ComponentPlan, _ *ProtectedPolicy) {
+			(*p)[0].Revision.Manifest.Components[0].ConfigurationDigest = strings.Repeat("e", 64)
+		}},
+		{"credentials changed after signed component", func(_ *drivers.BuildIdentity, p *[]drivers.ComponentPlan, _ *ProtectedPolicy) {
+			(*p)[0].Reality.PrivateKey = strings.Repeat("B", 43)
+		}},
 		{"missing manifest component", func(_ *drivers.BuildIdentity, p *[]drivers.ComponentPlan, _ *ProtectedPolicy) {
 			(*p)[0].Revision.Manifest.Components = nil
 		}},
@@ -247,6 +277,8 @@ func TestFullConfigRejectsListenerPortCollisionsAndMixedRevisions(t *testing.T) 
 	other := *first.Reality
 	other.Users = []drivers.Principal{{ID: "user-four", UUID: "53da4424-08ee-4590-9d25-939ad250eab1"}}
 	second.Reality = &other
+	first.Revision.Manifest.Components[1].ConfigurationDigest = fragmentDigest(t, build, second)
+	second.Revision = first.Revision
 	if _, err := CompileFull(context.Background(), []drivers.ComponentPlan{first, second}, ProtectedPolicy{}, build); err == nil {
 		t.Fatal("same listening port in two components unexpectedly accepted")
 	}
