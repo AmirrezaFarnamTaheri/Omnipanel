@@ -90,4 +90,38 @@ func TestSignedRootHostRollbackAfterSIGKILL(t *testing.T) {
 	if err := client.RestoreLastKnownGood(ctx, unapproved); err == nil || errors.Is(err, context.Canceled) {
 		t.Fatal("unapproved generation was not rejected by the root IPC boundary")
 	}
+
+	// An independently root-provisioned candidate is a DIFFERENT permission
+	// from the known-good recovery allowlist. Exercise the actual pinned binary,
+	// fixed systemd unit and protected root ticket on this disposable VM.
+	candidate := os.Getenv("OMNI_ROOT_LAB_CANDIDATE")
+	if candidate == "" || candidate == ref {
+		t.Fatal("root candidate lab requires a distinct pre-approved generation")
+	}
+	if err := client.RestoreLastKnownGood(ctx, candidate); err == nil {
+		t.Fatal("candidate gained rollback recovery privilege")
+	}
+	if err := client.ApplyApprovedCandidate(ctx, candidate); err != nil {
+		t.Fatalf("native root-approved candidate activation failed: %v", err)
+	}
+	if healthy, err := client.ObserveLastKnownGood(ctx, ref); healthy && err == nil {
+		t.Fatal("LKG falsely reported healthy while distinct candidate was active")
+	}
+	if err := client.ApplyApprovedCandidate(ctx, candidate); err == nil {
+		t.Fatal("one-time candidate token replay succeeded after root activation")
+	}
+	// Fault after candidate activation, then recover the PREVIOUS qualified LKG.
+	secondKill := exec.CommandContext(ctx, "sudo", "/usr/bin/systemctl", "kill", "--kill-who=main", "--signal=SIGKILL", "omnipanel-singbox.service")
+	if output, err := secondKill.CombinedOutput(); err != nil {
+		t.Fatalf("candidate SIGKILL injection failed: %v (%s)", err, output)
+	}
+	if err := client.RestoreLastKnownGood(ctx, ref); err != nil {
+		t.Fatalf("root watchdog could not restore former LKG following candidate death: %v", err)
+	}
+	if err := waitForRestoredHostHealth(ctx, client, ref); err != nil {
+		t.Fatalf("former LKG health was not re-established following candidate failure: %v", err)
+	}
+	if err := client.ApplyApprovedCandidate(ctx, candidate); err == nil {
+		t.Fatal("a restored LKG must not reset consumed root candidate authorization")
+	}
 }
