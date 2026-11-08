@@ -5,6 +5,7 @@ on:
   push:
     paths:
       - "lab/runtime/**"
+      - "internal/drivers/singbox/fullconfig*.go"
       - "Makefile"
       - "README.md"
       - "lab/README.md"
@@ -13,6 +14,7 @@ on:
   pull_request:
     paths:
       - "lab/runtime/**"
+      - "internal/drivers/singbox/fullconfig*.go"
       - "Makefile"
       - "README.md"
       - "lab/README.md"
@@ -61,6 +63,7 @@ jobs:
       - name: Check lab and provenance scripts
         run: |
           bash -n lab/runtime/build-sing-box.sh
+          bash -n lab/runtime/check-compiled-fullconfig.sh
           bash -n lab/runtime/run-local-reality.sh
           bash -n lab/runtime/verify-provenance.sh
           bash -n lab/runtime/verify-provenance_test.sh
@@ -97,6 +100,9 @@ jobs:
             "$SING_BOX_METADATA" \
             "$SING_BOX_BUNDLE" \
             "$SING_BOX_METADATA_BUNDLE"
+
+      - name: Native-check policy-compiled full configuration (not external M0)
+        run: bash lab/runtime/check-compiled-fullconfig.sh
 
       - name: Retain signed runtime and Sigstore verification bundles
         if: steps.verify-provenance.outcome == 'success'
