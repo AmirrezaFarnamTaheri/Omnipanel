@@ -23,13 +23,13 @@ import (
 const (
 	// Only this exact native runtime has a reviewed route-rule schema.
 	fullConfigRuntimeVersion = "1.14.4+omni.2"
-	fullConfigFormat = "singbox/full-config+json"
-	maxFullConfigBytes = 2 << 20
-	maxFullConfigComponents = 16
+	fullConfigFormat         = "singbox/full-config+json"
+	maxFullConfigBytes       = 2 << 20
+	maxFullConfigComponents  = 16
 
-	fullConfigBlockTag = "omni-block"
+	fullConfigBlockTag  = "omni-block"
 	fullConfigPublicTag = "omni-public"
-	fullConfigDNSTag = "omni-dns"
+	fullConfigDNSTag    = "omni-dns"
 )
 
 // EgressMode controls the shape of an unprivileged config artifact; it does
@@ -48,8 +48,8 @@ const (
 // ProtectedPolicy MUST come from locally approved operator policy, never from
 // fields in the signed desired-state manifest or an unauthenticated API.
 type ProtectedPolicy struct {
-	Mode EgressMode
-	ResolverIP string
+	Mode               EgressMode
+	ResolverIP         string
 	ResolverServerName string
 }
 
@@ -214,10 +214,10 @@ func CompileFull(ctx context.Context, plans []drivers.ComponentPlan, policy Prot
 	sort.Slice(inbounds, func(i, j int) bool { return inbounds[i].Tag < inbounds[j].Tag })
 
 	document := map[string]any{
-		"log": map[string]any{"level": "warn", "timestamp": true},
-		"inbounds": inbounds,
+		"log":       map[string]any{"level": "warn", "timestamp": true},
+		"inbounds":  inbounds,
 		"outbounds": []map[string]any{{"type": "block", "tag": fullConfigBlockTag}},
-		"route": map[string]any{"final": fullConfigBlockTag},
+		"route":     map[string]any{"final": fullConfigBlockTag},
 	}
 	if mode == EgressPublicOnly {
 		blocked := append([]string(nil), protectedDestinationPrefixes...)
@@ -266,10 +266,10 @@ func CompileFull(ctx context.Context, plans []drivers.ComponentPlan, policy Prot
 		componentID = "omni-runtime"
 	}
 	return drivers.ConfigArtifact{
-		ComponentID: componentID,
-		Format: fullConfigFormat,
-		Content: content,
-		SHA256: hex.EncodeToString(digest[:]),
+		ComponentID:     componentID,
+		Format:          fullConfigFormat,
+		Content:         content,
+		SHA256:          hex.EncodeToString(digest[:]),
 		ContainsSecrets: true,
 	}, nil
 }
