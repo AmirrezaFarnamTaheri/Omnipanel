@@ -3,7 +3,6 @@ package supervisorserver
 import (
 	"context"
 	"io"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"

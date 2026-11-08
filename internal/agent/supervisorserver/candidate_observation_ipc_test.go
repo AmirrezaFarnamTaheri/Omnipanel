@@ -24,7 +24,7 @@ func (b *observedCandidateBackend) ObserveApprovedCandidate(_ context.Context, _
 func TestRootCandidateObservationRPCExposesExactRootTicketOnlyAfterHostObservation(t *testing.T) {
 	backend := &observedCandidateBackend{
 		candidateBackendStub: &candidateBackendStub{stubBackend: &stubBackend{}},
-		healthy: true,
+		healthy:              true,
 	}
 	cfg, _ := serverTestConfig(t, backend.stubBackend)
 	ref := "sha256:" + strings.Repeat("c", 64)
