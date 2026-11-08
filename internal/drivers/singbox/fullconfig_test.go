@@ -65,8 +65,8 @@ func TestFullConfigDefaultFailsClosedWithoutAnyDirectEgress(t *testing.T) {
 func TestFullConfigExplicitPublicPolicyResolvesAndBlocksProtectedEgress(t *testing.T) {
 	build, plan := compiledTestPlan()
 	policy := ProtectedPolicy{
-		Mode: EgressPublicOnly,
-		ResolverIP: "1.1.1.1",
+		Mode:               EgressPublicOnly,
+		ResolverIP:         "1.1.1.1",
 		ResolverServerName: "one.one.one.one",
 	}
 	artifact, err := CompileFull(context.Background(), []drivers.ComponentPlan{plan}, policy, build)
@@ -166,14 +166,20 @@ func TestFullConfigIsDeterministicAcrossPlanOrdering(t *testing.T) {
 
 func TestFullConfigRejectsInvalidPlansOrUntrustedEgressPolicy(t *testing.T) {
 	cases := []struct {
-		name string
+		name   string
 		change func(*drivers.BuildIdentity, *[]drivers.ComponentPlan, *ProtectedPolicy)
 	}{
 		{"missing plans", func(_ *drivers.BuildIdentity, p *[]drivers.ComponentPlan, _ *ProtectedPolicy) { *p = nil }},
-		{"wrong build", func(b *drivers.BuildIdentity, _ *[]drivers.ComponentPlan, _ *ProtectedPolicy) { b.ArtifactDigest = strings.Repeat("f", 64) }},
+		{"wrong build", func(b *drivers.BuildIdentity, _ *[]drivers.ComponentPlan, _ *ProtectedPolicy) {
+			b.ArtifactDigest = strings.Repeat("f", 64)
+		}},
 		{"unknown egress mode", func(_ *drivers.BuildIdentity, _ *[]drivers.ComponentPlan, p *ProtectedPolicy) { p.Mode = "allow-all" }},
-		{"block-all with DNS settings", func(_ *drivers.BuildIdentity, _ *[]drivers.ComponentPlan, p *ProtectedPolicy) { p.ResolverIP = "1.1.1.1" }},
-		{"public mode without resolver", func(_ *drivers.BuildIdentity, _ *[]drivers.ComponentPlan, p *ProtectedPolicy) { p.Mode = EgressPublicOnly }},
+		{"block-all with DNS settings", func(_ *drivers.BuildIdentity, _ *[]drivers.ComponentPlan, p *ProtectedPolicy) {
+			p.ResolverIP = "1.1.1.1"
+		}},
+		{"public mode without resolver", func(_ *drivers.BuildIdentity, _ *[]drivers.ComponentPlan, p *ProtectedPolicy) {
+			p.Mode = EgressPublicOnly
+		}},
 		{"public mode with private resolver", func(_ *drivers.BuildIdentity, _ *[]drivers.ComponentPlan, p *ProtectedPolicy) {
 			p.Mode, p.ResolverIP, p.ResolverServerName = EgressPublicOnly, "127.0.0.1", "one.one.one.one"
 		}},
@@ -288,8 +294,8 @@ func TestEmitFullConfigForPinnedNativeSingBoxCheck(t *testing.T) {
 	build, plan := compiledTestPlan()
 	plan.Reality.PrivateKey = key
 	policy := ProtectedPolicy{
-		Mode: EgressPublicOnly,
-		ResolverIP: "1.1.1.1",
+		Mode:               EgressPublicOnly,
+		ResolverIP:         "1.1.1.1",
 		ResolverServerName: "one.one.one.one",
 	}
 	artifact, err := CompileFull(context.Background(), []drivers.ComponentPlan{plan}, policy, build)
