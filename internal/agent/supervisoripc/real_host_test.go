@@ -9,6 +9,24 @@ import (
 	"time"
 )
 
+// systemctl restart reports the unit-start transaction before the proxy
+// listener necessarily accepts connections. Health must be observed, never
+// inferred from the restart command's exit status.
+func waitForRestoredHostHealth(ctx context.Context, c *Client, ref string) error {
+	for i := 0; i < 80; i++ {
+		healthy, err := c.ObserveLastKnownGood(ctx, ref)
+		if err == nil && healthy {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+	return errors.New("native generation failed host-level readiness observation")
+}
+
 // This opt-in test exercises the real root-owned supervisor executable,
 // systemd unit, and Sigstore-verified Sing-box build on an ephemeral CI host.
 // It is never evidence of public VPS connectivity or policy qualification.
@@ -36,9 +54,8 @@ func TestSignedRootHostRollbackAfterSIGKILL(t *testing.T) {
 	if err := client.RestoreLastKnownGood(ctx, ref); err != nil {
 		t.Fatalf("actual Sing-box/systemd rollback failed: %v", err)
 	}
-	healthy, err := client.ObserveLastKnownGood(ctx, ref)
-	if err != nil || !healthy {
-		t.Fatalf("actual restored Sing-box SOCKS5 deny-route health was not observed: %t %v", healthy, err)
+	if err := waitForRestoredHostHealth(ctx, client, ref); err != nil {
+		t.Fatalf("actual restored Sing-box SOCKS5 deny-route health was not observed: %v", err)
 	}
 	// The root unit is a fixed CI-only unit installed by the calling lab;
 	// no user-supplied unit name or command reaches the root supervisor IPC.
@@ -61,9 +78,8 @@ func TestSignedRootHostRollbackAfterSIGKILL(t *testing.T) {
 	if err := client.RestoreLastKnownGood(ctx, ref); err != nil {
 		t.Fatalf("root recovery following actual SIGKILL failed: %v", err)
 	}
-	healthy, err = client.ObserveLastKnownGood(ctx, ref)
-	if err != nil || !healthy {
-		t.Fatalf("root supervisor could not recover native runtime after SIGKILL: %t %v", healthy, err)
+	if err := waitForRestoredHostHealth(ctx, client, ref); err != nil {
+		t.Fatalf("root supervisor could not recover native runtime after SIGKILL: %v", err)
 	}
 	// The root allowlist must reject a syntactically valid but unapproved
 	// generation even when the caller passes a canonical SHA-256 string.
