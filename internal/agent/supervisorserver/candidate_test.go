@@ -94,7 +94,7 @@ func TestNativeCandidatePreflightFailuresNeverMutateRunningGeneration(t *testing
 		mutate func(*testing.T, nativeFixture, *NativeBackend, CandidateApproval)
 	}{
 		{"wrong reference", func(t *testing.T, _ nativeFixture, b *NativeBackend, approval CandidateApproval) {
-			if err := b.ApplyApprovedCandidate(context.Background(), "sha256:" + strings.Repeat("c", 64)); err == nil {
+			if err := b.ApplyApprovedCandidate(context.Background(), "sha256:"+strings.Repeat("c", 64)); err == nil {
 				t.Fatal("unapproved generation accepted")
 			}
 		}},
