@@ -47,6 +47,9 @@ type NativeBackend struct {
 	allowed  map[string]bool
 	ownerUID uint32
 	mu       sync.Mutex
+	// Kernel process identity is independently witnessed by systemd and
+	// procfs. Unit tests replace only this OS boundary, never the policy.
+	unitWitness func(context.Context, string, string, string) error
 }
 
 func NewNativeBackend(cfg NativeConfig, generations map[string]bool) (*NativeBackend, error) {
@@ -137,7 +140,7 @@ func newNativeBackend(cfg NativeConfig, generations map[string]bool, trustedUID 
 	if err != nil || portErr != nil || host != "127.0.0.1" || port <= 0 || port > 65535 {
 		return nil, ErrNativeRejected
 	}
-	b := &NativeBackend{cfg: cfg, ownerUID: trustedUID, allowed: make(map[string]bool, len(generations))}
+	b := &NativeBackend{cfg: cfg, ownerUID: trustedUID, allowed: make(map[string]bool, len(generations)), unitWitness: verifyLinuxUnitListener}
 	for ref, allowed := range generations {
 		if !allowed || !generationPattern.MatchString(ref) {
 			return nil, ErrNativeRejected
@@ -316,10 +319,10 @@ func probeProtectedSOCKSDenial(ctx context.Context, address string) error {
 	return nil
 }
 
-// ObserveKnownGood is a separately executed host-level witness. It compares
-// active config bytes to the approved digest, checks a fixed systemd unit is
-// running and requires an actual loopback TCP listener. This is process/port
-// health ONLY: external VPN egress and policy acceptance still need real labs.
+// ObserveKnownGood is a separately executed host-level witness. It verifies
+// the approved active config hash, fixed unit state, systemd MainPID, matching
+// executable digest and kernel-owned listener before a protected SOCKS5 probe.
+// It does not replace independent external generation-bound client evidence.
 func (b *NativeBackend) ObserveKnownGood(ctx context.Context, ref string) (bool, error) {
 	if b == nil || ctx == nil {
 		return false, ErrNativeRejected
@@ -353,6 +356,12 @@ func (b *NativeBackend) ObserveKnownGood(ctx context.Context, ref string) (bool,
 	}
 	if err := b.runPinned(ctx, b.cfg.SystemctlBinary, "is-active", "--quiet", fixedSingBoxUnit); err != nil {
 		return false, err
+	}
+	// A matching service state and a valid SOCKS5 response cannot prove the
+	// listener belongs to the intended native unit. Require a kernel-backed
+	// MainPID, pinned executable digest and exact listening socket inode.
+	if b.unitWitness == nil || b.unitWitness(ctx, b.cfg.SystemctlBinary, b.cfg.SingBoxBinaryDigest, b.cfg.HealthAddress) != nil {
+		return false, ErrNativeRejected
 	}
 	// A listening port alone can belong to an unrelated or stale process.
 	// Require a real SOCKS5 handshake and an explicit ruleset rejection of a

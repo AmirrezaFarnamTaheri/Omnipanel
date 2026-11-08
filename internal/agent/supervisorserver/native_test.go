@@ -86,6 +86,10 @@ func makeNativeFixture(t *testing.T, singScript, systemScript string) (nativeFix
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The unit fixture uses shell stand-ins for systemd and Sing-box.
+	// Only the OS-level MainPID/socket boundary is substituted here; the
+	// independent Linux process witness has its own real /proc tests.
+	backend.unitWitness = func(context.Context, string, string, string) error { return nil }
 	return nativeFixture{cfg: cfg, ref: ref, source: source, singLog: singLog, systemLog: systemLog, active: cfg.ActiveConfigPath, listener: listener}, backend
 }
 
