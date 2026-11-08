@@ -282,18 +282,30 @@ func (b *NativeBackend) RestoreKnownGood(ctx context.Context, ref string) error 
 // categories. They do not originate in the manifest, IPC, DNS, or user input.
 // They exercise explicit ruleset refusal, not comprehensive routing proof.
 var protectedSOCKSCanaries = [][]byte{
-	{5, 1, 0, 1, 169, 254, 169, 254, 0, 80}, // Cloud instance metadata
-	{5, 1, 0, 1, 127, 0, 0, 1, 0, 80},       // Loopback IPv4
-	{5, 1, 0, 1, 10, 0, 0, 1, 0, 80},        // RFC1918 /8
-	{5, 1, 0, 1, 172, 16, 0, 1, 0, 80},      // RFC1918 /12
-	{5, 1, 0, 1, 192, 168, 1, 1, 0, 80},     // RFC1918 /16
-	{5, 1, 0, 1, 100, 64, 0, 1, 0, 80},      // Carrier-grade NAT
-	{5, 1, 0, 1, 0, 0, 0, 0, 0, 80},          // Unspecified
-	{5, 1, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 80}, // IPv6 loopback
-	{5, 1, 0, 4, 0xfc, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 80}, // IPv6 ULA
-	{5, 1, 0, 4, 0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 80}, // IPv6 link-local
-	{5, 1, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, 169, 254, 169, 254, 0, 80}, // IPv4-mapped metadata
-	{5, 1, 0, 3, 9, 'l', 'o', 'c', 'a', 'l', 'h', 'o', 's', 't', 0, 80}, // localhost name
+	// Cloud instance metadata
+	{5, 1, 0, 1, 169, 254, 169, 254, 0, 80},
+	// Loopback IPv4
+	{5, 1, 0, 1, 127, 0, 0, 1, 0, 80},
+	// RFC1918 /8
+	{5, 1, 0, 1, 10, 0, 0, 1, 0, 80},
+	// RFC1918 /12
+	{5, 1, 0, 1, 172, 16, 0, 1, 0, 80},
+	// RFC1918 /16
+	{5, 1, 0, 1, 192, 168, 1, 1, 0, 80},
+	// Carrier-grade NAT
+	{5, 1, 0, 1, 100, 64, 0, 1, 0, 80},
+	// Unspecified
+	{5, 1, 0, 1, 0, 0, 0, 0, 0, 80},
+	// IPv6 loopback
+	{5, 1, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 80},
+	// IPv6 ULA
+	{5, 1, 0, 4, 0xfc, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 80},
+	// IPv6 link-local
+	{5, 1, 0, 4, 0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 80},
+	// IPv4-mapped metadata
+	{5, 1, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, 169, 254, 169, 254, 0, 80},
+	// localhost name
+	{5, 1, 0, 3, 9, 'l', 'o', 'c', 'a', 'l', 'h', 'o', 's', 't', 0, 80},
 }
 
 // probeProtectedSOCKSDenial requires an exact SOCKS5 ruleset rejection (REP
