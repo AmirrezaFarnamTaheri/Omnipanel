@@ -47,6 +47,9 @@ type NativeBackend struct {
 	allowed  map[string]bool
 	ownerUID uint32
 	mu       sync.Mutex
+	// Kernel process identity is independently witnessed by systemd and
+	// procfs. Unit tests replace only this OS boundary, never the policy.
+	unitWitness func(context.Context, string, string, string) error
 }
 
 func NewNativeBackend(cfg NativeConfig, generations map[string]bool) (*NativeBackend, error) {
