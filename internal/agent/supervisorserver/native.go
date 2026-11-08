@@ -319,10 +319,10 @@ func probeProtectedSOCKSDenial(ctx context.Context, address string) error {
 	return nil
 }
 
-// ObserveKnownGood is a separately executed host-level witness. It compares
-// active config bytes to the approved digest, checks a fixed systemd unit is
-// running and requires an actual loopback TCP listener. This is process/port
-// health ONLY: external VPN egress and policy acceptance still need real labs.
+// ObserveKnownGood is a separately executed host-level witness. It verifies
+// the approved active config hash, fixed unit state, systemd MainPID, matching
+// executable digest and kernel-owned listener before a protected SOCKS5 probe.
+// It does not replace independent external generation-bound client evidence.
 func (b *NativeBackend) ObserveKnownGood(ctx context.Context, ref string) (bool, error) {
 	if b == nil || ctx == nil {
 		return false, ErrNativeRejected
