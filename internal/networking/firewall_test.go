@@ -75,7 +75,6 @@ func TestEvaluateInventoryRefusesSSHBlockAndMissingPrivateCIDR(t *testing.T) {
 	}
 }
 
-
 func TestEvaluateInventoryMustRequireActualManagementPortAllow(t *testing.T) {
 	// A host may keep SSH working while the personal management panel is
 	// accidentally locked out. The inventory used to report this healthy
