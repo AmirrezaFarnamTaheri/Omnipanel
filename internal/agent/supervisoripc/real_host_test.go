@@ -101,8 +101,31 @@ func TestSignedRootHostRollbackAfterSIGKILL(t *testing.T) {
 	if err := client.RestoreLastKnownGood(ctx, candidate); err == nil {
 		t.Fatal("candidate gained rollback recovery privilege")
 	}
+	if observed, err := client.ObserveApprovedCandidate(ctx, candidate); err == nil && observed.Healthy {
+		t.Fatal("candidate reported healthy before the root one-shot ticket was consumed")
+	}
 	if err := client.ApplyApprovedCandidate(ctx, candidate); err != nil {
 		t.Fatalf("native root-approved candidate activation failed: %v", err)
+	}
+	candidateObserved := false
+	for attempt := 0; attempt < 80; attempt++ {
+		observed, err := client.ObserveApprovedCandidate(ctx, candidate)
+		if err == nil && observed.Healthy {
+			if observed.Approval.Reference != candidate || observed.Approval.RollbackRef != ref ||
+				observed.Approval.NodeID != "62c478bb-47c3-4dc6-a363-a2fbde813810" ||
+				observed.Approval.ManifestDigest != "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" {
+				t.Fatal("root candidate observation did not echo the provisioned signed scope")
+			}
+			candidateObserved = true
+			break
+		}
+		if err := ctx.Err(); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if !candidateObserved {
+		t.Fatal("one-shot candidate never passed real systemd, PID, socket and protected SOCKS5 host observation")
 	}
 	if healthy, err := client.ObserveLastKnownGood(ctx, ref); healthy && err == nil {
 		t.Fatal("LKG falsely reported healthy while distinct candidate was active")
@@ -120,6 +143,9 @@ func TestSignedRootHostRollbackAfterSIGKILL(t *testing.T) {
 	}
 	if err := waitForRestoredHostHealth(ctx, client, ref); err != nil {
 		t.Fatalf("former LKG health was not re-established following candidate failure: %v", err)
+	}
+	if observed, err := client.ObserveApprovedCandidate(ctx, candidate); err == nil && observed.Healthy {
+		t.Fatal("the old candidate remained allegedly healthy after real SIGKILL and former LKG restoration")
 	}
 	if err := client.ApplyApprovedCandidate(ctx, candidate); err == nil {
 		t.Fatal("a restored LKG must not reset consumed root candidate authorization")
