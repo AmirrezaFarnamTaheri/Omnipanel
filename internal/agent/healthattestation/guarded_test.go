@@ -154,7 +154,7 @@ func TestGuardedWitnessRejectsHealthOrLeaseLossBetweenIssueAndVerify(t *testing.
 }
 
 func TestGuardedWitnessConsumesNonceIfRootOrGuardDropsAtFinalCheck(t *testing.T) {
-	g, journal, _, v, _, now := guardedFixture(t)
+	g, journal, _, _, _, now := guardedFixture(t)
 	challenge, err := g.Issue(context.Background())
 	if err != nil {
 		t.Fatal(err)
