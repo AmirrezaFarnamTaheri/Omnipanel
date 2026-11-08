@@ -275,7 +275,6 @@ func (b *NativeBackend) RestoreKnownGood(ctx context.Context, ref string) error 
 	return b.runPinned(ctx, b.cfg.SystemctlBinary, "restart", fixedSingBoxUnit)
 }
 
-
 // probeProtectedSOCKSDenial requires the locally provisioned health listener
 // to speak SOCKS5 and reject access to the link-local metadata destination.
 // A generic TCP service or a proxy accepting that destination fails closed.
