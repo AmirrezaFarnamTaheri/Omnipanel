@@ -46,16 +46,27 @@ if ! "$binary" check -c "$private_dir/compiled.json" >/dev/null 2>&1; then
   exit 1
 fi
 
-# Native validation must reject an intentionally broken outbound reference.
-# This does not establish that egress policy actually works on the wire.
-jq '.route.final = "omni-nonexistent-outbound"' \
-  "$private_dir/compiled.json" > "$private_dir/invalid.json"
-if "$binary" check -c "$private_dir/invalid.json" >/dev/null 2>&1; then
-  echo "Pinned Sing-box accepted a deliberately broken outbound reference." >&2
+# The pinned native `check` command has been observed to ACCEPT an
+# unresolved route.final tag. Therefore reference consistency is separately
+# enforced in the compiler and asserted here; never trust native syntax alone.
+if ! jq --exit-status '
+  .route.final as $wanted
+  | ([.outbounds[].tag] | index($wanted)) != null
+' "$private_dir/compiled.json" >/dev/null; then
+  echo "Policy compiler emitted an unresolved final outbound tag." >&2
   exit 1
 fi
 
-echo "Pinned Sing-box native check accepted generated config and rejected invalid outbound (syntax only, not M0)."
+# Native syntax validation must still reject an actual type violation.
+# This negative case is deliberately different from unresolved references.
+jq '.inbounds[0].listen_port = "not-an-integer"' \
+  "$private_dir/compiled.json" > "$private_dir/invalid.json"
+if "$binary" check -c "$private_dir/invalid.json" >/dev/null 2>&1; then
+  echo "Pinned Sing-box accepted an invalid listener-port type." >&2
+  exit 1
+fi
+
+echo "Pinned Sing-box accepted compiled config and rejected invalid schema; OMNIPANEL separately checked outbound references (not M0)."
 if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
   echo "Full-config native syntax check passed (not applied-state or external M0 evidence)." >> "$GITHUB_STEP_SUMMARY"
 fi
