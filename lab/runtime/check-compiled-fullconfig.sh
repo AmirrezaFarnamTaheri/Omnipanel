@@ -34,6 +34,13 @@ fi
   OMNI_NATIVE_FULL_CONFIG_OUTPUT="$private_dir/compiled.json" \
     OMNI_NATIVE_REALITY_KEY="$private_key" \
     go test -count=1 -run '^TestEmitFullConfigForPinnedNativeSingBoxCheck$' ./internal/drivers/singbox
+
+  # Do not print the generated key or staged config. The native test checks
+  # exact signed binary digest, native syntax, owner-only staged candidate,
+  # durable SQLite guard and zero applied-cursor advancement.
+  OMNI_NATIVE_TEST_SING_BOX_BIN="$binary" \
+    OMNI_NATIVE_REALITY_KEY="$private_key" \
+    go test -count=1 -run '^TestPinnedNativeCandidatePreparation$' ./internal/drivers/singbox
 )
 unset private_key
 
