@@ -4,8 +4,8 @@ import (
 	"context"
 	"os"
 	"strings"
-	"testing"
 	"sync"
+	"testing"
 )
 
 type candidateBackendStub struct {
