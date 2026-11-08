@@ -42,7 +42,7 @@ type CandidateApproval struct {
 	Epoch              string
 	StructuralSequence uint64
 	MembershipSequence uint64
-	ExpiresUnixNano    int64
+	ExpiresUnix    int64
 }
 
 // Validate ensures the candidate NEVER enters the recovery allowlist. The
@@ -57,8 +57,8 @@ func (a CandidateApproval) Validate(recovery map[string]bool, now time.Time) err
 		!candidateUUIDPattern.MatchString(a.Epoch) ||
 		a.StructuralSequence == 0 || a.StructuralSequence > maxCandidateSequence ||
 		a.MembershipSequence > maxCandidateSequence ||
-		a.ExpiresUnixNano <= now.UnixNano() ||
-		a.ExpiresUnixNano > now.Add(2*time.Minute).UnixNano() {
+		a.ExpiresUnix <= now.Unix() ||
+		a.ExpiresUnix > now.Add(2*time.Minute).Unix() {
 		return ErrCandidateApproval
 	}
 	return nil
