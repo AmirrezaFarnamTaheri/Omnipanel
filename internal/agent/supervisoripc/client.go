@@ -117,7 +117,7 @@ type response struct {
 // No caller-controlled path, script, or shell command can cross this boundary.
 func (c *Client) exchange(ctx context.Context, operation, reference string) (response, error) {
 	if ctx == nil || ctx.Err() != nil || !refPattern.MatchString(reference) ||
-		(operation != "restore-known-good" && operation != "observe-known-good") {
+		(operation != "restore-known-good" && operation != "observe-known-good" && operation != "apply-approved-candidate") {
 		return response{}, ErrUntrustedSupervisor
 	}
 	if err := c.verifySocket(); err != nil {
@@ -137,7 +137,11 @@ func (c *Client) exchange(ctx context.Context, operation, reference string) (res
 	if err != nil || uid != c.expectedUID {
 		return response{}, ErrUntrustedSupervisor
 	}
-	deadline := time.Now().Add(requestTimeout)
+	timeout := requestTimeout
+	if operation == "apply-approved-candidate" {
+		timeout = 20 * time.Second
+	}
+	deadline := time.Now().Add(timeout)
 	if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(deadline) {
 		deadline = ctxDeadline
 	}
@@ -189,4 +193,18 @@ func (c *Client) ObserveLastKnownGood(ctx context.Context, reference string) (bo
 		return false, err
 	}
 	return reply.Healthy, nil
+}
+
+// ApplyApprovedCandidate invokes only the one-time, independently provisioned
+// root ticket reference. The root reply may prove a fixed-unit restart, never
+// candidate health, signed approval, durable applied state, or release readiness.
+func (c *Client) ApplyApprovedCandidate(ctx context.Context, reference string) error {
+	reply, err := c.exchange(ctx, "apply-approved-candidate", reference)
+	if err != nil {
+		return err
+	}
+	if reply.Healthy {
+		return ErrUntrustedSupervisor
+	}
+	return nil
 }

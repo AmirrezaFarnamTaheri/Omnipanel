@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/AmirrezaFarnamTaheri/Omnipanel/internal/agent/supervisorserver"
 )
@@ -68,6 +69,9 @@ func (p provisioning) validate() error {
 			return errRootProvisioning
 		}
 		seen[ref] = true
+	}
+	if p.Native.CandidateApproval != nil && p.Native.CandidateApproval.Validate(seen, time.Now()) != nil {
+		return errRootProvisioning
 	}
 	return nil
 }
@@ -219,6 +223,7 @@ func run(ctx context.Context, cfg provisioning) error {
 		WatchdogUID:        cfg.WatchdogUID,
 		WatchdogGID:        cfg.WatchdogGID,
 		AllowedGenerations: allowed,
+		CandidateApproval:  cfg.Native.CandidateApproval,
 	}, backend)
 	if err != nil {
 		return err

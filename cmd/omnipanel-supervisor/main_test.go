@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/AmirrezaFarnamTaheri/Omnipanel/internal/agent/supervisorserver"
 )
@@ -154,5 +155,51 @@ func TestSupervisorExecutableRefusesNonrootBeforeBindingOrRunningHostCommands(t 
 	}
 	if _, err := os.Lstat(cfg.SocketPath); !os.IsNotExist(err) {
 		t.Fatalf("unprivileged run unexpectedly created root socket: %v", err)
+	}
+}
+
+// Candidate provisioning is a separate root-owned operation, never a flag
+// supplied over the unprivileged Unix socket. The original recovery allowlist
+// contains only LKG generations, not candidates.
+func TestSupervisorRootProvisioningCandidateTicketIsSeparateFromRecovery(t *testing.T) {
+	path, cfg := provisionFixture(t)
+	candidateRef := "sha256:" + strings.Repeat("c", 64)
+	approval := supervisorserver.CandidateApproval{
+		Reference:          candidateRef,
+		RollbackRef:        cfg.AllowedGenerations[0],
+		ManifestDigest:     strings.Repeat("a", 64),
+		NodeID:             "62c478bb-47c3-4dc6-a363-a2fbde813810",
+		Epoch:              "ea2429da-7540-4e40-ae70-38fd3f19794b",
+		StructuralSequence: 2,
+		MembershipSequence: 3,
+		ExpiresUnix:        time.Now().Add(time.Minute).Unix(),
+	}
+	cfg.Native.CandidateApproval = &approval
+	saveProvision(t, path, cfg)
+	loaded, err := loadProvisioningForTesting(path, uint32(os.Geteuid()))
+	if err != nil || loaded.Native.CandidateApproval == nil || loaded.Native.CandidateApproval.Reference != candidateRef {
+		t.Fatalf("valid root-only candidate ticket refused or changed: %v", err)
+	}
+	cases := []struct {
+		name   string
+		change func(*provisioning)
+	}{
+		{"candidate enters LKG allowlist", func(p *provisioning) { p.AllowedGenerations = append(p.AllowedGenerations, candidateRef) }},
+		{"candidate equals LKG", func(p *provisioning) { p.Native.CandidateApproval.Reference = p.AllowedGenerations[0] }},
+		{"expired approval", func(p *provisioning) { p.Native.CandidateApproval.ExpiresUnix = time.Now().Add(-time.Minute).Unix() }},
+		{"untrusted node scope", func(p *provisioning) { p.Native.CandidateApproval.NodeID = "not-a-uuid" }},
+		{"untrusted signed manifest digest", func(p *provisioning) { p.Native.CandidateApproval.ManifestDigest = "" }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ticket := approval
+			p := cfg
+			p.Native.CandidateApproval = &ticket
+			tc.change(&p)
+			saveProvision(t, path, p)
+			if _, err := loadProvisioningForTesting(path, uint32(os.Geteuid())); err == nil {
+				t.Fatal("tampered root ticket entered privileged supervisor")
+			}
+		})
 	}
 }
