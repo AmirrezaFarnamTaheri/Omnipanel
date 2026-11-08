@@ -42,7 +42,7 @@ type CandidateApproval struct {
 	Epoch              string
 	StructuralSequence uint64
 	MembershipSequence uint64
-	ExpiresUnix    int64
+	ExpiresUnix        int64
 }
 
 // Validate ensures the candidate NEVER enters the recovery allowlist. The
