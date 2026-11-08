@@ -91,6 +91,7 @@ func makeNativeFixture(t *testing.T, singScript, systemScript string) (nativeFix
 
 func TestNativeRootRollbackValidatesPinnedBinaryAndRestoresExactlyAllowedGeneration(t *testing.T) {
 	fixture, backend := makeNativeFixture(t, "", "")
+	acceptHealthSOCKS(t, fixture.listener, false)
 	if err := backend.RestoreKnownGood(context.Background(), fixture.ref); err != nil {
 		t.Fatalf("approved local rollback refused: %v", err)
 	}
