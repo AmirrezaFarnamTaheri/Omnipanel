@@ -40,7 +40,7 @@ type NativeConfig struct {
 	SystemctlBinary       string
 	SystemctlBinaryDigest string
 	HealthAddress         string
-	CandidateApproval    *CandidateApproval
+	CandidateApproval     *CandidateApproval
 }
 
 type NativeBackend struct {
