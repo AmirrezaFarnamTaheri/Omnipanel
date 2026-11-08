@@ -74,3 +74,30 @@ func TestEvaluateInventoryRefusesSSHBlockAndMissingPrivateCIDR(t *testing.T) {
 		t.Fatalf("expected ErrPrivateEgressUnblocked, got %v", err)
 	}
 }
+
+
+func TestEvaluateInventoryMustRequireActualManagementPortAllow(t *testing.T) {
+	// A host may keep SSH working while the personal management panel is
+	// accidentally locked out. The inventory used to report this healthy
+	// merely because it found no explicit management-port DROP rule.
+	s := validSnapshot()
+	if _, err := EvaluateInventory(s); !errors.Is(err, ErrManagementPortBlocked) {
+		t.Fatalf("snapshot without management-port allow must fail closed, got %v", err)
+	}
+}
+
+func TestEvaluateInventoryAcceptsRestrictedExplicitManagementPortAllow(t *testing.T) {
+	// The management interface can be intentionally private; a 0.0.0.0/0
+	// source restriction must not be required for its explicit allow rule.
+	s := validSnapshot()
+	s.Rules = append(s.Rules, Rule{
+		RuleID: "protected-private-management", Table: "inet filter",
+		Chain: "input", Direction: "ingress", Protocol: "tcp",
+		PortRange: "8443", SourceCIDR: "192.0.2.0/24",
+		DestinationCIDR: "0.0.0.0/0", Verdict: "accept",
+		ProtectedRule: true,
+	})
+	if _, err := EvaluateInventory(s); err != nil {
+		t.Fatalf("private explicit management-port allow was rejected: %v", err)
+	}
+}
