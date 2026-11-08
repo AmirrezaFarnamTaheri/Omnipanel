@@ -41,6 +41,19 @@ func validSnapshot() Snapshot {
 				OwnedByOmniPanel: true,
 				ProtectedRule:    false,
 			},
+			{
+				RuleID:           "omni-mgmt-accept",
+				Table:            "inet filter",
+				Chain:            "input",
+				Direction:        "ingress",
+				Protocol:         "tcp",
+				PortRange:        "8443",
+				SourceCIDR:       "0.0.0.0/0",
+				DestinationCIDR:  "0.0.0.0/0",
+				Verdict:          "accept",
+				OwnedByOmniPanel: false,
+				ProtectedRule:    true,
+			},
 		},
 	}
 }
@@ -56,7 +69,7 @@ func TestEvaluateInventoryAcceptsProtectedSnapshot(t *testing.T) {
 	if rep.InvokesHostShell {
 		t.Fatal("inventory contract must never invoke host shell")
 	}
-	if rep.OwnedRuleCount != 1 || rep.UnmanagedRuleCount != 1 {
+	if rep.OwnedRuleCount != 1 || rep.UnmanagedRuleCount != 2 {
 		t.Fatalf("unexpected rule counts: %+v", rep)
 	}
 }
@@ -80,6 +93,7 @@ func TestEvaluateInventoryMustRequireActualManagementPortAllow(t *testing.T) {
 	// accidentally locked out. The inventory used to report this healthy
 	// merely because it found no explicit management-port DROP rule.
 	s := validSnapshot()
+	s.Rules = s.Rules[:len(s.Rules)-1]
 	if _, err := EvaluateInventory(s); !errors.Is(err, ErrManagementPortBlocked) {
 		t.Fatalf("snapshot without management-port allow must fail closed, got %v", err)
 	}
@@ -89,13 +103,7 @@ func TestEvaluateInventoryAcceptsRestrictedExplicitManagementPortAllow(t *testin
 	// The management interface can be intentionally private; a 0.0.0.0/0
 	// source restriction must not be required for its explicit allow rule.
 	s := validSnapshot()
-	s.Rules = append(s.Rules, Rule{
-		RuleID: "protected-private-management", Table: "inet filter",
-		Chain: "input", Direction: "ingress", Protocol: "tcp",
-		PortRange: "8443", SourceCIDR: "192.0.2.0/24",
-		DestinationCIDR: "0.0.0.0/0", Verdict: "accept",
-		ProtectedRule: true,
-	})
+	s.Rules[len(s.Rules)-1].SourceCIDR = "192.0.2.0/24"
 	if _, err := EvaluateInventory(s); err != nil {
 		t.Fatalf("private explicit management-port allow was rejected: %v", err)
 	}
