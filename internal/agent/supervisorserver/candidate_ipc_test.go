@@ -5,16 +5,26 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"sync"
 )
 
 type candidateBackendStub struct {
 	*stubBackend
+	mu      sync.Mutex
 	applied []string
 }
 
 func (b *candidateBackendStub) ApplyApprovedCandidate(_ context.Context, ref string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	b.applied = append(b.applied, ref)
 	return nil
+}
+
+func (b *candidateBackendStub) appliedRecords() []string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return append([]string(nil), b.applied...)
 }
 
 func TestSupervisorCandidateRPCRequiresSeparateRootTicketAndNeverReportsHealthy(t *testing.T) {
@@ -32,7 +42,8 @@ func TestSupervisorCandidateRPCRequiresSeparateRootTicketAndNeverReportsHealthy(
 	if err != nil || !reply.OK || reply.Healthy || reply.Operation != "apply-approved-candidate" || reply.Reference != approved {
 		t.Fatalf("candidate RPC must acknowledge only fixed root invocation, never health: %+v %v", reply, err)
 	}
-	if len(stub.applied) != 1 || stub.applied[0] != approved {
+	firstApplied := stub.appliedRecords()
+	if len(firstApplied) != 1 || firstApplied[0] != approved {
 		t.Fatal("candidate backend not given exact root approved digest")
 	}
 	for _, data := range []string{
@@ -47,8 +58,9 @@ func TestSupervisorCandidateRPCRequiresSeparateRootTicketAndNeverReportsHealthy(
 			t.Fatalf("untrusted candidate operation received a root response: %q", raw)
 		}
 	}
-	if len(stub.applied) != 1 {
-		t.Fatalf("unapproved candidate bypassed root: %+v", stub.applied)
+	lastApplied := stub.appliedRecords()
+	if len(lastApplied) != 1 {
+		t.Fatalf("unapproved candidate bypassed root: %+v", lastApplied)
 	}
 	if a, b := stub.counts(); a != 0 || b != 0 {
 		t.Fatal("candidate RPC must not invoke LKG restore or health on behalf of caller")
