@@ -49,7 +49,9 @@ func acceptHealthSOCKS(t *testing.T, listener net.Listener, connectSuccess bool)
 				if _, err := io.ReadFull(conn, request); err != nil {
 					return
 				}
-				if request[0] != 5 || request[1] != 1 || request[3] != 1 {
+				if request[0] != 5 || request[1] != 1 || request[3] != 1 ||
+					request[4] != 169 || request[5] != 254 || request[6] != 169 ||
+					request[7] != 254 || request[8] != 0 || request[9] != 80 {
 					return
 				}
 				reply := byte(2) // Connection not allowed by ruleset.
