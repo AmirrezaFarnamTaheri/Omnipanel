@@ -140,7 +140,7 @@ func newNativeBackend(cfg NativeConfig, generations map[string]bool, trustedUID 
 	if err != nil || portErr != nil || host != "127.0.0.1" || port <= 0 || port > 65535 {
 		return nil, ErrNativeRejected
 	}
-	b := &NativeBackend{cfg: cfg, ownerUID: trustedUID, allowed: make(map[string]bool, len(generations))}
+	b := &NativeBackend{cfg: cfg, ownerUID: trustedUID, allowed: make(map[string]bool, len(generations)), unitWitness: verifyLinuxUnitListener}
 	for ref, allowed := range generations {
 		if !allowed || !generationPattern.MatchString(ref) {
 			return nil, ErrNativeRejected
@@ -356,6 +356,12 @@ func (b *NativeBackend) ObserveKnownGood(ctx context.Context, ref string) (bool,
 	}
 	if err := b.runPinned(ctx, b.cfg.SystemctlBinary, "is-active", "--quiet", fixedSingBoxUnit); err != nil {
 		return false, err
+	}
+	// A matching service state and a valid SOCKS5 response cannot prove the
+	// listener belongs to the intended native unit. Require a kernel-backed
+	// MainPID, pinned executable digest and exact listening socket inode.
+	if b.unitWitness == nil || b.unitWitness(ctx, b.cfg.SystemctlBinary, b.cfg.SingBoxBinaryDigest, b.cfg.HealthAddress) != nil {
+		return false, ErrNativeRejected
 	}
 	// A listening port alone can belong to an unrelated or stale process.
 	// Require a real SOCKS5 handshake and an explicit ruleset rejection of a
