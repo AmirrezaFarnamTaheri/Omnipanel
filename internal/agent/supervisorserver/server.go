@@ -39,6 +39,7 @@ type Config struct {
 	WatchdogUID        uint32
 	WatchdogGID        uint32
 	AllowedGenerations map[string]bool
+	CandidateApproval  *CandidateApproval
 }
 
 // Backend must independently enforce generation pinning, native validation
@@ -48,11 +49,18 @@ type Backend interface {
 	ObserveKnownGood(context.Context, string) (bool, error)
 }
 
+// CandidateBackend is a separate opt-in capability. A rollback-only backend
+// cannot acquire privileged candidate activation by being passed a ticket.
+type CandidateBackend interface {
+	ApplyApprovedCandidate(context.Context, string) error
+}
+
 type Server struct {
 	cfg     Config
 	backend Backend
 	rootUID uint32
 	allowed map[string]bool
+	candidate *CandidateApproval
 }
 
 // New only authorizes an actual root process and requires a non-root watchdog.
@@ -81,7 +89,18 @@ func newServer(cfg Config, backend Backend, trustedServerUID uint32) (*Server, e
 		}
 		allowed[generation] = true
 	}
-	s := &Server{cfg: cfg, rootUID: trustedServerUID, backend: backend, allowed: allowed}
+	var candidate *CandidateApproval
+	if cfg.CandidateApproval != nil {
+		if _, ok := backend.(CandidateBackend); !ok {
+			return nil, ErrUntrustedServer
+		}
+		approval := *cfg.CandidateApproval
+		if approval.Validate(allowed, time.Now()) != nil {
+			return nil, ErrUntrustedServer
+		}
+		candidate = &approval
+	}
+	s := &Server{cfg: cfg, rootUID: trustedServerUID, backend: backend, allowed: allowed, candidate: candidate}
 	if err := s.verifyDirectory(); err != nil {
 		return nil, err
 	}
@@ -175,7 +194,7 @@ func decodeRequest(raw []byte) (request, error) {
 		return request{}, ErrUntrustedServer
 	}
 	if r.version != protocolVersion ||
-		(r.operation != "restore-known-good" && r.operation != "observe-known-good") ||
+		(r.operation != "restore-known-good" && r.operation != "observe-known-good" && r.operation != "apply-approved-candidate") ||
 		!generationPattern.MatchString(r.reference) {
 		return request{}, ErrUntrustedServer
 	}
@@ -198,10 +217,26 @@ func (s *Server) handle(ctx context.Context, conn *net.UnixConn) {
 		return
 	}
 	req, err := decodeRequest(line)
-	if err != nil || !s.allowed[req.reference] {
+	if err != nil {
 		return
 	}
-	operationCtx, cancel := context.WithTimeout(ctx, serverDeadline)
+	candidateOperation := req.operation == "apply-approved-candidate"
+	if candidateOperation {
+		if s.candidate == nil || req.reference != s.candidate.Reference ||
+			s.candidate.Validate(s.allowed, time.Now()) != nil {
+			return
+		}
+	} else if !s.allowed[req.reference] {
+		return
+	}
+	timeout := serverDeadline
+	if candidateOperation {
+		timeout = 20 * time.Second
+	}
+	if err := conn.SetDeadline(time.Now().Add(timeout)); err != nil {
+		return
+	}
+	operationCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	ok := false
 	healthy := false
@@ -215,6 +250,9 @@ func (s *Server) handle(ctx context.Context, conn *net.UnixConn) {
 		if !ok {
 			healthy = false
 		}
+	case "apply-approved-candidate":
+		candidateBackend, supported := s.backend.(CandidateBackend)
+		ok = supported && candidateBackend.ApplyApprovedCandidate(operationCtx, req.reference) == nil
 	}
 	// No backend error text, runtime logs, private config, or OS path is ever
 	// transmitted to a lower-trust watchdog.
