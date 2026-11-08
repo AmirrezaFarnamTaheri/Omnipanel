@@ -208,7 +208,7 @@ func checkFullCandidate(artifact drivers.ConfigArtifact) error {
 	if err := json.Unmarshal(route["final"], &final); err != nil || final == "" {
 		return ErrNativeRejected
 	}
-	return nil
+	return validateNativeReferences(root, outbounds, route)
 }
 
 func (n *NativeStager) validateExisting(path string, content []byte) error {
