@@ -112,7 +112,7 @@ func EvaluateInventory(s Snapshot) (SafetyReport, error) {
 		}
 	}
 
-	if !sshAccept || sshBlockedBeforeAccept || mgmtBlockedBeforeAccept {
+	if !sshAccept || !mgmtAccept || sshBlockedBeforeAccept || mgmtBlockedBeforeAccept {
 		return SafetyReport{}, ErrManagementPortBlocked
 	}
 
