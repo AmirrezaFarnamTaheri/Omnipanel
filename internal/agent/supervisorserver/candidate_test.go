@@ -90,35 +90,52 @@ func TestNativeCandidateApplyRequiresRootApprovalAndConsistentFormerKnownGood(t 
 
 func TestNativeCandidatePreflightFailuresNeverMutateRunningGeneration(t *testing.T) {
 	cases := []struct {
-		name string
+		name   string
 		mutate func(*testing.T, nativeFixture, *NativeBackend, CandidateApproval)
 	}{
 		{"wrong reference", func(t *testing.T, _ nativeFixture, b *NativeBackend, approval CandidateApproval) {
-			if err := b.ApplyApprovedCandidate(context.Background(), "sha256:"+strings.Repeat("c", 64)); err == nil {
+			if err := b.ApplyApprovedCandidate(context.Background(), "sha256:" + strings.Repeat("c", 64)); err == nil {
 				t.Fatal("unapproved generation accepted")
 			}
 		}},
 		{"tampered candidate", func(t *testing.T, f nativeFixture, b *NativeBackend, approval CandidateApproval) {
 			path := filepath.Join(f.cfg.GenerationDirectory, strings.TrimPrefix(approval.Reference, "sha256:")+".json")
-			if err := os.WriteFile(path, []byte(candidateJSON+" "), 0o600); err != nil { t.Fatal(err) }
-			if err := b.ApplyApprovedCandidate(context.Background(), approval.Reference); err == nil { t.Fatal("tampered candidate accepted") }
+			if err := os.WriteFile(path, []byte(candidateJSON+" "), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := b.ApplyApprovedCandidate(context.Background(), approval.Reference); err == nil {
+				t.Fatal("tampered candidate accepted")
+			}
 		}},
 		{"wrong former active generation", func(t *testing.T, f nativeFixture, b *NativeBackend, approval CandidateApproval) {
-			if err := os.WriteFile(f.active, []byte(candidateJSON), 0o600); err != nil { t.Fatal(err) }
-			if err := b.ApplyApprovedCandidate(context.Background(), approval.Reference); err == nil { t.Fatal("active generation mismatch accepted") }
+			if err := os.WriteFile(f.active, []byte(candidateJSON), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := b.ApplyApprovedCandidate(context.Background(), approval.Reference); err == nil {
+				t.Fatal("active generation mismatch accepted")
+			}
 		}},
 		{"expired approval", func(t *testing.T, f nativeFixture, b *NativeBackend, approval CandidateApproval) {
 			b.approval.ExpiresUnixNano = time.Now().Add(-time.Minute).UnixNano()
-			if err := b.ApplyApprovedCandidate(context.Background(), approval.Reference); err == nil { t.Fatal("expired root authorization accepted") }
+			if err := b.ApplyApprovedCandidate(context.Background(), approval.Reference); err == nil {
+				t.Fatal("expired root authorization accepted")
+			}
 		}},
 		{"untrusted candidate permissions", func(t *testing.T, f nativeFixture, b *NativeBackend, approval CandidateApproval) {
 			path := filepath.Join(f.cfg.GenerationDirectory, strings.TrimPrefix(approval.Reference, "sha256:")+".json")
-			if err := os.Chmod(path, 0o644); err != nil { t.Fatal(err) }
-			if err := b.ApplyApprovedCandidate(context.Background(), approval.Reference); err == nil { t.Fatal("public-readable candidate accepted") }
+			if err := os.Chmod(path, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if err := b.ApplyApprovedCandidate(context.Background(), approval.Reference); err == nil {
+				t.Fatal("public-readable candidate accepted")
+			}
 		}},
 		{"cancelled context", func(t *testing.T, _ nativeFixture, b *NativeBackend, approval CandidateApproval) {
-			ctx, cancel := context.WithCancel(context.Background()); cancel()
-			if err := b.ApplyApprovedCandidate(ctx, approval.Reference); !errors.Is(err, context.Canceled) { t.Fatalf("context cancellation ignored: %v", err) }
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			if err := b.ApplyApprovedCandidate(ctx, approval.Reference); !errors.Is(err, context.Canceled) {
+				t.Fatalf("context cancellation ignored: %v", err)
+			}
 		}},
 	}
 	for _, tc := range cases {
@@ -131,7 +148,9 @@ func TestNativeCandidatePreflightFailuresNeverMutateRunningGeneration(t *testing
 			// A wrong-baseline fixture deliberately changes the initial file,
 			// but rejected activation cannot replace it.
 			active, err := os.ReadFile(fixture.active)
-			if err != nil || len(active) == 0 { t.Fatal("rejection destroyed the active generation") }
+			if err != nil || len(active) == 0 {
+				t.Fatal("rejection destroyed the active generation")
+			}
 		})
 	}
 }
@@ -173,11 +192,11 @@ func TestRootCandidateApprovalRequiresScopedBoundedExclusiveTicket(t *testing.T)
 		t.Fatalf("valid root-owned ticket refused: %v", err)
 	}
 	cases := []struct {
-		name string
+		name   string
 		change func(*CandidateApproval)
 	}{
 		{"candidate equals known-good", func(a *CandidateApproval) { a.Reference = a.RollbackRef }},
-		{"missing rollback allowlist", func(a *CandidateApproval) { a.RollbackRef = "sha256:"+strings.Repeat("d", 64) }},
+		{"missing rollback allowlist", func(a *CandidateApproval) { a.RollbackRef = "sha256:" + strings.Repeat("d", 64) }},
 		{"candidate has a restore backdoor", func(a *CandidateApproval) { rollback[a.Reference] = true }},
 		{"untrusted digest", func(a *CandidateApproval) { a.ManifestDigest = "../etc/shadow" }},
 		{"untrusted node", func(a *CandidateApproval) { a.NodeID = "" }},
@@ -189,9 +208,15 @@ func TestRootCandidateApprovalRequiresScopedBoundedExclusiveTicket(t *testing.T)
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			a := good
-			ownMap := map[string]bool{knownGeneration:true}
-			if tc.name == "candidate has a restore backdoor" { ownMap[a.Reference]=true } else { tc.change(&a) }
-			if err := a.Validate(ownMap, time.Now()); err == nil { t.Fatal("unauthorized or ambiguous root activation ticket accepted") }
+			ownMap := map[string]bool{knownGeneration: true}
+			if tc.name == "candidate has a restore backdoor" {
+				ownMap[a.Reference] = true
+			} else {
+				tc.change(&a)
+			}
+			if err := a.Validate(ownMap, time.Now()); err == nil {
+				t.Fatal("unauthorized or ambiguous root activation ticket accepted")
+			}
 		})
 	}
 }
