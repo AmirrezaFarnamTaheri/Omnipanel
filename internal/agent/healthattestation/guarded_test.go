@@ -12,9 +12,9 @@ import (
 )
 
 type guardedJournalStub struct {
-	expected state.CandidateBinding
-	allowed  bool
-	calls    int
+	expected  state.CandidateBinding
+	allowed   bool
+	calls     int
 	denyAfter int
 }
 
@@ -41,22 +41,22 @@ func guardedFixture(t *testing.T) (*GuardedVerifier, *guardedJournalStub, *guard
 	t.Helper()
 	v, cfg, _, now := fixtureDurable(t)
 	ticket := supervisoripc.CandidateIdentity{
-		Reference: cfg.Scope.Generation,
-		RollbackRef: "sha256:" + strings.Repeat("b", 64),
-		ManifestDigest: cfg.Scope.ManifestDigest,
-		NodeID: cfg.Scope.NodeID,
-		Epoch: cfg.Scope.Epoch,
+		Reference:          cfg.Scope.Generation,
+		RollbackRef:        "sha256:" + strings.Repeat("b", 64),
+		ManifestDigest:     cfg.Scope.ManifestDigest,
+		NodeID:             cfg.Scope.NodeID,
+		Epoch:              cfg.Scope.Epoch,
 		StructuralSequence: cfg.Scope.StructuralSequence,
 		MembershipSequence: cfg.Scope.MembershipSequence,
-		ExpiresUnix: time.Now().Add(time.Minute).Unix(),
+		ExpiresUnix:        time.Now().Add(time.Minute).Unix(),
 	}
 	journal := &guardedJournalStub{allowed: true, expected: state.CandidateBinding{
 		NodeID: ticket.NodeID, Epoch: ticket.Epoch,
 		StructuralSequence: ticket.StructuralSequence,
 		MembershipSequence: ticket.MembershipSequence,
-		ManifestDigest: ticket.ManifestDigest,
-		CandidateDigest: strings.TrimPrefix(ticket.Reference, "sha256:"),
-		RollbackRef: ticket.RollbackRef,
+		ManifestDigest:     ticket.ManifestDigest,
+		CandidateDigest:    strings.TrimPrefix(ticket.Reference, "sha256:"),
+		RollbackRef:        ticket.RollbackRef,
 	}}
 	host := &guardedHostStub{observation: supervisoripc.CandidateObservation{Healthy: true, Approval: ticket}}
 	g, err := newGuardedVerifier(v, journal, host)
@@ -68,36 +68,46 @@ func guardedFixture(t *testing.T) (*GuardedVerifier, *guardedJournalStub, *guard
 
 func guardedReport(challenge Challenge, now time.Time) Evidence {
 	return Evidence{
-		Challenge: challenge,
-		RunID: "01234567-89ab-4cde-8fab-123456789abc",
+		Challenge:        challenge,
+		RunID:            "01234567-89ab-4cde-8fab-123456789abc",
 		ObservedAtMillis: now.UnixMilli(),
 		Observations: Observations{
-			RealityVisionOK: true,
-			BytesSent: 4096,
-			BytesReceived: 8192,
+			RealityVisionOK:     true,
+			BytesSent:           4096,
+			BytesReceived:       8192,
 			ProtectedIPv4Denied: true,
 			ProtectedIPv6Denied: true,
-			MetadataDenied: true,
-			DNSRebindingDenied: true,
-			TranscriptDigest: "sha256:" + strings.Repeat("e", 64),
+			MetadataDenied:      true,
+			DNSRebindingDenied:  true,
+			TranscriptDigest:    "sha256:" + strings.Repeat("e", 64),
 		},
 	}
 }
 
 func TestGuardedWitnessRequiresActiveRootTicketAndVerifiedWALBeforeIssuingNonce(t *testing.T) {
 	cases := []struct {
-		name string
+		name   string
 		mutate func(*guardedJournalStub, *guardedHostStub)
 	}{
 		{"no verified rollback lease", func(j *guardedJournalStub, _ *guardedHostStub) { j.allowed = false }},
 		{"candidate not locally healthy", func(_ *guardedJournalStub, h *guardedHostStub) { h.observation.Healthy = false }},
 		{"root observer unavailable", func(_ *guardedJournalStub, h *guardedHostStub) { h.err = errors.New("private root failure") }},
-		{"root candidate differs", func(_ *guardedJournalStub, h *guardedHostStub) { h.observation.Approval.Reference = "sha256:" + strings.Repeat("f", 64) }},
-		{"signed manifest differs", func(_ *guardedJournalStub, h *guardedHostStub) { h.observation.Approval.ManifestDigest = strings.Repeat("f", 64) }},
-		{"root epoch differs", func(_ *guardedJournalStub, h *guardedHostStub) { h.observation.Approval.Epoch = "a2f5a88e-3cc3-4a4c-81f6-45719fb131bc" }},
+		{"root candidate differs", func(_ *guardedJournalStub, h *guardedHostStub) {
+			h.observation.Approval.Reference = "sha256:" + strings.Repeat("f", 64)
+		}},
+		{"signed manifest differs", func(_ *guardedJournalStub, h *guardedHostStub) {
+			h.observation.Approval.ManifestDigest = strings.Repeat("f", 64)
+		}},
+		{"root epoch differs", func(_ *guardedJournalStub, h *guardedHostStub) {
+			h.observation.Approval.Epoch = "a2f5a88e-3cc3-4a4c-81f6-45719fb131bc"
+		}},
 		{"root sequence differs", func(_ *guardedJournalStub, h *guardedHostStub) { h.observation.Approval.StructuralSequence++ }},
-		{"root rollback differs", func(_ *guardedJournalStub, h *guardedHostStub) { h.observation.Approval.RollbackRef = "sha256:" + strings.Repeat("f", 64) }},
-		{"root ticket expired", func(_ *guardedJournalStub, h *guardedHostStub) { h.observation.Approval.ExpiresUnix = time.Now().Add(-time.Minute).Unix() }},
+		{"root rollback differs", func(_ *guardedJournalStub, h *guardedHostStub) {
+			h.observation.Approval.RollbackRef = "sha256:" + strings.Repeat("f", 64)
+		}},
+		{"root ticket expired", func(_ *guardedJournalStub, h *guardedHostStub) {
+			h.observation.Approval.ExpiresUnix = time.Now().Add(-time.Minute).Unix()
+		}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
