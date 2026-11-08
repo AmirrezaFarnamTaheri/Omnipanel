@@ -105,8 +105,10 @@ For an exact, allowed `sha256:<digest>` request, the backend:
    succeeds. It does **not** assert `healthy:true` from that result.
 6. On a separate observe request, rechecks the approved generation file,
    verifies active config SHA-256, queries `systemctl is-active --quiet
-   omnipanel-singbox.service`, and checks that the root-configured loopback
-   TCP listener accepts a connection. An absent service, changed generation,
+   omnipanel-singbox.service`, and performs a bounded SOCKS5 greeting plus an explicit rejected CONNECT
+   to the protected link-local metadata destination (169.254.169.254:80) on
+   the root-configured loopback listener. A generic listening port cannot
+   satisfy this check. An absent service, changed generation,
    tampered binary, failed unit state, or unavailable listener refuses
    positive host readiness.
 
@@ -117,18 +119,19 @@ ability to advance the applied cursor, issue an ACK, or create LKG trust**.
 ## Evidence limitations and release blockers
 
 The automated tests use local fake Sing-box and systemctl executables
-with a real protected filesystem and loopback listener; they exercise the
+with a real protected filesystem and synthetic SOCKS5 responder; they exercise the
 actual root helper code via an unprivileged owner-injection test seam. Those
 fixtures are **not** proof that an installed systemd unit, actual Reality
 client, route, firewall, or egress policy is healthy.
 
-In particular, `systemctl is-active` plus loopback TCP connectivity is
-**host/process readiness only**, not generation-bound network attestation.
-An unrelated listener could satisfy that port check if root provisioning
-were misconfigured. The next acceptance gate must replace/augment it with
+In particular, `systemctl is-active` plus a local SOCKS5 ruleset-denial
+probe is **limited host/process/data-path readiness**, not generation-bound
+network attestation. An unrelated SOCKS5-compatible responder might still
+satisfy the probe if root provisioning were misconfigured. The next
+acceptance gate must replace/augment it with
 an independently authenticated, generation-bound end-to-end health witness
 and prove restored client traffic and protected routes under root Linux
-fault injection. A passing unit test or a successful local TCP connection
+fault injection. A passing unit test or a successful local SOCKS5 handshake
 cannot close M0.
 
 The following remain **BLOCKED**:

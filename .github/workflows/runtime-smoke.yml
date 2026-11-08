@@ -6,6 +6,8 @@ on:
     paths:
       - "lab/runtime/**"
       - "internal/drivers/singbox/native*.go"
+      - "internal/agent/supervisorserver/**"
+      - "internal/agent/supervisoripc/real_host_test.go"
       - "Makefile"
       - "README.md"
       - "lab/README.md"
@@ -15,6 +17,8 @@ on:
     paths:
       - "lab/runtime/**"
       - "internal/drivers/singbox/native*.go"
+      - "internal/agent/supervisorserver/**"
+      - "internal/agent/supervisoripc/real_host_test.go"
       - "Makefile"
       - "README.md"
       - "lab/README.md"
@@ -132,6 +136,29 @@ jobs:
         run: |
           OMNI_NATIVE_TEST_SING_BOX_BIN="$SING_BOX_BIN" \
             go test -count=1 -run '^TestPinnedSingBoxBinaryNativePreflight$' ./internal/drivers/singbox
+
+      # Reuses the Sigstore-verified exact binary. The ephemeral hosted runner
+      # must have systemd and passwordless sudo; cleanup removes the fixed unit.
+      # This is root-host evidence, NOT a public VPS or M0 release gate.
+      - name: Exercise real root supervisor, systemd and Sing-box after SIGKILL
+        run: |
+          bash -n lab/runtime/run-root-supervisor-host-smoke.sh
+          go build -o "$RUNNER_TEMP/omnipanel-supervisor" ./cmd/omnipanel-supervisor
+          sudo env \
+            "PATH=$PATH" \
+            "GITHUB_ACTIONS=true" \
+            "OMNI_ALLOW_EPHEMERAL_ROOT_SMOKE=1" \
+            "SING_BOX_BIN=$SING_BOX_BIN" \
+            "ROOT_SUPERVISOR_BIN=$RUNNER_TEMP/omnipanel-supervisor" \
+            "EVIDENCE_DIR=$EVIDENCE_DIR" \
+            bash lab/runtime/run-root-supervisor-host-smoke.sh
+
+      - name: Record sanitized root rollback evidence
+        if: always()
+        run: |
+          if [ -s "$EVIDENCE_DIR/root-supervisor-host-smoke.json" ]; then
+            cat "$EVIDENCE_DIR/root-supervisor-host-smoke.json" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Retain signed runtime and Sigstore verification bundles
         if: steps.verify-provenance.outcome == 'success'
