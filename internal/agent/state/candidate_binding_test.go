@@ -76,7 +76,7 @@ func TestCandidateGuardBindingRequiresUnexpiredExclusiveGuardAndNeverAdvancesApp
 		NodeID: testNode, Epoch: testEpoch,
 		StructuralSequence: guard.StructuralSequence,
 		MembershipSequence: guard.MembershipSequence,
-		ManifestDigest: guard.ManifestDigest, CandidateDigest: guard.CandidateDigest,
+		ManifestDigest:     guard.ManifestDigest, CandidateDigest: guard.CandidateDigest,
 		RollbackRef: rollback,
 	}
 	if _, err := store.db.ExecContext(ctx, "UPDATE activation_guard SET deadline_ns=? WHERE singleton=1", time.Now().Add(-time.Second).UnixNano()); err != nil {
