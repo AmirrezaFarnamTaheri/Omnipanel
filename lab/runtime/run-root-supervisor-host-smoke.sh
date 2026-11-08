@@ -72,6 +72,15 @@ jq -cn --argjson port "$health_port" '{
 lkg_digest="$(sha256sum "$base/private/known-good.json" | awk '{print $1}')"
 lkg="sha256:$lkg_digest"
 install -o root -g root -m 0600 "$base/private/known-good.json" "$base/generations/$lkg_digest.json"
+
+# A distinct root-owned candidate keeps the same loopback health listener and
+# block-only egress. No public exposure, secrets or arbitrary remote paths.
+jq '.log.level = "error"' "$base/private/known-good.json" > "$base/private/candidate.json"
+"$base/sing-box" check -c "$base/private/candidate.json"
+candidate_digest="$(sha256sum "$base/private/candidate.json" | awk '{print $1}')"
+candidate="sha256:$candidate_digest"
+[[ "$candidate" != "$lkg" ]] || { echo "Candidate must differ from qualified LKG." >&2; exit 1; }
+install -o root -g root -m 0600 "$base/private/candidate.json" "$base/generations/$candidate_digest.json"
 printf '%s\n' '{"log":{"level":"warn"},"inbounds":[],"outbounds":[{"type":"block","tag":"block"}],"route":{"final":"block"}}' > "$base/active/active.json"
 chmod 0600 "$base/active/active.json"
 
@@ -90,10 +99,21 @@ EOF
 chmod 0644 "$unit_path"
 systemctl daemon-reload
 
+# Compile the test harness BEFORE creating the short-lived root ticket;
+# network/module downloads must not consume its approval window.
+go test -c -o "$base/root-host-ipc.test" ./internal/agent/supervisoripc
+chown "root:$runner_gid" "$base/root-host-ipc.test"
+chmod 0750 "$base/root-host-ipc.test"
+expiry="$(python3 -c 'import time; print(int(time.time()) + 110)')"
+manifest_digest="$(printf 'a%.0s' {1..64})"
+
 jq -cn \
   --arg socket "$base/socket/restore.sock" \
   --argjson uid "$SUDO_UID" --argjson gid "$SUDO_GID" \
   --arg ref "$lkg" \
+  --arg candidate "$candidate" \
+  --arg manifest "$manifest_digest" \
+  --argjson expiry "$expiry" \
   --arg generations "$base/generations" \
   --arg active "$base/active/active.json" \
   --arg sing "$base/sing-box" --arg singdigest "$sing_digest" \
@@ -106,7 +126,15 @@ jq -cn \
       GenerationDirectory:$generations,ActiveConfigPath:$active,
       SingBoxBinary:$sing,SingBoxBinaryDigest:$singdigest,
       SystemctlBinary:$systemctl,SystemctlBinaryDigest:$systemctldigest,
-      HealthAddress:$addr
+      HealthAddress:$addr,
+      CandidateApproval:{
+        Reference:$candidate,RollbackRef:$ref,
+        ManifestDigest:$manifest,
+        NodeID:"62c478bb-47c3-4dc6-a363-a2fbde813810",
+        Epoch:"ea2429da-7540-4e40-ae70-38fd3f19794b",
+        StructuralSequence:2,MembershipSequence:3,
+        ExpiresUnix:$expiry
+      }
     }
   }' > "$base/private/supervisor.json"
 chmod 0600 "$base/private/supervisor.json"
@@ -132,7 +160,16 @@ sudo -u "$SUDO_USER" -H env \
   "PATH=$PATH" "OMNI_SIGNED_ROOT_HOST_LAB=1" \
   "OMNI_ROOT_LAB_SOCKET=$base/socket/restore.sock" \
   "OMNI_ROOT_LAB_LKG=$lkg" \
-  go test -count=1 -run '^TestSignedRootHostRollbackAfterSIGKILL$' ./internal/agent/supervisoripc
+  "OMNI_ROOT_LAB_CANDIDATE=$candidate" \
+  "$base/root-host-ipc.test" -test.count=1 -test.run '^TestSignedRootHostRollbackAfterSIGKILL$'
+
+# Both the one-shot marker and the former LKG must survive the candidate fault.
+test -s "$base/generations/.activation-$candidate_digest.used" || {
+  echo "Root candidate ticket consumption was not durable." >&2; exit 1;
+}
+[[ "$(sha256sum "$base/active/active.json" | awk '{print $1}')" == "$lkg_digest" ]] || {
+  echo "Root candidate rollback did not restore the approved previous generation." >&2; exit 1;
+}
 
 if [[ -n "${EVIDENCE_DIR:-}" ]]; then
   mkdir -p "$EVIDENCE_DIR"
@@ -141,8 +178,11 @@ if [[ -n "${EVIDENCE_DIR:-}" ]]; then
     nativeConfigCheck:true,rootUnixCredentials:true,
     approvedGenerationRestored:true,protectedSOCKSDestinationDenied:true,
     kill9HealthFailureObserved:true,restoredAfterKill9:true,
-    unauthorizedGenerationRejected:true,productionM0Qualified:false,
+    unauthorizedGenerationRejected:true,
+    oneShotRootCandidateApplied:true,candidateReplayRejected:true,
+    formerKnownGoodRestoredAfterCandidateSIGKILL:true,
+    productionM0Qualified:false,
     status:"passed"
   }' > "$EVIDENCE_DIR/root-supervisor-host-smoke.json"
 fi
-echo "PASS: real signed Sing-box and root systemd rollback after SIGKILL"
+echo "PASS: real signed Sing-box root candidate one-shot apply and former LKG rollback after SIGKILL (not M0)"
