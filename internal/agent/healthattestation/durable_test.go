@@ -26,18 +26,18 @@ func fixtureDurable(t *testing.T) (*DurableVerifier, Config, ed25519.PrivateKey,
 	cfg := Config{
 		Path: filepath.Join(directory, "witness.sqlite"),
 		Scope: Scope{
-			NodeID: "62c478bb-47c3-4dc6-a363-a2fbde813810",
-			Epoch: "ea2429da-7540-4e40-ae70-38fd3f19794b",
+			NodeID:             "62c478bb-47c3-4dc6-a363-a2fbde813810",
+			Epoch:              "ea2429da-7540-4e40-ae70-38fd3f19794b",
 			StructuralSequence: 2,
 			MembershipSequence: 3,
-			ManifestDigest: strings.Repeat("a", 64),
-			Generation: "sha256:" + strings.Repeat("c", 64),
-			ProfileDigest: "sha256:" + strings.Repeat("d", 64),
+			ManifestDigest:     strings.Repeat("a", 64),
+			Generation:         "sha256:" + strings.Repeat("c", 64),
+			ProfileDigest:      "sha256:" + strings.Repeat("d", 64),
 		},
-		WitnessID: "external-client-1",
+		WitnessID:  "external-client-1",
 		WitnessKey: key.Public().(ed25519.PublicKey),
-		TTL: time.Minute,
-		Now: func() time.Time { return now },
+		TTL:        time.Minute,
+		Now:        func() time.Time { return now },
 	}
 	v, err := NewDurableVerifier(cfg)
 	if err != nil {
@@ -54,18 +54,18 @@ func evidenceFor(t *testing.T, v *DurableVerifier, now time.Time) Evidence {
 		t.Fatal(err)
 	}
 	return Evidence{
-		Challenge: challenge,
-		RunID: "01234567-89ab-4cde-8fab-123456789abc",
+		Challenge:        challenge,
+		RunID:            "01234567-89ab-4cde-8fab-123456789abc",
 		ObservedAtMillis: now.UnixMilli(),
 		Observations: Observations{
-			RealityVisionOK: true,
-			BytesSent: 4096,
-			BytesReceived: 8192,
+			RealityVisionOK:     true,
+			BytesSent:           4096,
+			BytesReceived:       8192,
 			ProtectedIPv4Denied: true,
 			ProtectedIPv6Denied: true,
-			MetadataDenied: true,
-			DNSRebindingDenied: true,
-			TranscriptDigest: "sha256:" + strings.Repeat("e", 64),
+			MetadataDenied:      true,
+			DNSRebindingDenied:  true,
+			TranscriptDigest:    "sha256:" + strings.Repeat("e", 64),
 		},
 	}
 }
@@ -115,7 +115,7 @@ func TestDurableExternalWitnessAcceptsOneScopedReportAndNeverClaimsM0(t *testing
 
 func TestDurableExternalWitnessRejectsSignedWrongScopeAndClaimsWithoutConsumingNonce(t *testing.T) {
 	cases := []struct {
-		name string
+		name   string
 		mutate func(*Evidence)
 	}{
 		{"wrong node", func(e *Evidence) { e.Challenge.Scope.NodeID = "a2f5a88e-3cc3-4a4c-81f6-45719fb131bc" }},
@@ -125,9 +125,11 @@ func TestDurableExternalWitnessRejectsSignedWrongScopeAndClaimsWithoutConsumingN
 		{"wrong manifest", func(e *Evidence) { e.Challenge.Scope.ManifestDigest = strings.Repeat("f", 64) }},
 		{"wrong candidate", func(e *Evidence) { e.Challenge.Scope.Generation = "sha256:" + strings.Repeat("f", 64) }},
 		{"wrong profile", func(e *Evidence) { e.Challenge.Scope.ProfileDigest = "sha256:" + strings.Repeat("f", 64) }},
-		{"wrong nonce", func(e *Evidence) { e.Challenge.Nonce = base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{3}, 32)) }},
+		{"wrong nonce", func(e *Evidence) {
+			e.Challenge.Nonce = base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{3}, 32))
+		}},
 		{"wrong witness", func(e *Evidence) { e.Challenge.WitnessID = "impostor" }},
-		{"wrong version", func(e *Evidence) { e.Challenge.Version = "external-health-v2" }},
+		{"wrong version", func(e *Evidence) { e.Challenge.Version = "external-health-v9" }},
 		{"wrong deadline", func(e *Evidence) { e.Challenge.ExpiresAtMillis++ }},
 		{"future observation", func(e *Evidence) { e.ObservedAtMillis += 10000 }},
 		{"before issue", func(e *Evidence) { e.ObservedAtMillis-- }},

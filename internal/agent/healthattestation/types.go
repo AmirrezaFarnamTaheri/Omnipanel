@@ -12,20 +12,20 @@ import (
 )
 
 const (
-	MaxEvidenceBytes = 8192
-	signatureDomain = "omnipanel:external-health:ed25519-v2\n"
-	protocolVersion = "external-health-v2"
-	maxPendingChallenges = 64
-	maxWitnessTTL = 2 * time.Minute
-	maxSafeSequence uint64 = 9007199254740991
+	MaxEvidenceBytes            = 8192
+	signatureDomain             = "omnipanel:external-health:ed25519-v2\n"
+	protocolVersion             = "external-health-v2"
+	maxPendingChallenges        = 64
+	maxWitnessTTL               = 2 * time.Minute
+	maxSafeSequence      uint64 = 9007199254740991
 )
 
 var (
-	ErrEvidenceRejected = errors.New("external witness evidence, trust or durable nonce rejected")
-	witnessUUIDPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
-	witnessIDPattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,63}$`)
+	ErrEvidenceRejected  = errors.New("external witness evidence, trust or durable nonce rejected")
+	witnessUUIDPattern   = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+	witnessIDPattern     = regexp.MustCompile(`^[a-z][a-z0-9-]{0,63}$`)
 	witnessDigestPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
-	witnessRefPattern = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
+	witnessRefPattern    = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
 )
 
 // Scope is pinned by trusted local provisioning after the exact signed
@@ -69,11 +69,11 @@ type Config struct {
 // not this package, must perform the connection and protected-egress probes.
 type Challenge struct {
 	Version         string `json:"version"`
-	Scope           Scope `json:"scope"`
+	Scope           Scope  `json:"scope"`
 	Nonce           string `json:"nonce"`
 	WitnessID       string `json:"witnessId"`
-	IssuedAtMillis  int64 `json:"issuedAtMillis"`
-	ExpiresAtMillis int64 `json:"expiresAtMillis"`
+	IssuedAtMillis  int64  `json:"issuedAtMillis"`
+	ExpiresAtMillis int64  `json:"expiresAtMillis"`
 }
 
 // Observations are CLAIMS by an external signer, not an independent proof of

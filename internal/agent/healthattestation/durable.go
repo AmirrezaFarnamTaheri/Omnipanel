@@ -27,7 +27,7 @@ import (
 // It authenticates external witness CLAIMS; it does not perform the probes.
 type DurableVerifier struct {
 	cfg Config
-	db *sql.DB
+	db  *sql.DB
 }
 
 func witnessOwnedByCaller(info os.FileInfo) bool {
@@ -164,8 +164,8 @@ func (v *DurableVerifier) Issue(ctx context.Context) (Challenge, error) {
 	now := v.cfg.Now().UTC().UnixMilli()
 	c := Challenge{
 		Version: protocolVersion, Scope: v.cfg.Scope,
-		Nonce: base64.RawURLEncoding.EncodeToString(nonce),
-		WitnessID: v.cfg.WitnessID,
+		Nonce:          base64.RawURLEncoding.EncodeToString(nonce),
+		WitnessID:      v.cfg.WitnessID,
 		IssuedAtMillis: now, ExpiresAtMillis: now + v.cfg.TTL.Milliseconds(),
 	}
 	raw, err := json.Marshal(c)
