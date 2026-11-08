@@ -56,9 +56,9 @@ func TestCandidateHostObservationClientRequiresPinnedRootTicketAndNeverSendsPath
 func TestCandidateHostObservationClientRejectsForgedOrUnhealthyRootReplies(t *testing.T) {
 	ticket := clientTestCandidate()
 	for _, tc := range []struct {
-		name   string
-		modify func(*CandidateIdentity)
-		omit   bool
+		name        string
+		modify      func(*CandidateIdentity)
+		omit        bool
 		falseHealth bool
 	}{
 		{"wrong candidate", func(a *CandidateIdentity) { a.Reference = a.RollbackRef }, false, false},

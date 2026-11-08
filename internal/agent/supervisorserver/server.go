@@ -55,6 +55,12 @@ type CandidateBackend interface {
 	ApplyApprovedCandidate(context.Context, string) error
 }
 
+// CandidateObserver is a separate optional, read-only host observation.
+// Recovery-only or apply-only backends cannot claim candidate host health.
+type CandidateObserver interface {
+	ObserveApprovedCandidate(context.Context, string) (bool, error)
+}
+
 type Server struct {
 	cfg       Config
 	backend   Backend
@@ -194,7 +200,7 @@ func decodeRequest(raw []byte) (request, error) {
 		return request{}, ErrUntrustedServer
 	}
 	if r.version != protocolVersion ||
-		(r.operation != "restore-known-good" && r.operation != "observe-known-good" && r.operation != "apply-approved-candidate") ||
+		(r.operation != "restore-known-good" && r.operation != "observe-known-good" && r.operation != "apply-approved-candidate" && r.operation != "observe-approved-candidate") ||
 		!generationPattern.MatchString(r.reference) {
 		return request{}, ErrUntrustedServer
 	}
@@ -220,7 +226,7 @@ func (s *Server) handle(ctx context.Context, conn *net.UnixConn) {
 	if err != nil {
 		return
 	}
-	candidateOperation := req.operation == "apply-approved-candidate"
+	candidateOperation := req.operation == "apply-approved-candidate" || req.operation == "observe-approved-candidate"
 	if candidateOperation {
 		if s.candidate == nil || req.reference != s.candidate.Reference ||
 			s.candidate.Validate(s.allowed, time.Now()) != nil {
@@ -230,7 +236,7 @@ func (s *Server) handle(ctx context.Context, conn *net.UnixConn) {
 		return
 	}
 	timeout := serverDeadline
-	if candidateOperation {
+	if req.operation == "apply-approved-candidate" {
 		timeout = 20 * time.Second
 	}
 	if err := conn.SetDeadline(time.Now().Add(timeout)); err != nil {
@@ -253,16 +259,29 @@ func (s *Server) handle(ctx context.Context, conn *net.UnixConn) {
 	case "apply-approved-candidate":
 		candidateBackend, supported := s.backend.(CandidateBackend)
 		ok = supported && candidateBackend.ApplyApprovedCandidate(operationCtx, req.reference) == nil
+	case "observe-approved-candidate":
+		candidateObserver, supported := s.backend.(CandidateObserver)
+		if supported {
+			var backendErr error
+			healthy, backendErr = candidateObserver.ObserveApprovedCandidate(operationCtx, req.reference)
+			ok = backendErr == nil
+		}
 	}
 	// No backend error text, runtime logs, private config, or OS path is ever
 	// transmitted to a lower-trust watchdog.
-	_ = json.NewEncoder(conn).Encode(map[string]any{
+	reply := map[string]any{
 		"version":   protocolVersion,
 		"operation": req.operation,
 		"reference": req.reference,
 		"ok":        ok,
-		"healthy":   healthy && ok && req.operation == "observe-known-good",
-	})
+		"healthy":   healthy && ok && (req.operation == "observe-known-good" || req.operation == "observe-approved-candidate"),
+	}
+	if req.operation == "observe-approved-candidate" && ok && healthy {
+		// Only public hashes, node identity and signed revision scope from the
+		// root-provisioned approval. Never expose config paths, keys or logs.
+		reply["approval"] = s.candidate
+	}
+	_ = json.NewEncoder(conn).Encode(reply)
 }
 
 // Serve owns one Unix-domain socket path. It never unlinks or replaces a

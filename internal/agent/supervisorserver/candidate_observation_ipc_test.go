@@ -16,6 +16,8 @@ type observedCandidateBackend struct {
 }
 
 func (b *observedCandidateBackend) ObserveApprovedCandidate(_ context.Context, _ string) (bool, error) {
+	b.candidateBackendStub.mu.Lock()
+	defer b.candidateBackendStub.mu.Unlock()
 	return b.healthy, b.failure
 }
 
@@ -51,7 +53,9 @@ func TestRootCandidateObservationRPCExposesExactRootTicketOnlyAfterHostObservati
 		reply.Reference != ref || reply.Approval == nil || *reply.Approval != ticket {
 		t.Fatalf("root candidate observer failed to bind the exact local ticket: %+v", reply)
 	}
+	backend.candidateBackendStub.mu.Lock()
 	backend.healthy = false
+	backend.candidateBackendStub.mu.Unlock()
 	raw, err = rpcRaw(t, socket, `{"version":1,"operation":"observe-approved-candidate","reference":"`+ref+`"}`+"\n")
 	if err != nil {
 		t.Fatal(err)
@@ -62,7 +66,9 @@ func TestRootCandidateObservationRPCExposesExactRootTicketOnlyAfterHostObservati
 	if strings.Contains(string(raw), "approval") {
 		t.Fatal("an unhealthy candidate must not carry root approval evidence")
 	}
+	backend.candidateBackendStub.mu.Lock()
 	backend.failure = errors.New("private runtime config and host details")
+	backend.candidateBackendStub.mu.Unlock()
 	raw, err = rpcRaw(t, socket, `{"version":1,"operation":"observe-approved-candidate","reference":"`+ref+`"}`+"\n")
 	if err != nil {
 		t.Fatal(err)

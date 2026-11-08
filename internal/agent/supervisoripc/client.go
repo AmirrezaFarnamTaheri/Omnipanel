@@ -105,11 +105,48 @@ type request struct {
 }
 
 type response struct {
-	Version   int    `json:"version"`
-	Operation string `json:"operation"`
-	Reference string `json:"reference"`
-	OK        bool   `json:"ok"`
-	Healthy   bool   `json:"healthy"`
+	Version   int                `json:"version"`
+	Operation string             `json:"operation"`
+	Reference string             `json:"reference"`
+	OK        bool               `json:"ok"`
+	Healthy   bool               `json:"healthy"`
+	Approval  *CandidateIdentity `json:"approval,omitempty"`
+}
+
+// CandidateIdentity mirrors ONLY the non-secret root-provisioned approval
+// scope. A caller may inspect this authenticated read-only response but cannot
+// provision an approval or alter any privileged supervisor operation.
+type CandidateIdentity struct {
+	Reference          string
+	RollbackRef        string
+	ManifestDigest     string
+	NodeID             string
+	Epoch              string
+	StructuralSequence uint64
+	MembershipSequence uint64
+	ExpiresUnix        int64
+}
+
+// CandidateObservation is host-local readiness, never independent external
+// reference-client execution or an APPLIED durable confirmation.
+type CandidateObservation struct {
+	Healthy  bool
+	Approval CandidateIdentity
+}
+
+var candidateUUIDPattern = regexp.MustCompile("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+var candidateManifestPattern = regexp.MustCompile("^[a-f0-9]{64}$")
+
+func (a CandidateIdentity) valid(reference string, now time.Time) bool {
+	return a.Reference == reference && refPattern.MatchString(a.Reference) &&
+		refPattern.MatchString(a.RollbackRef) && a.RollbackRef != a.Reference &&
+		candidateManifestPattern.MatchString(a.ManifestDigest) &&
+		candidateUUIDPattern.MatchString(a.NodeID) &&
+		candidateUUIDPattern.MatchString(a.Epoch) &&
+		a.StructuralSequence > 0 && a.StructuralSequence <= 9007199254740991 &&
+		a.MembershipSequence <= 9007199254740991 &&
+		a.ExpiresUnix > now.Unix() &&
+		a.ExpiresUnix <= now.Add(2*time.Minute).Unix()
 }
 
 // exchange sends one bounded, fixed-schema request on one Unix connection.
@@ -117,7 +154,7 @@ type response struct {
 // No caller-controlled path, script, or shell command can cross this boundary.
 func (c *Client) exchange(ctx context.Context, operation, reference string) (response, error) {
 	if ctx == nil || ctx.Err() != nil || !refPattern.MatchString(reference) ||
-		(operation != "restore-known-good" && operation != "observe-known-good" && operation != "apply-approved-candidate") {
+		(operation != "restore-known-good" && operation != "observe-known-good" && operation != "apply-approved-candidate" && operation != "observe-approved-candidate") {
 		return response{}, ErrUntrustedSupervisor
 	}
 	if err := c.verifySocket(); err != nil {
@@ -207,4 +244,24 @@ func (c *Client) ApplyApprovedCandidate(ctx context.Context, reference string) e
 		return ErrUntrustedSupervisor
 	}
 	return nil
+}
+
+// ObserveApprovedCandidate is a privileged-identity-authenticated, read-only
+// local host witness. It never grants root activation, independently validates
+// public connectivity, clears rollback leases or returns an APPLIED ACK.
+func (c *Client) ObserveApprovedCandidate(ctx context.Context, reference string) (CandidateObservation, error) {
+	reply, err := c.exchange(ctx, "observe-approved-candidate", reference)
+	if err != nil {
+		return CandidateObservation{}, err
+	}
+	if !reply.Healthy {
+		if reply.Approval != nil {
+			return CandidateObservation{}, ErrUntrustedSupervisor
+		}
+		return CandidateObservation{}, nil
+	}
+	if reply.Approval == nil || !reply.Approval.valid(reference, time.Now()) {
+		return CandidateObservation{}, ErrUntrustedSupervisor
+	}
+	return CandidateObservation{Healthy: true, Approval: *reply.Approval}, nil
 }
