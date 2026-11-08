@@ -24,13 +24,13 @@ type PreparedActivation struct {
 
 // PrepareActivation bridges existing separately tested boundaries, in order:
 //
-//   1. Consume one already-verified, node-scoped manifest revision and a
-//      locally approved, typed egress policy, not arbitrary JSON from a caller.
-//   2. Compile a complete configuration with manifest-to-fragment digest checks.
-//   3. Run the exact pinned native Sing-box binary against the exact bytes,
-//      publishing only an owner-private, content-addressed staged candidate.
-//   4. Durably reserve an exclusive rollback lease bound to those exact bytes,
-//      the signed manifest identity and a previously qualified known-good ref.
+//  1. Consume one already-verified, node-scoped manifest revision and a
+//     locally approved, typed egress policy, not arbitrary JSON from a caller.
+//  2. Compile a complete configuration with manifest-to-fragment digest checks.
+//  3. Run the exact pinned native Sing-box binary against the exact bytes,
+//     publishing only an owner-private, content-addressed staged candidate.
+//  4. Durably reserve an exclusive rollback lease bound to those exact bytes,
+//     the signed manifest identity and a previously qualified known-good ref.
 //
 // A failed reservation MAY leave a private, inert staged candidate behind.
 // The root supervisor must never infer authorization from staging files or
