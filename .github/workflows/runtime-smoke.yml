@@ -6,6 +6,7 @@ on:
     paths:
       - "lab/runtime/**"
       - "internal/drivers/singbox/native*.go"
+      - "internal/drivers/singbox/fullconfig*.go"
       - "internal/agent/supervisorserver/**"
       - "internal/agent/supervisoripc/real_host_test.go"
       - "Makefile"
@@ -17,6 +18,7 @@ on:
     paths:
       - "lab/runtime/**"
       - "internal/drivers/singbox/native*.go"
+      - "internal/drivers/singbox/fullconfig*.go"
       - "internal/agent/supervisorserver/**"
       - "internal/agent/supervisoripc/real_host_test.go"
       - "Makefile"
@@ -67,6 +69,7 @@ jobs:
       - name: Check lab and provenance scripts
         run: |
           bash -n lab/runtime/build-sing-box.sh
+          bash -n lab/runtime/check-compiled-fullconfig.sh
           bash -n lab/runtime/run-local-reality.sh
           bash -n lab/runtime/verify-provenance.sh
           bash -n lab/runtime/verify-provenance_test.sh
@@ -81,13 +84,55 @@ jobs:
       - name: Build Sing-box with the required statistics API
         run: bash lab/runtime/build-sing-box.sh
 
-      - name: Install pinned Cosign
+      # A repository release-download CDN returned repeated HTTP 504 errors
+      # during this PR's exact-head signed runtime check. Preserve the signed
+      # release installer as first choice; a failed download never skips
+      # cryptographic verification of the runtime and its metadata.
+      - name: Install pinned Cosign from verified signed release
+        id: cosign-install
+        continue-on-error: true
         uses: sigstore/cosign-installer@b9c35392b7c1401bcc77d30c9b07cf4b1c7a7b07 # pinned installer commit
         with:
           cosign-release: v3.1.4
 
-      - name: Verify Cosign tool version
-        run: cosign version | grep -F "v3.1.4"
+      # Only on release-CDN failure, build the exact upstream Go module from
+      # the public Go checksum database. A pinned module is preferable to an
+      # unauthenticated mirror or disabling Sigstore. This is CI tooling only.
+      - name: Set up pinned Go for verifiable Cosign source fallback
+        if: steps.cosign-install.outcome == 'failure'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.3'
+          cache: false
+
+      - name: Compile exact Cosign v3.1.4 module when release download fails
+        if: steps.cosign-install.outcome == 'failure'
+        timeout-minutes: 12
+        env:
+          GOSUMDB: sum.golang.org
+          GOPROXY: https://proxy.golang.org
+          GOTOOLCHAIN: local
+        run: |
+          test "$(go env GOSUMDB)" = "sum.golang.org"
+          test "$(go env GOPROXY)" = "https://proxy.golang.org"
+          go install github.com/sigstore/cosign/v3/cmd/cosign@v3.1.4
+          bin="$(go env GOPATH)/bin/cosign"
+          test -x "$bin"
+          go version -m "$bin" | grep -E '^[[:space:]]+mod[[:space:]]+github.com/sigstore/cosign/v3[[:space:]]+v3\.1\.4[[:space:]]'
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Verify Cosign tool version or pinned source identity
+        env:
+          COSIGN_INSTALL_OUTCOME: ${{ steps.cosign-install.outcome }}
+        run: |
+          if [ "$COSIGN_INSTALL_OUTCOME" = "success" ]; then
+            cosign version | grep -F "v3.1.4"
+          elif [ "$COSIGN_INSTALL_OUTCOME" = "failure" ]; then
+            go version -m "$(command -v cosign)" | grep -E '^[[:space:]]+mod[[:space:]]+github.com/sigstore/cosign/v3[[:space:]]+v3\.1\.4[[:space:]]'
+          else
+            echo "No verifiable pinned Cosign installation exists" >&2
+            exit 1
+          fi
 
       # Rekor v1 has intermittently rejected new entries with HTTP 500.
       # Select Rekor v2 through Sigstore's authenticated TUF service metadata:
@@ -129,6 +174,9 @@ jobs:
             "$SING_BOX_METADATA" \
             "$SING_BOX_BUNDLE" \
             "$SING_BOX_METADATA_BUNDLE"
+
+      - name: Native-check signed-component-bound full Sing-box config (not M0)
+        run: bash lab/runtime/check-compiled-fullconfig.sh
 
       # Check the same exact binary only after its Sigstore proof has passed.
       # This deny-all candidate does not imply a live or M0-qualified apply.
