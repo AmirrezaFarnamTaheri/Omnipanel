@@ -20,8 +20,8 @@ import (
 const maxCandidateSequence uint64 = 9007199254740991
 
 var (
-	ErrCandidateApproval = errors.New("root candidate approval or durable one-time authorization rejected")
-	candidateUUIDPattern = regexp.MustCompile("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+	ErrCandidateApproval   = errors.New("root candidate approval or durable one-time authorization rejected")
+	candidateUUIDPattern   = regexp.MustCompile("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 	candidateDigestPattern = regexp.MustCompile("^[a-f0-9]{64}$")
 )
 
@@ -124,7 +124,7 @@ func (b *NativeBackend) consumeCandidateTicket(approval CandidateApproval) error
 	}
 	file := os.NewFile(uintptr(fd), path)
 	// Only public hashes and node scope are recorded, never runtime JSON.
-	if _, err := file.WriteString(approval.ManifestDigest+"\n"+approval.NodeID+"\n"+approval.Epoch+"\n"); err != nil {
+	if _, err := file.WriteString(approval.ManifestDigest + "\n" + approval.NodeID + "\n" + approval.Epoch + "\n"); err != nil {
 		file.Close()
 		return ErrCandidateApproval
 	}
