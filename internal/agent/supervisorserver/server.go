@@ -56,10 +56,10 @@ type CandidateBackend interface {
 }
 
 type Server struct {
-	cfg     Config
-	backend Backend
-	rootUID uint32
-	allowed map[string]bool
+	cfg       Config
+	backend   Backend
+	rootUID   uint32
+	allowed   map[string]bool
 	candidate *CandidateApproval
 }
 
