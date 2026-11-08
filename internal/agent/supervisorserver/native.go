@@ -275,6 +275,48 @@ func (b *NativeBackend) RestoreKnownGood(ctx context.Context, ref string) error 
 	return b.runPinned(ctx, b.cfg.SystemctlBinary, "restart", fixedSingBoxUnit)
 }
 
+
+// probeProtectedSOCKSDenial requires the locally provisioned health listener
+// to speak SOCKS5 and reject access to the link-local metadata destination.
+// A generic TCP service or a proxy accepting that destination fails closed.
+// No credentials, secrets or user-supplied hostnames are sent.
+func probeProtectedSOCKSDenial(ctx context.Context, address string) error {
+	probeCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+	defer cancel()
+	dialer := net.Dialer{Timeout: 500 * time.Millisecond}
+	conn, err := dialer.DialContext(probeCtx, "tcp", address)
+	if err != nil {
+		return ErrNativeFailed
+	}
+	defer conn.Close()
+	if err := conn.SetDeadline(time.Now().Add(500 * time.Millisecond)); err != nil {
+		return ErrNativeFailed
+	}
+	if _, err := conn.Write([]byte{5, 1, 0}); err != nil {
+		return ErrNativeFailed
+	}
+	method := make([]byte, 2)
+	if _, err := io.ReadFull(conn, method); err != nil || method[0] != 5 || method[1] != 0 {
+		return ErrNativeFailed
+	}
+	// SOCKS5 CONNECT 169.254.169.254:80. Only an explicit nonzero REP
+	// demonstrates refusal; transport failure or lack of a response is not
+	// accepted as evidence of the protected routing policy.
+	if _, err := conn.Write([]byte{5, 1, 0, 1, 169, 254, 169, 254, 0, 80}); err != nil {
+		return ErrNativeFailed
+	}
+	reply := make([]byte, 4)
+	if _, err := io.ReadFull(conn, reply); err != nil ||
+		reply[0] != 5 || reply[1] == 0 || reply[1] > 8 ||
+		reply[2] != 0 || (reply[3] != 1 && reply[3] != 3 && reply[3] != 4) {
+		return ErrNativeFailed
+	}
+	if err := probeCtx.Err(); err != nil {
+		return ErrNativeFailed
+	}
+	return nil
+}
+
 // ObserveKnownGood is a separately executed host-level witness. It compares
 // active config bytes to the approved digest, checks a fixed systemd unit is
 // running and requires an actual loopback TCP listener. This is process/port
@@ -313,13 +355,13 @@ func (b *NativeBackend) ObserveKnownGood(ctx context.Context, ref string) (bool,
 	if err := b.runPinned(ctx, b.cfg.SystemctlBinary, "is-active", "--quiet", fixedSingBoxUnit); err != nil {
 		return false, err
 	}
-	probeCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
-	defer cancel()
-	dialer := net.Dialer{Timeout: 500 * time.Millisecond}
-	conn, err := dialer.DialContext(probeCtx, "tcp", b.cfg.HealthAddress)
-	if err != nil {
-		return false, ErrNativeFailed
+	// A listening port alone can belong to an unrelated or stale process.
+	// Require a real SOCKS5 handshake and an explicit ruleset rejection of a
+	// protected link-local destination through the restored local proxy.
+	// This is still a bounded local data-path probe, NOT proof of external
+	// Reality/Vision, all private routes, or a generation-authenticated peer.
+	if err := probeProtectedSOCKSDenial(ctx, b.cfg.HealthAddress); err != nil {
+		return false, err
 	}
-	conn.Close()
 	return true, nil
 }
