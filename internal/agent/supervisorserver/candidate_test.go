@@ -22,7 +22,7 @@ func candidateApprovalForTest(ref, rollback string) CandidateApproval {
 		Epoch:              "ea2429da-7540-4e40-ae70-38fd3f19794b",
 		StructuralSequence: 2,
 		MembershipSequence: 3,
-		ExpiresUnix:    time.Now().Add(time.Minute).Unix(),
+		ExpiresUnix:        time.Now().Add(time.Minute).Unix(),
 	}
 }
 
