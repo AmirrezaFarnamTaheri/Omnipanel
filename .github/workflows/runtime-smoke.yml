@@ -6,6 +6,7 @@ on:
     paths:
       - "lab/runtime/**"
       - "internal/drivers/singbox/native*.go"
+      - "internal/drivers/singbox/fullconfig*.go"
       - "internal/agent/supervisorserver/**"
       - "internal/agent/supervisoripc/real_host_test.go"
       - "Makefile"
@@ -17,6 +18,7 @@ on:
     paths:
       - "lab/runtime/**"
       - "internal/drivers/singbox/native*.go"
+      - "internal/drivers/singbox/fullconfig*.go"
       - "internal/agent/supervisorserver/**"
       - "internal/agent/supervisoripc/real_host_test.go"
       - "Makefile"
@@ -67,6 +69,7 @@ jobs:
       - name: Check lab and provenance scripts
         run: |
           bash -n lab/runtime/build-sing-box.sh
+          bash -n lab/runtime/check-compiled-fullconfig.sh
           bash -n lab/runtime/run-local-reality.sh
           bash -n lab/runtime/verify-provenance.sh
           bash -n lab/runtime/verify-provenance_test.sh
@@ -129,6 +132,9 @@ jobs:
             "$SING_BOX_METADATA" \
             "$SING_BOX_BUNDLE" \
             "$SING_BOX_METADATA_BUNDLE"
+
+      - name: Native-check signed-component-bound full Sing-box config (not M0)
+        run: bash lab/runtime/check-compiled-fullconfig.sh
 
       # Check the same exact binary only after its Sigstore proof has passed.
       # This deny-all candidate does not imply a live or M0-qualified apply.

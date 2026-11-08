@@ -37,7 +37,7 @@ jobs:
           if [ -n "$unformatted" ]; then
             printf 'Unformatted Go source:\n%s\n' "$unformatted" >&2
             # Print the exact formatting delta without modifying the workspace.
-            gofmt -d internal/drivers/singbox/*.go internal/agent/state/*.go internal/agent/reconcile/*.go internal/agent/gateway/*.go internal/agent/gateway/desiredapi/*.go internal/control/desiredpublish/*.go internal/control/desiredapproval/*.go internal/control/desiredapproval/httpapi/*.go internal/control/adminruntime/*.go cmd/omnipanel-admin/*.go internal/agent/metering/*.go internal/agent/syncfeed/*.go internal/backup/*.go internal/observability/*.go internal/networking/*.go internal/certificates/*.go internal/importers/*.go internal/pki/enrollment/*.go internal/pki/enrollment/httpapi/*.go internal/pki/enrollment/grants/*.go >&2
+            gofmt -d internal/manifest/*.go internal/drivers/*.go internal/drivers/singbox/*.go internal/agent/state/*.go internal/agent/reconcile/*.go internal/agent/gateway/*.go internal/agent/gateway/desiredapi/*.go internal/control/desiredpublish/*.go internal/control/desiredapproval/*.go internal/control/desiredapproval/httpapi/*.go internal/control/adminruntime/*.go cmd/omnipanel-admin/*.go internal/agent/metering/*.go internal/agent/syncfeed/*.go internal/backup/*.go internal/observability/*.go internal/networking/*.go internal/certificates/*.go internal/importers/*.go internal/pki/enrollment/*.go internal/pki/enrollment/httpapi/*.go internal/pki/enrollment/grants/*.go >&2
             exit 1
           fi
       - name: Check standalone watchdog, root IPC and command gofmt
@@ -62,6 +62,15 @@ jobs:
           fi
       - name: Link root-owned native rollback supervisor executable
         run: go build -o "$RUNNER_TEMP/omnipanel-supervisor" ./cmd/omnipanel-supervisor
+      - name: Require gofmt for node bootstrap and polling executable
+        run: |
+          unformatted="$(gofmt -l internal/agent/bootstrap/*.go cmd/omnipanel-node/*.go)"
+          if [ -n "$unformatted" ]; then
+            printf 'Unformatted node/bootstrap source:\n%s\n' "$unformatted" >&2
+            exit 1
+          fi
+      - name: Link unprivileged mTLS node poller
+        run: go build -o "$RUNNER_TEMP/omnipanel-node" ./cmd/omnipanel-node
       - run: make test-go
       # The pre-existing agent/session registry is covered by the full Go
       # tests; formatting that older package is a separate cleanup change.
