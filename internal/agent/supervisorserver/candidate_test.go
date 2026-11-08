@@ -22,7 +22,7 @@ func candidateApprovalForTest(ref, rollback string) CandidateApproval {
 		Epoch:              "ea2429da-7540-4e40-ae70-38fd3f19794b",
 		StructuralSequence: 2,
 		MembershipSequence: 3,
-		ExpiresUnixNano:    time.Now().Add(time.Minute).UnixNano(),
+		ExpiresUnix:    time.Now().Add(time.Minute).Unix(),
 	}
 }
 
@@ -116,7 +116,7 @@ func TestNativeCandidatePreflightFailuresNeverMutateRunningGeneration(t *testing
 			}
 		}},
 		{"expired approval", func(t *testing.T, f nativeFixture, b *NativeBackend, approval CandidateApproval) {
-			b.approval.ExpiresUnixNano = time.Now().Add(-time.Minute).UnixNano()
+			b.approval.ExpiresUnix = time.Now().Add(-time.Minute).Unix()
 			if err := b.ApplyApprovedCandidate(context.Background(), approval.Reference); err == nil {
 				t.Fatal("expired root authorization accepted")
 			}
@@ -202,8 +202,8 @@ func TestRootCandidateApprovalRequiresScopedBoundedExclusiveTicket(t *testing.T)
 		{"untrusted node", func(a *CandidateApproval) { a.NodeID = "" }},
 		{"untrusted epoch", func(a *CandidateApproval) { a.Epoch = "" }},
 		{"missing sequence", func(a *CandidateApproval) { a.StructuralSequence = 0 }},
-		{"late deadline", func(a *CandidateApproval) { a.ExpiresUnixNano = time.Now().Add(time.Hour).UnixNano() }},
-		{"expired deadline", func(a *CandidateApproval) { a.ExpiresUnixNano = time.Now().Add(-time.Minute).UnixNano() }},
+		{"late deadline", func(a *CandidateApproval) { a.ExpiresUnix = time.Now().Add(time.Hour).Unix() }},
+		{"expired deadline", func(a *CandidateApproval) { a.ExpiresUnix = time.Now().Add(-time.Minute).Unix() }},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
