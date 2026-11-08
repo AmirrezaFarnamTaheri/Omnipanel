@@ -181,7 +181,7 @@ func TestSupervisorRootProvisioningCandidateTicketIsSeparateFromRecovery(t *test
 		t.Fatalf("valid root-only candidate ticket refused or changed: %v", err)
 	}
 	cases := []struct {
-		name string
+		name   string
 		change func(*provisioning)
 	}{
 		{"candidate enters LKG allowlist", func(p *provisioning) { p.AllowedGenerations = append(p.AllowedGenerations, candidateRef) }},
