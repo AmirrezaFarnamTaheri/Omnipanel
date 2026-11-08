@@ -325,6 +325,9 @@ func TestEmitFullConfigForPinnedNativeSingBoxCheck(t *testing.T) {
 	}
 	build, plan := compiledTestPlan()
 	plan.Reality.PrivateKey = key
+	// The native fixture must regenerate the same signed component identity
+	// for the ephemeral key; production never silently rebinds this digest.
+	plan.Revision.Manifest.Components[0].ConfigurationDigest = fragmentDigest(t, build, plan)
 	policy := ProtectedPolicy{
 		Mode:               EgressPublicOnly,
 		ResolverIP:         "1.1.1.1",
