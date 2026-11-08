@@ -40,6 +40,7 @@ type NativeConfig struct {
 	SystemctlBinary       string
 	SystemctlBinaryDigest string
 	HealthAddress         string
+	CandidateApproval    *CandidateApproval
 }
 
 type NativeBackend struct {
@@ -47,6 +48,7 @@ type NativeBackend struct {
 	allowed  map[string]bool
 	ownerUID uint32
 	mu       sync.Mutex
+	approval *CandidateApproval
 	// Kernel process identity is independently witnessed by systemd and
 	// procfs. Unit tests replace only this OS boundary, never the policy.
 	unitWitness func(context.Context, string, string, string) error
@@ -146,6 +148,14 @@ func newNativeBackend(cfg NativeConfig, generations map[string]bool, trustedUID 
 			return nil, ErrNativeRejected
 		}
 		b.allowed[ref] = true
+	}
+	// A root-only ticket is distinct from the historical LKG allowlist.
+	if cfg.CandidateApproval != nil {
+		approval := *cfg.CandidateApproval
+		if approval.Validate(b.allowed, time.Now()) != nil {
+			return nil, ErrNativeRejected
+		}
+		b.approval = &approval
 	}
 	if err := b.protectedDir(cfg.GenerationDirectory); err != nil {
 		return nil, err
