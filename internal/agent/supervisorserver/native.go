@@ -278,20 +278,63 @@ func (b *NativeBackend) RestoreKnownGood(ctx context.Context, ref string) error 
 	return b.runPinned(ctx, b.cfg.SystemctlBinary, "restart", fixedSingBoxUnit)
 }
 
-// probeProtectedSOCKSDenial requires the locally provisioned health listener
-// to speak SOCKS5 and reject access to the link-local metadata destination.
-// A generic TCP service or a proxy accepting that destination fails closed.
-// No credentials, secrets or user-supplied hostnames are sent.
+// protectedSOCKSCanaries are fixed test destinations from distinct protected
+// categories. They do not originate in the manifest, IPC, DNS, or user input.
+// They exercise explicit ruleset refusal, not comprehensive routing proof.
+var protectedSOCKSCanaries = [][]byte{
+	// Cloud instance metadata
+	{5, 1, 0, 1, 169, 254, 169, 254, 0, 80},
+	// Loopback IPv4
+	{5, 1, 0, 1, 127, 0, 0, 1, 0, 80},
+	// RFC1918 /8
+	{5, 1, 0, 1, 10, 0, 0, 1, 0, 80},
+	// RFC1918 /12
+	{5, 1, 0, 1, 172, 16, 0, 1, 0, 80},
+	// RFC1918 /16
+	{5, 1, 0, 1, 192, 168, 1, 1, 0, 80},
+	// Carrier-grade NAT
+	{5, 1, 0, 1, 100, 64, 0, 1, 0, 80},
+	// Unspecified
+	{5, 1, 0, 1, 0, 0, 0, 0, 0, 80},
+	// IPv6 loopback
+	{5, 1, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 80},
+	// IPv6 ULA
+	{5, 1, 0, 4, 0xfc, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 80},
+	// IPv6 link-local
+	{5, 1, 0, 4, 0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 80},
+	// IPv4-mapped metadata
+	{5, 1, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, 169, 254, 169, 254, 0, 80},
+	// localhost name
+	{5, 1, 0, 3, 9, 'l', 'o', 'c', 'a', 'l', 'h', 'o', 's', 't', 0, 80},
+}
+
+// probeProtectedSOCKSDenial requires an exact SOCKS5 ruleset rejection (REP
+// 0x02) and a complete well-formed SOCKS5 response for EVERY fixed canary.
+// Connection resets, arbitrary upstream errors, timeouts or truncated frames
+// cannot serve as policy-denial evidence. This is a host-local smoke matrix,
+// NOT a complete inspection of protected routes or independent client health.
 func probeProtectedSOCKSDenial(ctx context.Context, address string) error {
-	probeCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+	if ctx == nil {
+		return ErrNativeRejected
+	}
+	for _, request := range protectedSOCKSCanaries {
+		if err := probeOneProtectedSOCKSDenial(ctx, address, request); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func probeOneProtectedSOCKSDenial(ctx context.Context, address string, request []byte) error {
+	probeCtx, cancel := context.WithTimeout(ctx, 350*time.Millisecond)
 	defer cancel()
-	dialer := net.Dialer{Timeout: 500 * time.Millisecond}
+	dialer := net.Dialer{Timeout: 350 * time.Millisecond}
 	conn, err := dialer.DialContext(probeCtx, "tcp", address)
 	if err != nil {
 		return ErrNativeFailed
 	}
 	defer conn.Close()
-	if err := conn.SetDeadline(time.Now().Add(500 * time.Millisecond)); err != nil {
+	if err := conn.SetDeadline(time.Now().Add(350 * time.Millisecond)); err != nil {
 		return ErrNativeFailed
 	}
 	if _, err := conn.Write([]byte{5, 1, 0}); err != nil {
@@ -301,19 +344,33 @@ func probeProtectedSOCKSDenial(ctx context.Context, address string) error {
 	if _, err := io.ReadFull(conn, method); err != nil || method[0] != 5 || method[1] != 0 {
 		return ErrNativeFailed
 	}
-	// SOCKS5 CONNECT 169.254.169.254:80. Only an explicit nonzero REP
-	// demonstrates refusal; transport failure or lack of a response is not
-	// accepted as evidence of the protected routing policy.
-	if _, err := conn.Write([]byte{5, 1, 0, 1, 169, 254, 169, 254, 0, 80}); err != nil {
+	if _, err := conn.Write(request); err != nil {
 		return ErrNativeFailed
 	}
 	reply := make([]byte, 4)
 	if _, err := io.ReadFull(conn, reply); err != nil ||
-		reply[0] != 5 || reply[1] == 0 || reply[1] > 8 ||
-		reply[2] != 0 || (reply[3] != 1 && reply[3] != 3 && reply[3] != 4) {
+		reply[0] != 5 || reply[1] != 2 || reply[2] != 0 {
 		return ErrNativeFailed
 	}
-	if err := probeCtx.Err(); err != nil {
+	var tailBytes int
+	switch reply[3] {
+	case 1:
+		tailBytes = 4 + 2
+	case 4:
+		tailBytes = 16 + 2
+	case 3:
+		length := make([]byte, 1)
+		if _, err := io.ReadFull(conn, length); err != nil || length[0] == 0 {
+			return ErrNativeFailed
+		}
+		tailBytes = int(length[0]) + 2
+	default:
+		return ErrNativeFailed
+	}
+	if _, err := io.CopyN(io.Discard, conn, int64(tailBytes)); err != nil {
+		return ErrNativeFailed
+	}
+	if probeCtx.Err() != nil {
 		return ErrNativeFailed
 	}
 	return nil

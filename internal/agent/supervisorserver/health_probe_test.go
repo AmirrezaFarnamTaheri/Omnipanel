@@ -45,13 +45,10 @@ func acceptHealthSOCKS(t *testing.T, listener net.Listener, connectSuccess bool)
 				if _, err := conn.Write([]byte{5, 0}); err != nil {
 					return
 				}
-				request := make([]byte, 10)
-				if _, err := io.ReadFull(conn, request); err != nil {
-					return
-				}
-				if request[0] != 5 || request[1] != 1 || request[3] != 1 ||
-					request[4] != 169 || request[5] != 254 || request[6] != 169 ||
-					request[7] != 254 || request[8] != 0 || request[9] != 80 {
+				// Read the complete SOCKS5 address and port, including IPv6 and
+				// domain requests. A partial request is not health evidence.
+				request, err := readProbeRequest(conn)
+				if err != nil || len(request) < 7 {
 					return
 				}
 				reply := byte(2) // Connection not allowed by ruleset.
