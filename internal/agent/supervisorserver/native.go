@@ -402,6 +402,13 @@ func (b *NativeBackend) ObserveKnownGood(ctx context.Context, ref string) (bool,
 	if _, err := b.generationBytes(ref); err != nil {
 		return false, err
 	}
+	return b.observeExactActiveLocked(ctx, ref)
+}
+
+// observeExactActiveLocked shares the native systemd, kernel PID/socket and
+// protected SOCKS5 checks between the LKG and root-approved candidate paths.
+// Caller MUST hold b.mu and separately authorize the exact generation.
+func (b *NativeBackend) observeExactActiveLocked(ctx context.Context, ref string) (bool, error) {
 	if err := b.protectedDir(filepath.Dir(b.cfg.ActiveConfigPath)); err != nil {
 		return false, err
 	}
