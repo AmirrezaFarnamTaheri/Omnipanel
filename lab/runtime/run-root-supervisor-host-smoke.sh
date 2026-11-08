@@ -2,18 +2,18 @@
 set -Eeuo pipefail
 
 # Only run on disposable hosted GitHub Actions VMs, never production.
-if [[ "\${OMNI_ALLOW_EPHEMERAL_ROOT_SMOKE:-}" != "1" || "\${GITHUB_ACTIONS:-}" != "true" || "$(id -u)" != "0" ]]; then
+if [[ "${OMNI_ALLOW_EPHEMERAL_ROOT_SMOKE:-}" != "1" || "${GITHUB_ACTIONS:-}" != "true" || "$(id -u)" != "0" ]]; then
   echo "Root supervisor lab requires explicit ephemeral CI root opt-in." >&2
   exit 2
 fi
-if [[ -z "\${SUDO_USER:-}" || "$SUDO_USER" == "root" || -z "\${SUDO_UID:-}" || -z "\${SUDO_GID:-}" ]]; then
+if [[ -z "${SUDO_USER:-}" || "$SUDO_USER" == "root" || -z "${SUDO_UID:-}" || -z "${SUDO_GID:-}" ]]; then
   echo "Lab requires an unprivileged runner identity." >&2
   exit 2
 fi
 for exe in jq sha256sum install systemctl python3 go sudo; do
   command -v "$exe" >/dev/null || { echo "Missing lab dependency: $exe" >&2; exit 2; }
 done
-if [[ ! -f "\${SING_BOX_BIN:-}" || ! -x "$SING_BOX_BIN" || ! -x "\${ROOT_SUPERVISOR_BIN:-}" ]]; then
+if [[ ! -f "${SING_BOX_BIN:-}" || ! -x "$SING_BOX_BIN" || ! -x "${ROOT_SUPERVISOR_BIN:-}" ]]; then
   echo "Signed Sing-box and compiled root supervisor are required." >&2
   exit 2
 fi
@@ -134,7 +134,7 @@ sudo -u "$SUDO_USER" -H env \
   "OMNI_ROOT_LAB_LKG=$lkg" \
   go test -count=1 -run '^TestSignedRootHostRollbackAfterSIGKILL$' ./internal/agent/supervisoripc
 
-if [[ -n "\${EVIDENCE_DIR:-}" ]]; then
+if [[ -n "${EVIDENCE_DIR:-}" ]]; then
   mkdir -p "$EVIDENCE_DIR"
   jq -cn '{
     test:"root-systemd-signed-sing-box-rollback",
